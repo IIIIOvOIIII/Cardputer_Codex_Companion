@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-设计进行中：产品边界与总体架构已经确认，尚未进入实现阶段。
+全部设计章节已经确认，正式设计规格等待用户书面复核，尚未进入实施计划或代码实现阶段。
 
 ## 硬性要求
 
@@ -22,5 +22,6 @@
 
 详细确认事项见：
 
+- [正式设计规格](docs/superpowers/specs/2026-07-24-cardputer-codex-companion-design.md)
 - [确认决策快照](docs/2026-07-24-cardputer-codex-companion_CONFIRMED_DECISIONS.md)
 - [项目进度](docs/2026-07-24-cardputer-codex-companion_PROGRESS.md)
