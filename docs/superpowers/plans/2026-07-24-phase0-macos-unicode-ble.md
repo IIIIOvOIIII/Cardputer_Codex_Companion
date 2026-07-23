@@ -81,6 +81,7 @@ companion/
 │   │   ├── CGUnicodePoster.swift
 │   │   └── UnicodeInjectionEngine.swift
 │   └── cardputer-phase0-probe/
+│       ├── ConcurrencyHILAgent.swift
 │       ├── PairGATTHILCommand.swift
 │       └── main.swift
 ├── Tests/
@@ -90,7 +91,8 @@ companion/
 │   │   ├── PairingDerivationTests.swift
 │   │   ├── TLSChannelBindingTests.swift
 │   │   ├── BindChallengeCoordinatorTests.swift
-│   │   └── LANInterfacePolicyTests.swift
+│   │   ├── LANInterfacePolicyTests.swift
+│   │   └── ConcurrencyHILAgentTests.swift
 │   ├── Phase0GATTTests/
 │   │   ├── ReplayWindowTests.swift
 │   │   ├── GATTFrameReceiverTests.swift
@@ -3900,6 +3902,8 @@ git commit -m "feat: add focus-bound native unicode probe"
 **Files:**
 - Modify: `companion/Sources/cardputer-phase0-probe/main.swift`
 - Create: `companion/Sources/cardputer-phase0-probe/PairGATTHILCommand.swift`
+- Create: `companion/Sources/cardputer-phase0-probe/ConcurrencyHILAgent.swift`
+- Create: `companion/Tests/Phase0SecurityTests/ConcurrencyHILAgentTests.swift`
 - Create: `companion/AppBundle/Info.plist`
 - Create: `companion/AppBundle/CardputerPhase0Probe.entitlements`
 - Create: `scripts/build_signed_macos_probe.sh`
@@ -3908,7 +3912,7 @@ git commit -m "feat: add focus-bound native unicode probe"
 **Interfaces:**
 - Consumes:
   - 环境变量 `CARDPUTER_PHASE0_SIGN_IDENTITY`，值必须精确匹配 `security find-identity -p codesigning` 中的真实 Apple Development 或 Developer ID Application 身份；
-  - 子命令 `permission-status`、`inject`、`recover-ledger`、`pair-gatt-hil`；
+  - 子命令 `permission-status`、`inject`、`recover-ledger`、`pair-gatt-hil`、`concurrency-hil-agent`；
   - UTF-8 request 文件和 GATT secret 文件均要求 POSIX mode `0600`，读取后立即删除。
 - Produces:
   - `build/phase0/macos/a/Cardputer Phase0 Probe.app`，版本 `0.1.0`；
@@ -3916,7 +3920,8 @@ git commit -m "feat: add focus-bound native unicode probe"
   - 两个 bundle 的 identifier 均为 `lc.iam.cardputer.phase0probe`，designated requirement 必须逐字相同；
   - `inject` JSON 结果只包含 hash、PID、AX fingerprint、字节计数、状态和稳定错误码；
   - `recover-ledger` 把遗留非终态记录写为 `indeterminate`；
-  - `pair-gatt-hil` 运行 Task 3–5 的真实 Network/CoreBluetooth/IOHID 路径。
+  - `pair-gatt-hil` 运行 Task 3–5 的真实 Network/CoreBluetooth/IOHID 路径，并记录/核对当前运行固件的完整 image SHA-256 与 app ELF SHA-256；
+  - `concurrency-hil-agent` 在固定时长内保持同一 WSS、CoreBluetooth GATT 与 HID 身份会话，以 stdout JSONL 输出可由 firmware HIL runner 加盖接收时间的事件；不得输出正文、SAS、密钥或完整 device ID。
 
 - [ ] **Step 1: 写入失败的签名构建测试**
 
