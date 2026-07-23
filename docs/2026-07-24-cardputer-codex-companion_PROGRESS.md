@@ -13,3 +13,10 @@
 - Expected result: 形成无待定项的正式设计规格，完成一致性自审并提交本地 Git。
 - Result: Achieved — 正式规格已写入 `docs/superpowers/specs/2026-07-24-cardputer-codex-companion-design.md`，确认快照和 README 已指向新规格。
 - Next step: 等待用户复核正式设计规格；获得复核通过后再编制实施计划。
+
+## 2026-07-24 02:18 HKT
+
+- Current work: 将已通过的正式设计拆解为只覆盖 Phase 0 的可执行实施计划，并完成 foundation、固件并发、macOS Unicode/BLE、Web/Flash/发布安全四条工作流的跨计划接口审计。
+- Expected result: 形成单一依赖顺序、27 个 reviewer-sized tasks、五份 child report/六项 gate 的机器可验证证据闭环；在没有真机、签名身份或完整工具链时不误报可行性结论。
+- Result: Achieved — 主计划与四份子计划已落盘；Codex capability 路径、Companion 并发 JSONL agent、probe/app/device provenance、共享 `HIL_BASE_COMMIT`、外部 P-256 release manifest、OTA/config slot 原子配对及不可逆 eFuse 审批边界已经统一。Markdown 链接、代码围栏、任务数量、旧契约残留与 Git whitespace 检查通过。本阶段没有编写产品实现或运行 HIL。
+- Next step: 选择 subagent-driven 或 inline 执行方式，从 foundation Tasks 1–2 开始 Phase 0；在取得六项 gate 的真实证据前保持 `NO_GO`。

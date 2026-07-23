@@ -34,7 +34,35 @@ This file is the Phase 0 dependency map and gate index. Implementers execute onl
 3. [`2026-07-24-phase0-macos-unicode-ble.md`](2026-07-24-phase0-macos-unicode-ble.md) — Unicode injection, TCC, CoreBluetooth receive/replay, identity and macOS HIL.
 4. [`2026-07-24-phase0-web-flash-release-security.md`](2026-07-24-phase0-web-flash-release-security.md) — representative Web/CJK assets, fixed flash budget and release/recovery security HIL.
 
-Execution order is foundation Tasks 1–2 first. Then macOS Tasks 1–7, firmware Tasks 1–7, Web Task 1 and the Codex audit may proceed in parallel. To avoid concurrent edits to `firmware/main/CMakeLists.txt`, `app_main.cpp` and host-test CMake, execute Web/Release Tasks 2–5 only after firmware Task 7 is committed. Next implement, test and commit all three HIL harnesses/schemas without running them. Require a clean tree and freeze that commit as `HIL_BASE_COMMIT`; every raw HIL record and release build records this same commit, and no source/docs change is allowed between the three live runs. Then execute macOS Task 8, firmware Task 8 and Web/Release Task 6 at their explicit hardware/approval checkpoints. Sanitized summaries are committed only after all raw evidence is complete. The foundation finalizer runs last.
+Execution order is foundation Tasks 1–2 first. Then macOS Tasks 1–6, firmware Tasks 1–7, Web Task 1 and the Codex audit may proceed in parallel; macOS Task 7 starts only after firmware Task 2 has committed `companion-probe-event.schema.json`. To avoid concurrent edits to `firmware/main/CMakeLists.txt`, `app_main.cpp` and host-test CMake, execute Web/Release Tasks 2–5 only after firmware Task 7 is committed. Next implement, test and commit all three HIL harnesses/schemas without running them. Require a clean tree and freeze that commit as `HIL_BASE_COMMIT`; every child report and release build records this same commit, and no source/docs change is allowed between the three live runs. Regenerate the read-only Codex capability report from the frozen tree, then execute macOS Task 8, firmware Task 8 and Web/Release Task 6 at their explicit hardware/approval checkpoints. Sanitized summaries are committed only after all raw evidence is complete. The foundation finalizer runs last.
+
+### HIL Freeze Contract
+
+Immediately before the first live run, execute:
+
+```bash
+test -z "$(git status --porcelain)"
+export HIL_BASE_COMMIT="$(git rev-parse HEAD)"
+export HIL_TOOLCHAIN_SHA256="$(
+  shasum -a 256 build/phase0/toolchain.json | awk '{print $1}'
+)"
+test -n "$HIL_BASE_COMMIT"
+test "${#HIL_TOOLCHAIN_SHA256}" -eq 64
+scripts/phase0/generate_app_server_schema.sh build/phase0/app-server
+scripts/phase0/run_app_server_capability_probe.sh \
+  --schema-root build/phase0/app-server \
+  --requirements protocol/phase0/codex-capability-requirements.json \
+  --output build/phase0/app-server/capability.json
+```
+
+Before and after each live runner, require both:
+
+```bash
+test -z "$(git status --porcelain)"
+test "$(git rev-parse HEAD)" = "$HIL_BASE_COMMIT"
+```
+
+The finalizer consumes exactly five child reports covering six gates: Codex capability at `build/phase0/app-server/capability.json`, macOS HIL at `build/phase0/macos-hil/<run-id>/raw.json`, firmware concurrency at `build/phase0/firmware-concurrency/report.json`, release budget at `build/phase0/release-image-budget.json` and release security at `build/phase0/security-hil/raw.json`. Regenerate the read-only Codex capability report after freezing the tree; all five must contain `git_commit=$HIL_BASE_COMMIT` and `toolchain_manifest_sha256=$HIL_TOOLCHAIN_SHA256`, while the four hardware-derived records additionally require `git_tree_clean=true`. Firmware/macOS must also agree on development `probe_firmware_sha256`, runtime `app_elf_sha256` and device-ID digest; release budget/security must agree on the distinct `release_firmware_sha256`. The finalizer rejects any mismatch, dirty-tree marker, missing raw artifact hash or non-overlapping same-window Companion event. No implementation, schema, test, documentation or generated source may change until all five child reports exist and validate. Only then may sanitized summaries be committed; those later summary commits are deliberately not the tested commit.
 
 ## Gate Mapping
 
@@ -428,7 +456,7 @@ Each finalized output gate entry must contain:
   "evidence": [
     {
       "kind": "raw_manifest",
-      "path": "build/phase0/run-id/manifest.json",
+      "path": "build/phase0/firmware-concurrency/report.json",
       "sha256": "64-lowercase-hex-characters"
     }
   ]

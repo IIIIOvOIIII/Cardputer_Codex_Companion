@@ -571,9 +571,10 @@ ALLOWED_INPUT_KEYS = frozenset({
     "schema_version",
     "mode",
     "git_commit",
+    "git_tree_clean",
     "probe_firmware_sha256",
     "release_firmware_sha256",
-    "toolchain_sha256",
+    "toolchain_manifest_sha256",
     "started_at",
     "ended_at",
     "measurements",
@@ -711,7 +712,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return args
 ```
 
-The runner invokes host tests and the Codex audit. In host-only mode it emits measurements only for host checks; evaluator-required HIL evidence is absent and therefore `BLOCKED`. In full mode it accepts no globs and no implicit “latest” selection: every explicit path must match the producer map/schema, then adapters remove verdict fields. All HIL records must share the frozen `tested_commit` and toolchain-manifest hash; the firmware-concurrency record owns `probe_firmware_sha256`, while release-budget and release-security must share a distinct `release_firmware_sha256`. The macOS record must match the concurrency record's `probe_firmware_sha256`, runtime `app_elf_sha256` and probe device-ID digest; only same-window Gate 1 records must overlap in time. Development and release image hashes are expected to differ and must never be compared as one field.
+The runner invokes host tests and the Codex audit. In host-only mode it emits measurements only for host checks; evaluator-required HIL evidence is absent and therefore `BLOCKED`. In full mode it accepts no globs and no implicit “latest” selection: every explicit path must match the producer map/schema, then adapters remove verdict fields. All HIL records must have `git_tree_clean=true` and share the frozen `git_commit` (`HIL_BASE_COMMIT`) and toolchain-manifest hash; the firmware-concurrency record owns `probe_firmware_sha256`, while release-budget and release-security must share a distinct `release_firmware_sha256`. The macOS record must match the concurrency record's `probe_firmware_sha256`, runtime `app_elf_sha256` and probe device-ID digest; only same-window Gate 1 records must overlap in time. Development and release image hashes are expected to differ and must never be compared as one field.
 
 - [ ] **Step 4: Run host-only GREEN.**
 
@@ -733,7 +734,7 @@ scripts/phase0/run_phase0.sh \
   --cardputer-port "$CARDPUTER_PORT" \
   --companion-interface "$COMPANION_INTERFACE" \
   --firmware-concurrency-report build/phase0/firmware-concurrency/report.json \
-  --macos-hil-report build/phase0/macos-hil/run/raw.json \
+  --macos-hil-report "build/phase0/macos-hil/$MACOS_HIL_RUN_ID/raw.json" \
   --codex-capability-report build/phase0/app-server/capability.json \
   --release-budget-report build/phase0/release-image-budget.json \
   --release-security-report build/phase0/security-hil/raw.json \
@@ -742,6 +743,8 @@ scripts/phase0/run_phase0.sh \
 ```
 
 Expected: empty variables are rejected. With resolved prerequisites, the runner collects all child reports, recomputes all statuses and exits `0` only for six `PASS` gates.
+
+`MACOS_HIL_RUN_ID` is the exact UUID supplied to the macOS HIL runner; the finalizer rejects a report whose JSON `run_id` does not equal its parent directory name.
 
 - [ ] **Step 6: Generate documents from the verified report.**
 

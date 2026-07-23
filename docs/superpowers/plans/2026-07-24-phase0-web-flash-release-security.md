@@ -370,7 +370,7 @@ git commit -m "feat: add licensed cjk flash pack"
 
 - Consumes: actual partition CSV, generated Web/CJK assets and final signed app binary.
 - Produces: exact slot/free/max bytes and Gate 4 measurement tied to the signed image SHA-256.
-- `release-image-budget.schema.json` requires `git_commit`, `toolchain_manifest_sha256`, `firmware_image_sha256`, partition-table SHA-256, Web/CJK manifest SHA-256 values and the raw byte counts used by the foundation adapter; it contains no gate verdict field.
+- `release-image-budget.schema.json` requires `git_commit`, `git_tree_clean`, `toolchain_manifest_sha256`, `release_firmware_sha256`, partition-table SHA-256, Web/CJK manifest SHA-256 values and the raw byte counts used by the foundation adapter; complete evidence requires `git_tree_clean=true` and contains no gate verdict field.
 
 - [ ] **Step 1: Write RED boundary tests.**
 
@@ -472,6 +472,7 @@ git commit -m "test: fix phase zero flash budget"
 **Files:**
 
 - Create: `protocol/phase0/release-trust-v1.md`
+- Create: `protocol/phase0/release-efuse-plan.json`
 - Create: `tools/phase0/ota_manifest.py`, `tools/phase0/tests/test_ota_manifest.py`
 - Create: `tools/phase0/verify_release_config.py`, `tools/phase0/tests/test_verify_release_config.py`
 - Create: `firmware/sdkconfig.release-probe.defaults`
@@ -482,7 +483,7 @@ git commit -m "test: fix phase zero flash budget"
 **Interfaces:**
 
 - Consumes: P-256 manifest test key, RSA-3072 Secure Boot test key, assets, fixed partitions and release metadata.
-- Produces: canonical signed release record embedded in an independently configured RSA-signed image.
+- Produces: a full independently configured RSA-signed image first, then a canonical external P-256-signed manifest, slot-config record and immutable release bundle that bind that exact image without a self-hash cycle.
 
 - [ ] **Step 1: Write RED manifest/config tests.**
 
@@ -528,6 +529,7 @@ Expected: missing modules.
 ```python
 def canonical_bytes(fields: dict[str, object]) -> bytes:
     allowed = {
+        "manifest_version",
         "hardware_model",
         "firmware_version",
         "secure_version",
@@ -538,6 +540,9 @@ def canonical_bytes(fields: dict[str, object]) -> bytes:
         "image_length",
         "image_sha256",
         "secure_boot_key_digest",
+        "web_assets_manifest_sha256",
+        "cjk_manifest_sha256",
+        "release_efuse_plan_sha256",
     }
     if set(fields) != allowed:
         raise ValueError("release manifest field set mismatch")
@@ -549,11 +554,13 @@ def canonical_bytes(fields: dict[str, object]) -> bytes:
     ).encode("utf-8")
 ```
 
-P-256 signatures are fixed-width 64-byte `r || s`. The P-256-signed fields bind the RSA public-key digest. RSA-3072 Secure Boot signs bootloader/app. These are two private keys under one release record; a demand for one identical key/algorithm is impossible and produces Gate 6 `FAIL`.
+P-256 signatures are fixed-width 64-byte `r || s`. The P-256-signed fields bind the full already-signed app bytes, the RSA public-key digest, both asset manifests and the exact eFuse plan. RSA-3072 Secure Boot signs bootloader/app. These are two private keys under one release trust record; a demand for one identical key/algorithm is impossible and produces Gate 6 `FAIL`.
+
+`release-efuse-plan.json` is created here, before any release build, with the exact sorted allowlisted eFuse field/value set and expected pre/post states. Task 6 consumes this immutable file; it may not generate or rewrite the plan after the manifest is signed.
 
 - [ ] **Step 4: Use an independent release configuration and build directory.**
 
-`build_release_probe.sh` removes only `firmware/build/release-probe/`, recreates it, and runs:
+`build_release_probe.sh` removes only the two exact generated roots `firmware/build/release-probe/` and `build/phase0/release-bundle/`, recreates the release build root, and runs:
 
 ```bash
 scripts/phase0/npm.sh --prefix web-probe ci
@@ -575,13 +582,29 @@ scripts/phase0/idf.sh -C firmware -B build/release-probe \
   -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.release-probe.defaults' \
   reconfigure
 scripts/phase0/idf.sh -C firmware -B build/release-probe build
+uv run tools/phase0/ota_manifest.py create \
+  --app firmware/build/release-probe/cardputer_codex_phase0.bin \
+  --web-manifest firmware/build/release-probe/generated/web-assets.manifest.json \
+  --cjk-manifest firmware/build/release-probe/generated/CardputerCJK16.manifest.json \
+  --efuse-plan protocol/phase0/release-efuse-plan.json \
+  --secure-boot-public-key build/phase0/keys/secure-boot-rsa-public.pem \
+  --output firmware/build/release-probe/generated/release-manifest.json
+uv run tools/phase0/ota_manifest.py sign \
+  --manifest firmware/build/release-probe/generated/release-manifest.json \
+  --private-key build/phase0/keys/manifest-p256-private.pem \
+  --signature firmware/build/release-probe/generated/release-manifest.sig
+uv run tools/phase0/ota_manifest.py assemble \
+  --manifest firmware/build/release-probe/generated/release-manifest.json \
+  --signature firmware/build/release-probe/generated/release-manifest.sig \
+  --app firmware/build/release-probe/cardputer_codex_phase0.bin \
+  --output build/phase0/release-bundle
 ```
 
-The script hashes both release-directory asset manifests into the release record before the independent build. It does not read `firmware/build/generated/`, a development `sdkconfig`, or artifacts from a prior release-probe directory.
+The order is normative: generate release-local assets, build and RSA-sign the complete app, hash that immutable signed app plus both release-local asset manifests and eFuse plan, sign the external manifest, then assemble the bundle. `assemble` copies the exact app bytes to `build/phase0/release-bundle/app.bin`, creates a deterministic config-slot record containing manifest bytes/signature/slot metadata and writes a hash-indexed `bundle-index.json`; it rejects an existing/non-empty output or any post-manifest hash change. The script does not read `firmware/build/generated/`, a development `sdkconfig`, or artifacts from a prior release-probe directory.
 
 `sdkconfig.release-probe.defaults` enables Secure Boot v2 signed binaries, RSA scheme, Flash Encryption Release, NVS Encryption, OTA rollback, partition table offset `0x12000`, 8MiB/no-PSRAM and Secure ROM Download Mode. `verify_release_config.py` parses the effective generated sdkconfig, bootloader/app signature blocks and bootloader end offset; defaults text alone is never evidence.
 
-- [ ] **Step 5: Embed and verify the release record before normal services.**
+- [ ] **Step 5: Verify the active slot's external release record before normal services.**
 
 ```cpp
 enum class ReleasePolicyResult {
@@ -599,7 +622,7 @@ ReleasePolicyResult verify_running_release(
     const RunningImageFacts& facts) noexcept;
 ```
 
-`app_main` calls this before BLE/Wi-Fi/Web/HID service initialization. A non-accepted result exposes only recovery status over display/USB and never normal services.
+`app_main` maps the running OTA partition to exactly one encrypted `config_a`/`config_b` slot, reads the accepted manifest/signature record from that slot, validates `image_length` against the public ESP image parser, then streams exactly that many logical decrypted partition bytes through SHA-256 (including the Secure Boot signature block represented in `app.bin`) and calls this before BLE/Wi-Fi/Web/HID service initialization. It also compares the manifest's Web/CJK hashes with the embedded asset-manifest hashes. The app image contains only the pinned P-256 public key and expected Secure Boot RSA digest, never its own release manifest/hash. A missing, torn, wrong-slot or non-accepted config record exposes only recovery status over display/USB and never normal services.
 
 - [ ] **Step 6: Run GREEN and final Gate 4 budget.**
 
@@ -610,18 +633,21 @@ uv run tools/phase0/verify_release_config.py \
   --sdkconfig firmware/build/release-probe/sdkconfig \
   --bootloader firmware/build/release-probe/bootloader/bootloader.bin \
   --app firmware/build/release-probe/cardputer_codex_phase0.bin
+uv run tools/phase0/ota_manifest.py verify-bundle \
+  --bundle build/phase0/release-bundle \
+  --manifest-public-key build/phase0/keys/manifest-p256-public.pem
 uv run tools/phase0/image_budget.py \
   --partitions firmware/partitions.csv \
-  --image firmware/build/release-probe/cardputer_codex_phase0.bin \
+  --image build/phase0/release-bundle/app.bin \
   --json build/phase0/release-image-budget.json
 ```
 
-Expected: effective security settings all pass; signed bootloader ends below `0x12000`; final signed app is at most `0x360000`; report includes the same signed image SHA-256 used by security HIL.
+Expected: effective security settings all pass; signed bootloader ends below `0x12000`; final signed app is at most `0x360000`; bundle verification proves `app.bin` equals the build output and the config record contains the signed manifest; the budget report's `release_firmware_sha256` is the same digest security HIL consumes.
 
 - [ ] **Step 7: Commit.**
 
 ```bash
-git add protocol/phase0/release-trust-v1.md tools/phase0/ota_manifest.py tools/phase0/tests/test_ota_manifest.py tools/phase0/verify_release_config.py tools/phase0/tests/test_verify_release_config.py firmware/sdkconfig.release-probe.defaults firmware/main/probe/recovery_policy.hpp firmware/main/probe/recovery_policy.cpp firmware/main/app_main.cpp firmware/main/CMakeLists.txt scripts/phase0/generate_test_release_keys.sh scripts/phase0/build_release_probe.sh
+git add protocol/phase0/release-trust-v1.md protocol/phase0/release-efuse-plan.json tools/phase0/ota_manifest.py tools/phase0/tests/test_ota_manifest.py tools/phase0/verify_release_config.py tools/phase0/tests/test_verify_release_config.py firmware/sdkconfig.release-probe.defaults firmware/main/probe/recovery_policy.hpp firmware/main/probe/recovery_policy.cpp firmware/main/app_main.cpp firmware/main/CMakeLists.txt scripts/phase0/generate_test_release_keys.sh scripts/phase0/build_release_probe.sh
 git commit -m "feat: bind release manifest to secure boot"
 ```
 
@@ -727,11 +753,11 @@ struct RecoveryContext {
 };
 ```
 
-On boot chord, initialize display and TinyUSB CDC only. After manifest acceptance, call `esp_ota_begin` for the inactive partition and `esp_ota_write` per chunk. On COMMIT: finalize SHA-256, call `esp_ota_end`, verify the image/release record/Secure Boot signature with public ESP-IDF image APIs, check compatible config slot, then call `esp_ota_set_boot_partition`. Any error aborts the OTA handle, erases only the incomplete inactive range, returns a stable code and preserves the current boot slot.
+On boot chord, initialize display and TinyUSB CDC only. After external manifest/signature acceptance, map the inactive OTA partition to its inactive config slot, call `esp_ota_begin` and `esp_ota_write` per chunk. On COMMIT: finalize SHA-256, call `esp_ota_end`, verify the complete image, external manifest and Secure Boot signature/digest with public ESP-IDF image APIs, then write/read-back/verify the deterministic manifest record in the paired encrypted config slot. Only after both inactive records are durable may it call `esp_ota_set_boot_partition`. Any error aborts the OTA handle, invalidates only the incomplete inactive config record, erases only the incomplete inactive OTA range, returns a stable code and preserves the current OTA/config pair.
 
 - [ ] **Step 5: Configure Secure ROM behavior and document the boundary.**
 
-Release eFuse policy enables Secure ROM Download Mode (`ENABLE_SECURITY_DOWNLOAD`) only after all other eFuse work. This prevents arbitrary RAM loader execution and eFuse manipulation but still permits basic ROM flash writes. The app recovery protocol is therefore the supported signed recovery path. Each released app has a secure-version baseline and embedded P-256 release record; direct ROM writes cannot reach normal services unless Secure Boot and startup release policy both pass.
+Release eFuse policy enables Secure ROM Download Mode (`ENABLE_SECURITY_DOWNLOAD`) only after all other eFuse work. This prevents arbitrary RAM loader execution and eFuse manipulation but still permits basic ROM flash writes. The app recovery protocol is therefore the supported signed recovery path. Each released app has a secure-version baseline and a P-256 release manifest in its paired encrypted config slot; direct ROM writes cannot reach normal services unless Secure Boot and startup release policy both pass.
 
 The Phase 0 result must explicitly state that recovery assumes at least one RSA-authenticated OTA slot remains bootable, which is also protected by OTA rollback. If the approved requirement instead demands recovery after both slots are destroyed without retaining a per-device Flash Encryption key, this layout cannot meet it and Gate 6 is `FAIL`.
 
@@ -757,7 +783,7 @@ git commit -m "feat: add signed usb recovery protocol"
 **Files:**
 
 - Create: `protocol/phase0/release-security-evidence.schema.json`
-- Create: `protocol/phase0/release-efuse-plan.json`
+- Consume: `protocol/phase0/release-efuse-plan.json`
 - Create: `scripts/phase0/backup_flash.sh`, `scripts/phase0/prepare_security_hil_approval.py`, `scripts/phase0/run_security_hil.py`
 - Create: `tools/phase0/tests/test_release_security_hil.py`
 - Create: `docs/validation/phase0/security-hil.md`
@@ -766,7 +792,7 @@ git commit -m "feat: add signed usb recovery protocol"
 
 - Consumes: exact dedicated chip ID, 8MiB backup, final signed image/release bundle and explicit irreversible approval.
 - Produces: typed Gate 6 release-security measurements; it never emits a trusted status.
-- `release-security-evidence.schema.json` requires the same `git_commit`, `toolchain_manifest_sha256` and `firmware_image_sha256` as the release-budget record plus the dedicated-device digest, approval facts hash, eFuse facts and every positive/negative case; it contains no gate verdict field.
+- `release-security-evidence.schema.json` requires the same `git_commit`, `git_tree_clean=true`, `toolchain_manifest_sha256` and `release_firmware_sha256` as the release-budget record plus the signed manifest/config-slot digests, dedicated-device digest, approval facts hash, eFuse facts and every positive/negative case; it contains no gate verdict field.
 
 - [ ] **Step 1: Write RED approval/evidence tests.**
 
@@ -802,7 +828,7 @@ Expected: HIL runner/schema are missing.
 
 - [ ] **Step 3: Implement the approval artifact and fail-closed HIL harness.**
 
-`release-efuse-plan.json` contains the exact sorted eFuse fields/values and the expected pre/post security states; the runner rejects unknown fields, already-conflicting bits or a plan hash not embedded in the release record. `prepare_security_hil_approval.py` and `run_security_hil.py` share one canonical facts encoder. The run parser has no `--force`, generic acknowledgement or approval-bypass option.
+`release-efuse-plan.json` contains the exact sorted eFuse fields/values and the expected pre/post security states; the runner rejects unknown fields, already-conflicting bits or a plan hash that does not equal the signed external manifest's `release_efuse_plan_sha256`. `prepare_security_hil_approval.py` and `run_security_hil.py` share one canonical facts encoder. The run parser has no `--force`, generic acknowledgement or approval-bypass option.
 
 Run GREEN:
 
@@ -818,11 +844,25 @@ Expected: approval expiry/mismatch/reuse tests, virtual-eFuse rejection, every n
 - [ ] **Step 4: Commit the validated harness before any irreversible work.**
 
 ```bash
-git add protocol/phase0/release-efuse-plan.json protocol/phase0/release-security-evidence.schema.json scripts/phase0/backup_flash.sh scripts/phase0/prepare_security_hil_approval.py scripts/phase0/run_security_hil.py tools/phase0/tests/test_release_security_hil.py
+git add protocol/phase0/release-security-evidence.schema.json scripts/phase0/backup_flash.sh scripts/phase0/prepare_security_hil_approval.py scripts/phase0/run_security_hil.py tools/phase0/tests/test_release_security_hil.py
 git commit -m "test: add release security hil harness"
 ```
 
 Wait until the macOS and firmware HIL harness commits also exist. Require a clean tree and record the shared HEAD as `HIL_BASE_COMMIT`; build the release probe from that commit.
+
+From that unchanged clean tree, rebuild and remeasure the exact release cohort:
+
+```bash
+test -z "$(git status --porcelain)"
+test "$(git rev-parse HEAD)" = "$HIL_BASE_COMMIT"
+scripts/phase0/build_release_probe.sh
+uv run tools/phase0/image_budget.py \
+  --partitions firmware/partitions.csv \
+  --image build/phase0/release-bundle/app.bin \
+  --json build/phase0/release-image-budget.json
+```
+
+Both the budget record and later security record must store this `HIL_BASE_COMMIT`, the same toolchain-manifest hash and the same `release_firmware_sha256`; any source/docs change or rebuild between them invalidates the cohort.
 
 - [ ] **Step 5: Back up and create a chip-bound approval challenge before irreversible work.**
 
@@ -870,14 +910,14 @@ The runner must verify:
 
 0. the approval artifact is unexpired, unconsumed and exactly matches the live chip/eFuse/backup/release/planned-bit hash; `--preflight-only` never consumes it, while the real run atomically marks it consumed immediately before the first permanent write, and no flag can bypass this check;
 
-1. Secure Boot v2 RSA digest and boot state;
+1. before irreversible enablement, factory provisioning writes the exact bundle `app.bin` and matching `config-slot.bin` to one OTA/config pair; after enablement, Secure Boot v2 RSA digest and boot state match the signed manifest;
 2. Flash Encryption Release and NVS Encryption;
 3. Secure ROM Download Mode and restricted `--no-stub` command behavior;
 4. valid application USB recovery to the inactive slot;
 5. rejection of invalid P-256, wrong model/schema, wrong RSA, unsigned, tampered and wrong-length bundles;
 6. direct ROM writes of unsigned, wrong-RSA, same-RSA/wrong-P-256 and plaintext images never reach normal services;
-7. failed recovery preserves/rolls back to the old valid slot;
-8. reboot repeats running release-record, eFuse and signed-image checks.
+7. failed recovery, including power loss after app write or config write but before boot selection, preserves/rolls back to the old valid OTA/config pair;
+8. reboot repeats active config-slot manifest signature, full running-image hash, eFuse and Secure Boot checks before normal services.
 
 - [ ] **Step 7: Recompute Gate inputs and create only sanitized summaries.**
 

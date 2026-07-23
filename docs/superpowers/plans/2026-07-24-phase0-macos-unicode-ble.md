@@ -66,6 +66,7 @@ companion/
 │   │   ├── PairingDerivation.swift
 │   │   ├── TLSChannelBinding.swift
 │   │   ├── BindChallengeCoordinator.swift
+│   │   ├── ConcurrencyHILSession.swift
 │   │   ├── LANInterfacePolicy.swift
 │   │   └── WSSPairingProbe.swift
 │   ├── Phase0GATT/
@@ -81,7 +82,7 @@ companion/
 │   │   ├── CGUnicodePoster.swift
 │   │   └── UnicodeInjectionEngine.swift
 │   └── cardputer-phase0-probe/
-│       ├── ConcurrencyHILAgent.swift
+│       ├── ConcurrencyHILCommand.swift
 │       ├── PairGATTHILCommand.swift
 │       └── main.swift
 ├── Tests/
@@ -92,7 +93,7 @@ companion/
 │   │   ├── TLSChannelBindingTests.swift
 │   │   ├── BindChallengeCoordinatorTests.swift
 │   │   ├── LANInterfacePolicyTests.swift
-│   │   └── ConcurrencyHILAgentTests.swift
+│   │   └── ConcurrencyHILSessionTests.swift
 │   ├── Phase0GATTTests/
 │   │   ├── ReplayWindowTests.swift
 │   │   ├── GATTFrameReceiverTests.swift
@@ -1739,7 +1740,7 @@ git commit -m "feat: add transcript and tls channel binding probes"
   - `BindChallengeCoordinator.observe(deviceID: UUID, channel: BindChannel, challenge: Data, now: Date) throws -> BindState`
   - `WSSPairingProbe.run(config: WSSPairingConfig, bindCoordinator: BindChallengeCoordinator) async throws -> WSSPairingEvidence`
 - `WSSPairingConfig` 的字段固定为 `policy: LANInterfacePolicy`、`tlsIdentityLabel: String`、`protocolVersion: String`。
-- `WSSPairingEvidence` 的字段固定为 `transcriptSHA256: Data`、`sasConfirmedOnMac: Bool`、`sasConfirmedOnCardputer: Bool`、`tlsExporterLength: Int`、`clientSignatureValid: Bool`、`wssChallengeSeen: Bool`、`bindChallengeComplete: Bool`、`listenerInterface: String`、`mdnsInterface: String`、`interfaceFingerprintUnchanged: Bool`、`remoteInSelectedSubnet: Bool`、`publicListenerDetected: Bool`。
+- `WSSPairingEvidence` 的字段固定为 `bootID: UUID`、`appELFSHA256: Data`、`firmwareImageSHA256: Data`、`transcriptSHA256: Data`、`sasConfirmedOnMac: Bool`、`sasConfirmedOnCardputer: Bool`、`tlsExporterLength: Int`、`clientSignatureValid: Bool`、`wssChallengeSeen: Bool`、`bindChallengeComplete: Bool`、`listenerInterface: String`、`mdnsInterface: String`、`interfaceFingerprintUnchanged: Bool`、`remoteInSelectedSubnet: Bool`、`publicListenerDetected: Bool`。三个 runtime identity 字段来自当前 TLS-exporter-bound、P-256 签名的固件证明，不接受未认证 WebSocket metadata。
 - `BindState.complete` 只有在 WSS 和 GATT 对同一 device ID、同一 32-byte challenge、同一未过期 attempt 都已观察到时返回。
 
 - [ ] **Step 1: 写入失败的接口与 bind 测试**
@@ -2142,8 +2143,8 @@ git commit -m "feat: confine pairing probe to selected lan"
   - `AuthenticatedTextSink.beginAuthenticatedText(_:) async throws -> InjectionResult`
   - `CoreBluetoothProbeClient.start(expectedPeripheralIdentifier:expectedDeviceID:gattAuthKey:)`
   - `CoreBluetoothProbeClient.run(config: BluetoothProbeConfig, timeout: Duration) async throws -> BluetoothProbeEvidence`
-- `BluetoothProbeConfig` 的字段固定为 `peripheralIdentifier: UUID`、`expectedDeviceID: Data`、`pairedDeviceID: String`、`gattAuthKey: SymmetricKey`、`bindCoordinator: BindChallengeCoordinator`。
-- `BluetoothProbeEvidence` 的字段固定为 `notifyCallbacks: Int`、`authenticatedFrames: Int`、`protectedCharacteristicAccess: Bool`、`hidDeviceIDs: [Data]`、`gattDeviceID: Data`、`badMACAdvancedCounter: Bool`、`replayRejected: Bool`、`gattChallengeSeen: Bool`、`bindChallengeComplete: Bool`。
+- `BluetoothProbeConfig` 的字段固定为 `peripheralIdentifier: UUID`、`expectedDeviceID: Data`、`expectedAppELFSHA256: Data`、`expectedFirmwareImageSHA256: Data`、`pairedDeviceID: String`、`gattAuthKey: SymmetricKey`、`bindCoordinator: BindChallengeCoordinator`。
+- `BluetoothProbeEvidence` 的字段固定为 `bootID: UUID`、`appELFSHA256: Data`、`firmwareImageSHA256: Data`、`notifyCallbacks: Int`、`authenticatedFrames: Int`、`protectedCharacteristicAccess: Bool`、`hidDeviceIDs: [Data]`、`gattDeviceID: Data`、`badMACAdvancedCounter: Bool`、`replayRejected: Bool`、`gattChallengeSeen: Bool`、`bindChallengeComplete: Bool`。Runtime digest 必须从受保护 GATT identity/control frame 取得并在任何 replay-window mutation 前完成认证。
   - `HIDIdentityReader.readKeyboardDeviceIDs() throws -> [Data]`
   - `IdentityBinder.bind(hidDeviceIDs:gattDeviceID:) throws -> Data`
 - Receiver 调用 sink 的时点就是进入 SQLite `intent` 与 Unicode Injector 的边界；坏 MAC、replay、未完成分片和 hash 错误均不得调用 sink。
@@ -3902,8 +3903,9 @@ git commit -m "feat: add focus-bound native unicode probe"
 **Files:**
 - Modify: `companion/Sources/cardputer-phase0-probe/main.swift`
 - Create: `companion/Sources/cardputer-phase0-probe/PairGATTHILCommand.swift`
-- Create: `companion/Sources/cardputer-phase0-probe/ConcurrencyHILAgent.swift`
-- Create: `companion/Tests/Phase0SecurityTests/ConcurrencyHILAgentTests.swift`
+- Create: `companion/Sources/Phase0Security/ConcurrencyHILSession.swift`
+- Create: `companion/Sources/cardputer-phase0-probe/ConcurrencyHILCommand.swift`
+- Create: `companion/Tests/Phase0SecurityTests/ConcurrencyHILSessionTests.swift`
 - Create: `companion/AppBundle/Info.plist`
 - Create: `companion/AppBundle/CardputerPhase0Probe.entitlements`
 - Create: `scripts/build_signed_macos_probe.sh`
@@ -3912,6 +3914,7 @@ git commit -m "feat: add focus-bound native unicode probe"
 **Interfaces:**
 - Consumes:
   - 环境变量 `CARDPUTER_PHASE0_SIGN_IDENTITY`，值必须精确匹配 `security find-identity -p codesigning` 中的真实 Apple Development 或 Developer ID Application 身份；
+  - firmware Task 2 已提交的 `protocol/phase0/companion-probe-event.schema.json`，作为并发 agent JSONL 的唯一事件 schema；
   - 子命令 `permission-status`、`inject`、`recover-ledger`、`pair-gatt-hil`、`concurrency-hil-agent`；
   - UTF-8 request 文件和 GATT secret 文件均要求 POSIX mode `0600`，读取后立即删除。
 - Produces:
@@ -4227,6 +4230,10 @@ struct CardputerPhase0Probe {
             try await PairGATTHILCommand.run(
                 options: parsePairs(Array(arguments.dropFirst()))
             )
+        case "concurrency-hil-agent":
+            try await ConcurrencyHILCommand.run(
+                arguments: Array(arguments.dropFirst())
+            )
         default:
             throw StableErrorCode.invalidRequest
         }
@@ -4337,6 +4344,20 @@ import Phase0GATT
 import Phase0Security
 
 private struct PairGATTHILResult: Encodable {
+    struct Firmware: Encodable {
+        let bootID: String
+        let appELFSHA256: String
+        let probeFirmwareSHA256: String
+        let runtimeMatch: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case bootID = "boot_id"
+            case appELFSHA256 = "app_elf_sha256"
+            case probeFirmwareSHA256 = "probe_firmware_sha256"
+            case runtimeMatch = "runtime_match"
+        }
+    }
+
     struct Bluetooth: Encodable {
         let corebluetoothNotifyCallbacks: Int
         let authenticatedFrames: Int
@@ -4400,6 +4421,7 @@ private struct PairGATTHILResult: Encodable {
         }
     }
 
+    let firmware: Firmware
     let bluetooth: Bluetooth
     let pairing: Pairing
     let lan: LAN
@@ -4418,11 +4440,19 @@ enum PairGATTHILCommand {
         let expectedDeviceID = try Data(
             strictHex: required("--device-id-hex", options)
         )
+        let expectedAppELFSHA256 = try Data(
+            strictHex: required("--app-elf-sha256", options)
+        )
+        let expectedFirmwareSHA256 = try Data(
+            strictHex: required("--probe-firmware-sha256", options)
+        )
         let secretURL = URL(
             fileURLWithPath: try required("--gatt-secret-file", options)
         )
         let tlsIdentityLabel = try required("--tls-identity-label", options)
         guard expectedDeviceID.count == 16,
+              expectedAppELFSHA256.count == 32,
+              expectedFirmwareSHA256.count == 32,
               FileManager.default.fileExists(atPath: secretURL.path),
               try secretURL.posixMode() == 0o600 else {
             throw StableErrorCode.permissionDenied
@@ -4455,6 +4485,8 @@ enum PairGATTHILCommand {
             config: BluetoothProbeConfig(
                 peripheralIdentifier: peripheralID,
                 expectedDeviceID: expectedDeviceID,
+                expectedAppELFSHA256: expectedAppELFSHA256,
+                expectedFirmwareImageSHA256: expectedFirmwareSHA256,
                 pairedDeviceID: "phase0-hil",
                 gattAuthKey: SymmetricKey(data: secret),
                 bindCoordinator: bind
@@ -4471,6 +4503,20 @@ enum PairGATTHILCommand {
             Data(SHA256.hash(data: bluetoothEvidence.gattDeviceID))
         )
         let result = PairGATTHILResult(
+            firmware: .init(
+                bootID: wssEvidence.bootID.uuidString.lowercased(),
+                appELFSHA256: hex(wssEvidence.appELFSHA256),
+                probeFirmwareSHA256: hex(wssEvidence.firmwareImageSHA256),
+                runtimeMatch:
+                    bluetoothEvidence.bootID == wssEvidence.bootID
+                    && wssEvidence.appELFSHA256 == expectedAppELFSHA256
+                    && wssEvidence.firmwareImageSHA256
+                        == expectedFirmwareSHA256
+                    && bluetoothEvidence.appELFSHA256
+                        == expectedAppELFSHA256
+                    && bluetoothEvidence.firmwareImageSHA256
+                        == expectedFirmwareSHA256
+            ),
             bluetooth: .init(
                 corebluetoothNotifyCallbacks: bluetoothEvidence.notifyCallbacks,
                 authenticatedFrames: bluetoothEvidence.authenticatedFrames,
@@ -4578,10 +4624,35 @@ private extension URL {
 12. CoreBluetoothProbeClient 读取受保护 identity 并启用 notify；
 13. IdentityBinder 要求恰好一个 HID device ID 匹配 GATT raw device ID；
 14. 等待至少一个 didUpdateValueFor 认证帧；
-15. 写入不含 SAS、密钥、正文和完整 identity 的结果 JSON。
+15. 从 WSS 和受保护 GATT identity 读取相同 `boot_id`、runtime app ELF SHA-256 与 running-partition SHA-256，并与命令行期望值逐字节比较；
+16. 写入不含 SAS、密钥、正文和完整 identity 的结果 JSON。
 ```
 
 实现若缺少 Task 3–5 中任一真实 API，`pair-gatt-hil` 必须退出非零并把该项标为 `blocked`；禁止以固定 true、sleep 后成功或直接调用 receiver 替代 CoreBluetooth callback。
+
+同一 Task 内创建 `ConcurrencyHILSession.swift` 与薄的 `ConcurrencyHILCommand.swift`。它们复用 `LANInterfacePolicy`、`WSSPairingProbe`、`CoreBluetoothProbeClient`、`HIDIdentityReader` 与 canonical GATT receiver，不实现第二套协议。命令行必须完整且拒绝未知/重复参数：
+
+```text
+cardputer-phase0-probe concurrency-hil-agent
+  --interface en0
+  --interface-address 192.168.1.10
+  --interface-netmask 255.255.255.0
+  --peripheral-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+  --device-id-hex 00112233445566778899aabbccddeeff
+  --gatt-secret-file build/phase0/concurrency/gatt-secret.bin
+  --tls-identity-label cardputer-phase0-wss
+  --run-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+  --boot-id bbbbbbbb-cccc-dddd-eeee-ffffffffffff
+  --app-elf-sha256 64-lowercase-hex
+  --probe-firmware-sha256 64-lowercase-hex
+  --duration-seconds 1800
+```
+
+GATT secret 必须为 mode `0600`、恰好 32 bytes，读取后立即删除；`duration-seconds` 小于 1800 时拒绝 gate run。首个 JSONL 是 `ready`，随后至少产生 `ble_identity`、`hid_observation`、`wss_auth`、`gatt_security`、每个 foundation replay vector 的 `gatt_replay_result`，并在整个运行期间每两秒或更短间隔产生一个 `heartbeat`。每行包含 `producer="macos_companion"`、kind、`run_id`、`boot_id`、`app_elf_sha256`、`firmware_image_sha256`、`device_id_sha256`、`producer_monotonic_ns` 和该 kind 的最小事实；原始 device ID 只在内存比较，绝不写 stdout。firmware runner 读取一整行后以自己的 `time.monotonic_ns()` 添加 `observed_at_ns`，再按 `companion-probe-event.schema.json` 校验并落盘。
+
+agent 必须用真实 `NWConnection` TLS metadata、CoreBluetooth delegate callback 与 IOHID 属性保持同一会话；禁止 timer-only 心跳冒充健康。心跳只有在 WSS authenticated、GATT connected、HID identity still present、interface fingerprint 未变且 runtime 两个 firmware digest 仍匹配时才把对应布尔值写为 true。接口地址/掩码变化、Peripheral 重连导致新 `boot_id`、固件 digest 变化、超过五秒无真实 callback 或任一 channel 断开时，先输出 `interface_changed` 或带 reason 的 `stopped`，再非零退出。正常到时输出唯一 `stopped` 并退出 0。
+
+`ConcurrencyHILSessionTests.swift` 使用 injectable clocks/transports 验证 heartbeat 最大间隔、事件顺序、digest/device mismatch、interface change、断线与 secret 删除；它只能测试编排，不得成为真机证据。
 
 - [ ] **Step 6: 运行无身份失败测试与 Swift release build**
 
@@ -4589,10 +4660,11 @@ Run:
 
 ```bash
 python3 scripts/test_build_signed_macos_probe.py
+swift test --package-path companion --filter ConcurrencyHILSessionTests
 swift build --package-path companion -c release --product cardputer-phase0-probe
 ```
 
-Expected: 第一条的无身份测试通过，真实签名测试在未配置身份时显示 1 skipped；Swift release build 成功。
+Expected: 第一条的无身份测试通过，真实签名测试在未配置身份时显示 1 skipped；并发 agent 的时钟/事件/清理测试全部通过；Swift release build 成功。
 
 设置真实身份后运行：
 
@@ -4606,7 +4678,10 @@ Expected: 两项测试都通过、0 skipped；A/B bundle 版本不同但 designa
 - [ ] **Step 7: 提交**
 
 ```bash
-git add companion/AppBundle companion/Sources/cardputer-phase0-probe scripts/build_signed_macos_probe.sh scripts/test_build_signed_macos_probe.py
+git add companion/AppBundle companion/Sources/cardputer-phase0-probe \
+  companion/Sources/Phase0Security/ConcurrencyHILSession.swift \
+  companion/Tests/Phase0SecurityTests/ConcurrencyHILSessionTests.swift \
+  scripts/build_signed_macos_probe.sh scripts/test_build_signed_macos_probe.py
 git commit -m "feat: package signed macos phase zero probe"
 ```
 
@@ -4625,6 +4700,7 @@ git commit -m "feat: package signed macos phase zero probe"
   - foundation 生成的 `build/phase0/toolchain.json`；
   - 已安装 TextEdit、Visual Studio Code、Google Chrome、Terminal 和 iTerm2；
   - 真实 Cardputer 固件探针、当前 HID bond、CoreBluetooth peripheral UUID；
+  - 与 firmware concurrency HIL 相同的 probe firmware binary，以及从该 binary/运行时验证得到的 app ELF SHA-256；
   - 用户确认的 LAN interface、address/netmask 和 Keychain 中 probe TLS identity；
   - mode `0600` 的 GATT secret input，runner 结束时删除。
 - Produces:
@@ -4642,6 +4718,7 @@ git commit -m "feat: package signed macos phase zero probe"
   - crash exit code 为 86，重启恢复为 `indeterminate`；
   - `didUpdateValueFor` 的认证 notify 至少 1 个；
   - HID/GATT 原始 device ID 唯一相同，证据只保存各自 SHA-256；
+  - WSS 与 GATT 报告的 running-partition SHA-256 和 app ELF SHA-256 与输入 probe binary/期望 digest 相同；
   - 双端 SAS 已物理确认、真实 TLS exporter 客户端签名有效、WSS/GATT bind challenge 完成；
   - replay 被拒绝且坏 MAC 没有推进 counter；
   - listener 与 mDNS 位于用户选择接口，remote 位于该接口本地子网。
@@ -4693,6 +4770,7 @@ class RunnerTests(unittest.TestCase):
             "restart_indeterminate": True,
             "ble_notify": True,
             "same_identity": True,
+            "firmware_runtime": True,
             "pairing": True,
             "selected_lan": True,
         }
@@ -4748,10 +4826,12 @@ Expected: ERROR，错误包含 `No such file or directory`，指向 `run_macos_h
     "schema_version",
     "run_id",
     "git_commit",
+    "git_tree_clean",
     "toolchain_manifest_sha256",
     "started_at",
     "completed_at",
     "host",
+    "firmware",
     "signing",
     "unicode_targets",
     "negative_cases",
@@ -4766,6 +4846,7 @@ Expected: ERROR，错误包含 `No such file or directory`，指向 `run_macos_h
     "schema_version": {"const": "1.0"},
     "run_id": {"type": "string", "format": "uuid"},
     "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "git_tree_clean": {"type": "boolean"},
     "toolchain_manifest_sha256": {"$ref": "#/$defs/sha256"},
     "started_at": {"type": "string", "format": "date-time"},
     "completed_at": {"type": "string", "format": "date-time"},
@@ -4778,6 +4859,22 @@ Expected: ERROR，错误包含 `No such file or directory`，指向 `run_macos_h
         "hardware": {"type": "string", "minLength": 1},
         "swift_version": {"type": "string", "minLength": 1},
         "probe_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "firmware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_id",
+        "app_elf_sha256",
+        "probe_firmware_sha256",
+        "runtime_match"
+      ],
+      "properties": {
+        "boot_id": {"type": "string", "format": "uuid"},
+        "app_elf_sha256": {"$ref": "#/$defs/sha256"},
+        "probe_firmware_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_match": {"type": "boolean"}
       }
     },
     "signing": {
@@ -4925,6 +5022,12 @@ Expected: ERROR，错误包含 `No such file or directory`，指向 `run_macos_h
               "accessibility_after_upgrade": {"const": true}
             }
           },
+          "firmware": {
+            "properties": {
+              "runtime_match": {"const": true}
+            }
+          },
+          "git_tree_clean": {"const": true},
           "unicode_targets": {
             "minItems": 5,
             "maxItems": 5,
@@ -5150,6 +5253,16 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def git_tree_clean() -> bool:
+    return subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout == ""
+
+
 def run_checked(arguments: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(arguments, check=True, text=True, **kwargs)
 
@@ -5275,6 +5388,7 @@ def write_blocked(
             cwd=ROOT,
             capture_output=True,
         ).stdout.strip(),
+        "git_tree_clean": git_tree_clean(),
         "toolchain_manifest_sha256": (
             sha256_file(args.toolchain_manifest)
             if args.toolchain_manifest.is_file()
@@ -5295,6 +5409,12 @@ def write_blocked(
                 or ["unavailable"]
             )[0],
             "probe_sha256": zero_hash,
+        },
+        "firmware": {
+            "boot_id": "00000000-0000-0000-0000-000000000000",
+            "app_elf_sha256": zero_hash,
+            "probe_firmware_sha256": zero_hash,
+            "runtime_match": False,
         },
         "signing": {
             "bundle_id": "lc.iam.cardputer.phase0probe",
@@ -5373,9 +5493,12 @@ def write_blocked(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--run-id", required=True)
     parser.add_argument("--bundle-a", type=Path, required=True)
     parser.add_argument("--bundle-b", type=Path, required=True)
     parser.add_argument("--toolchain-manifest", type=Path, required=True)
+    parser.add_argument("--probe-firmware-bin", type=Path, required=True)
+    parser.add_argument("--app-elf-sha256", required=True)
     parser.add_argument("--interface", required=True)
     parser.add_argument("--interface-address", required=True)
     parser.add_argument("--interface-netmask", required=True)
@@ -5387,13 +5510,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def run_hil(args: argparse.Namespace) -> int:
+    if args.output.parent.exists():
+        raise RuntimeError("macos HIL run directory already exists")
     started = now_iso()
-    run_id = str(uuid.uuid4())
+    run_id = str(uuid.UUID(args.run_id))
     blockers: list[str] = []
     if not args.toolchain_manifest.is_file():
         blockers.append("missing_toolchain_manifest")
+    if not git_tree_clean():
+        blockers.append("git_tree_not_clean")
+    if not args.probe_firmware_bin.is_file():
+        blockers.append("missing_probe_firmware_bin")
+    if (
+        len(args.app_elf_sha256) != 64
+        or any(character not in "0123456789abcdef"
+               for character in args.app_elf_sha256)
+    ):
+        blockers.append("invalid_app_elf_sha256")
     for app in (args.bundle_a, args.bundle_b):
         if not app.is_dir():
             blockers.append(f"missing_signed_bundle:{app}")
@@ -5577,6 +5711,10 @@ def main() -> int:
             args.peripheral_id,
             "--device-id-hex",
             args.device_id_hex,
+            "--app-elf-sha256",
+            args.app_elf_sha256,
+            "--probe-firmware-sha256",
+            sha256_file(args.probe_firmware_bin),
             "--gatt-secret-file",
             str(args.gatt_secret_file),
             "--tls-identity-label",
@@ -5656,6 +5794,7 @@ def main() -> int:
             ),
             "ble_notify": pair_result["bluetooth"]["corebluetooth_notify_callbacks"] >= 1,
             "same_identity": pair_result["bluetooth"]["same_physical_device"],
+            "firmware_runtime": pair_result["firmware"]["runtime_match"],
             "pairing": all(
                 (
                     pair_result["pairing"]["sas_confirmed_on_mac"],
@@ -5680,6 +5819,7 @@ def main() -> int:
                 cwd=ROOT,
                 capture_output=True,
             ).stdout.strip(),
+            "git_tree_clean": git_tree_clean(),
             "toolchain_manifest_sha256": sha256_file(
                 args.toolchain_manifest
             ),
@@ -5696,6 +5836,7 @@ def main() -> int:
                 ).stdout.splitlines()[0],
                 "probe_sha256": sha256_file(bundle_executable(installed)),
             },
+            "firmware": pair_result["firmware"],
             "signing": signing,
             "unicode_targets": targets,
             "negative_cases": negative,
@@ -5722,6 +5863,14 @@ def main() -> int:
         args.gatt_secret_file.unlink(missing_ok=True)
         print(f"{status}: {args.output}")
         return 0 if status == "pass" else 1
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        return run_hil(args)
+    finally:
+        args.gatt_secret_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
@@ -5807,10 +5956,14 @@ Run:
 ```bash
 scripts/build_signed_macos_probe.sh a build/phase0/macos/a
 scripts/build_signed_macos_probe.sh b build/phase0/macos/b
+export MACOS_HIL_RUN_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 uv run python scripts/run_macos_hil.py \
+  --run-id "$MACOS_HIL_RUN_ID" \
   --bundle-a 'build/phase0/macos/a/Cardputer Phase0 Probe.app' \
   --bundle-b 'build/phase0/macos/b/Cardputer Phase0 Probe.app' \
   --toolchain-manifest build/phase0/toolchain.json \
+  --probe-firmware-bin firmware/build/cardputer_codex_phase0.bin \
+  --app-elf-sha256 "$PROBE_APP_ELF_SHA256" \
   --interface en0 \
   --interface-address 192.168.1.10 \
   --interface-netmask 255.255.255.0 \
@@ -5818,12 +5971,12 @@ uv run python scripts/run_macos_hil.py \
   --device-id-hex 00112233445566778899aabbccddeeff \
   --gatt-secret-file build/phase0/macos/gatt-secret.bin \
   --tls-identity-label cardputer-phase0-wss \
-  --output build/phase0/macos-hil/run/raw.json
+  --output "build/phase0/macos-hil/$MACOS_HIL_RUN_ID/raw.json"
 ```
 
-Expected: 最后一行是 `pass: build/phase0/macos-hil/run/raw.json`，证据通过 schema，五个 target 全部精确匹配，TCC B 未再次要求授权，真实 notify count 至少为 1。
+Expected: 最后一行是 `pass: build/phase0/macos-hil/<run-id>/raw.json`，证据中的 `run_id` 与目录名相同并通过 schema，五个 target 全部精确匹配，TCC B 未再次要求授权，真实 notify count 至少为 1，且 Mac 观察到的 running image/app ELF digests 与 firmware concurrency probe 完全相同。
 
-命令中的 interface address、peripheral UUID、raw device ID 和 Keychain label 必须使用当前 HIL 会话由探针显示或系统只读枚举得到的实际值。示例值不可用于验收；任何实际值尚未取得时 runner 必须在写证据前返回 `blocked`。
+`MACOS_HIL_RUN_ID` 必须在命令前设为本次新生成的 UUID，runner 拒绝复用已经存在的输出目录。命令中的 interface address、peripheral UUID、raw device ID、app ELF digest 和 Keychain label 必须使用当前 HIL 会话由探针显示或系统只读枚举得到的实际值。示例值不可用于验收；任何实际值尚未取得时 runner 必须在写证据前返回 `blocked`。
 
 - [ ] **Step 9: 记录失败或通过结论并只提交脱敏摘要**
 
@@ -5846,6 +5999,7 @@ git commit -m "docs: record macos unicode and ble hil evidence"
 - [ ] 焦点切换为 `partial`，Secure Input 为 `failed/secure_input_active`，crash 恢复为 `indeterminate`。
 - [ ] GATT 坏 MAC 未推进 counter，replay 被拒绝，真实 CoreBluetooth notify count 至少为 1。
 - [ ] IOHID serial 的 base32 结果与受保护 GATT raw device ID 唯一匹配。
+- [ ] WSS/GATT runtime app ELF 与 running-partition digests 同时匹配 firmware concurrency probe。
 - [ ] 双端 SAS、真实 TLS exporter 签名和 WSS/GATT bind challenge 全部通过。
 - [ ] listener 与 mDNS 只位于用户选择的本地接口，接口变化会停止服务。
 - [ ] evidence JSON 通过 schema，且不包含正文、完整 AX value、SAS、密钥或完整 device ID。

@@ -26,7 +26,7 @@
 - Gate 5 阈值是：steady worst-case internal free heap `>=65536` bytes、largest internal free block `>=32768` bytes；单个 TLS handshake 加 event burst 时 internal free heap `>=40960` bytes、allocation failure 为 0；每个任务剩余 stack `>=max(configured_bytes*20%, 1024)`。
 - Gate 5 transient event burst 固定为同一 5 秒内 100 个合法 16KiB WSS frame、一个流式 128KiB import、一个 20-session page 和一个总计 64KiB/4-fragment approval detail；不得用较小或顺序执行的负载替代。
 - HID latency 从去抖完成的稳定状态时间戳计算到 HID report 成功进入真实 BLE 发送队列；至少 10,000 个样本，`generated == queued`、`queue_failures == 0`、nearest-rank p95 `<=20000µs`，且最后必须观察到完整 `release all`。
-- 真机证据必须来自一个 `run_id`、一个 `boot_id`、一个 runtime `app_elf_sha256`、一个 `device_id` 和一段连续 30 分钟 runner 时间窗。任何重启、重刷、digest 改变、时间窗不重叠或原始日志缺失都使整份报告无效。
+- 真机证据必须来自一个 `run_id`、一个 `boot_id`、一个 runtime `app_elf_sha256`、一个 running-partition `firmware_image_sha256`、一个 `device_id_sha256` 和一段连续 30 分钟 runner 时间窗。任何重启、重刷、digest 改变、时间窗不重叠或原始日志缺失都使整份报告无效。
 - 探针是 `PHASE 0 / NOT FOR RELEASE` 开发固件，不烧写 Secure Boot、Flash Encryption 或其他不可逆 eFuse。
 - 首次刷写目标设备前必须完成 8MiB 全 Flash 备份和 SHA-256 记录；串口不唯一、容量不符或设备 ID 与操作者确认不一致时停止。
 - 缺少 Cardputer、Mac Companion probe、17 个可路由测试源地址、物理配对确认或完整 30 分钟时间窗时，结果必须是 `BLOCKED`，不得用 mock、宿主机测试或较短 smoke run 替代。
@@ -378,7 +378,7 @@ git commit -m "chore: pin firmware concurrency probe target"
 
 **Interfaces:**
 
-- Consumes: runtime `boot_id`, `app_elf_sha256`, persistent `device_id`, runner-generated `run_id`, and individual service transitions.
+- Consumes: runtime `boot_id`, `app_elf_sha256`, running-partition `firmware_image_sha256`, persistent `device_id`, runner-generated `run_id`, and individual service transitions.
 - Produces: `ProbeIdentity`, `ServiceSnapshot`, `ProbeController::snapshot()` and a report schema that forbids cross-run evidence.
 
 - [ ] **Step 1: Write the failing service-state test.**
@@ -426,7 +426,8 @@ def event(producer: str, run_id: str, boot_id: str, digest: str) -> dict:
         "run_id": run_id,
         "boot_id": boot_id,
         "app_elf_sha256": digest,
-        "device_id": "11" * 16,
+        "firmware_image_sha256": "33" * 32,
+        "device_id_sha256": "11" * 32,
         "observed_at_ns": 100,
     }
 
@@ -485,6 +486,7 @@ struct ProbeIdentity {
   std::array<uint8_t, 16> run_id;
   std::array<uint8_t, 16> boot_id;
   std::array<uint8_t, 32> app_elf_sha256;
+  std::array<uint8_t, 32> firmware_image_sha256;
   std::array<uint8_t, 16> device_id;
 };
 
@@ -527,7 +529,7 @@ class ProbeController {
 };
 ```
 
-`set()` changes only the addressed boolean. Wi-Fi or WSS failure must not call the BLE shutdown path. The runtime creates `boot_id` from `esp_fill_random()` on each boot, reads the application ELF SHA from `esp_app_get_description()->app_elf_sha256`, reads the persistent `device_id` from encrypted-ready NVS storage, and accepts `run_id` once from the serial HIL control channel.
+`set()` changes only the addressed boolean. Wi-Fi or WSS failure must not call the BLE shutdown path. The runtime creates `boot_id` from `esp_fill_random()` on each boot, reads the application ELF SHA from `esp_app_get_description()->app_elf_sha256`, validates the runner-supplied flashed-image byte length against the public ESP image parser and streams exactly those logical running-partition bytes through SHA-256 once, reads the persistent `device_id` from encrypted-ready NVS storage, and accepts `run_id` once from the serial HIL control channel. The WSS signed identity and protected GATT identity/control response carry the same boot/app/image digests so the Mac can bind its Gate 6 run to the exact probe firmware.
 
 - [ ] **Step 5: Implement fail-closed report identity validation.**
 
@@ -544,7 +546,13 @@ def same_run_errors(events: list[dict]) -> list[str]:
         errors.append(
             "gatt_replay_result must be produced by macos_companion"
         )
-    for key in ("run_id", "boot_id", "app_elf_sha256", "device_id"):
+    for key in (
+        "run_id",
+        "boot_id",
+        "app_elf_sha256",
+        "firmware_image_sha256",
+        "device_id_sha256",
+    ):
         values = {item.get(key) for item in events}
         if len(values) != 1:
             errors.append(f"{key} differs across evidence")
@@ -568,9 +576,9 @@ def forbidden_verdict_fields(value: object, path: str = "") -> list[str]:
     return sorted(found)
 ```
 
-`firmware-concurrency-report.schema.json` uses JSON Schema 2020-12, `additionalProperties: false`, explicitly rejects `status`, `reported_status` and `overall_status`, and requires top-level `schema_version`, `capture_complete`, `run`, `hardware`, `services`, `ble_identity`, `https`, `web_security`, `wss`, `resources`, `hid`, `artifacts`, `blockers` and `consistency_errors`. `run` requires the four identity fields plus `git_commit`, `toolchain_manifest_sha256`, `firmware_image_sha256`, `started_at`, `ended_at`, `duration_seconds` and `continuous_capture=true`. Foundation `tools/phase0/adapters.py` consumes these measurements and the finalizer independently computes every gate verdict.
+`firmware-concurrency-report.schema.json` uses JSON Schema 2020-12, `additionalProperties: false`, explicitly rejects `status`, `reported_status` and `overall_status`, and requires top-level `schema_version`, `capture_complete`, `run`, `hardware`, `services`, `ble_identity`, `https`, `web_security`, `wss`, `resources`, `hid`, `artifacts`, `blockers` and `consistency_errors`. `run` requires the five evidence identity fields (`run_id`, `boot_id`, `app_elf_sha256`, `firmware_image_sha256`, `device_id_sha256`) plus `git_commit`, `git_tree_clean`, `toolchain_manifest_sha256`, `started_at`, `ended_at`, `duration_seconds` and `continuous_capture=true`; complete gate evidence requires `git_tree_clean=true`. Foundation `tools/phase0/adapters.py` consumes these measurements and the finalizer independently computes every gate verdict.
 
-`companion-probe-event.schema.json` allows only `producer="macos_companion"` and kinds `ble_identity`, `hid_observation`, `gatt_security`, `gatt_replay_result`, `wss_auth`, and `heartbeat`. Every event carries the same identity quartet and runner receipt timestamp.
+`companion-probe-event.schema.json` allows only `producer="macos_companion"` and kinds `ready`, `ble_identity`, `hid_observation`, `gatt_security`, `gatt_replay_result`, `wss_auth`, `heartbeat`, `interface_changed`, and `stopped`. Every event carries the same `run_id`, `boot_id`, `app_elf_sha256`, `firmware_image_sha256` and device-ID digest plus `producer_monotonic_ns`; the Python runner adds its own `observed_at_ns` immediately after reading each complete stdout JSONL line and only then performs schema validation. No event may carry raw device ID, SAS, TLS exporter, GATT secret or text payload.
 
 - [ ] **Step 6: Verify host and schema tests.**
 
@@ -1917,7 +1925,7 @@ The transient controller opens one exact 5,000,000µs measurement window and res
 
 - [ ] **Step 6: Emit fixed-size JSONL evidence without leaking requests.**
 
-The metrics task formats into one 4096-byte static buffer and writes one serial line per sample. Each line includes identity quartet, scenario, occupancy, heap, largest block, allocations, queue counters, HID totals/histogram summary and all stack metrics. It excludes source addresses, pairing code, Cookie, CSRF, request bodies, exporter, signatures and text payloads. A truncated line increments `metrics_encode_failure` and makes the run fail.
+The metrics task formats into one 4096-byte static buffer and writes one serial line per sample. Each line includes the evidence identity quintet, scenario, occupancy, heap, largest block, allocations, queue counters, HID totals/histogram summary and all stack metrics. It excludes raw device ID, source addresses, pairing code, Cookie, CSRF, request bodies, exporter, signatures and text payloads. A truncated line increments `metrics_encode_failure` and makes the run fail.
 
 - [ ] **Step 7: Verify host metrics, include boundaries and target build.**
 
@@ -1950,7 +1958,7 @@ git commit -m "test: instrument firmware concurrency limits"
 
 **Interfaces:**
 
-- Consumes: unique Cardputer USB device, built firmware binary, validated hardware manifest, 17 assigned/routable LAN source addresses, interactive hidden Web pairing code, physical device confirmation, and `companion/.build/release/cardputer-phase0-probe`.
+- Consumes: unique Cardputer USB device, built firmware binary, validated hardware manifest, 17 assigned/routable LAN source addresses, interactive hidden Web pairing code, physical device confirmation, `companion/.build/release/cardputer-phase0-probe`, selected Companion interface/address/netmask, CoreBluetooth peripheral UUID, expected raw device ID, mode-`0600` GATT secret file and Keychain TLS identity label.
 - Produces: verdict-free `build/phase0/firmware-concurrency/report.json`, hashed raw artifacts and a redacted Markdown measurement summary for the three foundation consumers listed above.
 
 - [ ] **Step 1: Write failing same-window and measurement-validation tests.**
@@ -1972,7 +1980,8 @@ def test_cross_boot_or_nonoverlap_is_rejected() -> None:
             run_id="run-a",
             boot_id="boot-a",
             app_elf_sha256="22" * 32,
-            device_id="11" * 16,
+            firmware_image_sha256="33" * 32,
+            device_id_sha256="11" * 32,
             first_ns=0,
             last_ns=120_000_000_000,
         ),
@@ -1981,7 +1990,8 @@ def test_cross_boot_or_nonoverlap_is_rejected() -> None:
             run_id="run-a",
             boot_id="boot-b",
             app_elf_sha256="22" * 32,
-            device_id="11" * 16,
+            firmware_image_sha256="33" * 32,
+            device_id_sha256="11" * 32,
             first_ns=10_000_000_000,
             last_ns=110_000_000_000,
         ),
@@ -2028,6 +2038,13 @@ run_concurrency_hil.py
   --firmware-bin firmware/build/cardputer_codex_phase0.bin
   --hardware-manifest build/phase0/hardware-manifest.json
   --companion-probe companion/.build/release/cardputer-phase0-probe
+  --companion-interface en0
+  --companion-address 192.168.1.10
+  --companion-netmask 255.255.255.0
+  --companion-peripheral-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+  --companion-device-id-hex 00112233445566778899aabbccddeeff
+  --companion-gatt-secret-file build/phase0/concurrency/gatt-secret.bin
+  --companion-tls-identity-label cardputer-phase0-wss
   --attacker-interface auto
   --duration-seconds 1800
   --output build/phase0/firmware-concurrency
@@ -2042,13 +2059,15 @@ Before flashing it must:
 5. Verify the manifest, IDF lock, firmware image SHA-256 and embedded application ELF SHA.
 6. Refuse a duration below 1800 seconds for a gate run.
 7. Enumerate assigned addresses on the selected LAN interface and require 17 distinct routable source addresses; it never adds or removes interface aliases.
-8. Verify the Companion probe is executable and emits schema-valid `heartbeat`.
+8. Verify the Companion probe is executable and advertises the exact `concurrency-hil-agent` option set. After the one flash/boot identity is captured, spawn that subcommand with the runner-owned `run_id`, observed `boot_id`, parsed app ELF SHA-256, flashed image SHA-256 and all explicit Companion parameters. Read stdout as one JSON object per line, add `observed_at_ns=time.monotonic_ns()` on receipt, validate against `companion-probe-event.schema.json`, and require `ready` followed by a healthy `heartbeat` within five seconds. Stderr is redacted diagnostics only and never supplies measurements.
+
+The runner owns the child lifecycle: it never invokes `pair-gatt-hil`, never guesses interface/peripheral values, and never merges a prior agent output. It terminates the run if the agent exits early, produces malformed/non-canonical JSONL, repeats `ready`/`stopped`, omits a heartbeat for over five seconds or reports an identity/digest mismatch. On normal completion it waits for the agent's unique `stopped` event and exit 0. In a `finally` block it terminates the child if needed and unlinks the GATT secret input on success, failure, blocker, exception or interrupt; the child also deletes it immediately after reading.
 
 The pairing code is read through `getpass.getpass()` and passed directly over TLS. It is never placed in argv, environment, files or logs. The script pauses for physical window start and physical confirmation; non-interactive execution appends a blocker and leaves `capture_complete=false`.
 
 - [ ] **Step 4: Enforce one firmware, one boot, one run, and one receipt clock.**
 
-After flashing once, the runner opens one serial capture and must not reset or reflash until completion. It generates `run_id`, sends it to firmware, and attaches local `time.monotonic_ns()` receipt times to serial, attacker and Companion records.
+After flashing once, the runner opens one serial capture and must not reset or reflash until completion. It generates `run_id`, parses and sends the exact flashed image byte length to firmware, and attaches local `time.monotonic_ns()` receipt times to serial, attacker and Companion records. Firmware must return a running-partition digest equal to the runner's SHA-256 of those exact flashed bytes before the Companion agent is started.
 
 Use this validator core:
 
@@ -2062,7 +2081,8 @@ class EvidenceClock:
     run_id: str
     boot_id: str
     app_elf_sha256: str
-    device_id: str
+    firmware_image_sha256: str
+    device_id_sha256: str
     first_ns: int
     last_ns: int
 
@@ -2071,7 +2091,13 @@ def validate_continuous_window(
     records: list[EvidenceClock],
 ) -> list[str]:
     errors: list[str] = []
-    for key in ("run_id", "boot_id", "app_elf_sha256", "device_id"):
+    for key in (
+        "run_id",
+        "boot_id",
+        "app_elf_sha256",
+        "firmware_image_sha256",
+        "device_id_sha256",
+    ):
         if len({getattr(record, key) for record in records}) != 1:
             errors.append(f"{key} differs across evidence")
     overlap_start = max(record.first_ns for record in records)
@@ -2095,7 +2121,7 @@ The schedule totals exactly 1800 seconds:
 | 900–1679 | attack | unauthenticated TLS/HTTP/WebSocket/pairing attack plus 10,000 post-debounce HID events |
 | 1680–1799 | recovery | five services healthy, four test sessions closed, final `release all` and final metrics |
 
-At least one continuous 60-second interval must show all five services, `https_established=4`, `https_pending_handshakes=1`, one Mac heartbeat and unchanged identity quartet. A successful fifth handshake cannot become an established fifth session.
+At least one continuous 60-second interval must show all five services, `https_established=4`, `https_pending_handshakes=1`, one Mac heartbeat and unchanged evidence identity quintet. A successful fifth handshake cannot become an established fifth session.
 
 - [ ] **Step 6: Execute the complete real-Web and transport attack matrix.**
 
@@ -2188,6 +2214,13 @@ uv run python scripts/phase0/run_concurrency_hil.py \
   --firmware-bin firmware/build/cardputer_codex_phase0.bin \
   --hardware-manifest build/phase0/hardware-manifest.json \
   --companion-probe companion/.build/release/cardputer-phase0-probe \
+  --companion-interface "$COMPANION_INTERFACE" \
+  --companion-address "$COMPANION_ADDRESS" \
+  --companion-netmask "$COMPANION_NETMASK" \
+  --companion-peripheral-id "$COMPANION_PERIPHERAL_ID" \
+  --companion-device-id-hex "$COMPANION_DEVICE_ID_HEX" \
+  --companion-gatt-secret-file "$COMPANION_GATT_SECRET_FILE" \
+  --companion-tls-identity-label "$COMPANION_TLS_IDENTITY_LABEL" \
   --attacker-interface auto \
   --duration-seconds 1800 \
   --output build/phase0/firmware-concurrency
