@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-全部设计章节已经确认，正式设计规格等待用户书面复核，尚未进入实施计划或代码实现阶段。
+全部设计章节和正式设计规格已经书面通过。Phase 0 可行性实施计划已经编制，尚未开始固件、Companion 或 Web 探针实现。
 
 ## 硬性要求
 
@@ -23,5 +23,10 @@
 详细确认事项见：
 
 - [正式设计规格](docs/superpowers/specs/2026-07-24-cardputer-codex-companion-design.md)
+- [Phase 0 可行性实施计划](docs/superpowers/plans/2026-07-24-cardputer-codex-companion-phase0-feasibility.md)
+  - [基础工具链、Codex 契约与证据](docs/superpowers/plans/2026-07-24-phase0-foundation-codex-evidence.md)
+  - [固件并发与资源门槛](docs/superpowers/plans/2026-07-24-phase0-firmware-concurrency.md)
+  - [macOS Unicode、BLE 与配对安全](docs/superpowers/plans/2026-07-24-phase0-macos-unicode-ble.md)
+  - [Web、Flash 与发布安全](docs/superpowers/plans/2026-07-24-phase0-web-flash-release-security.md)
 - [确认决策快照](docs/2026-07-24-cardputer-codex-companion_CONFIRMED_DECISIONS.md)
 - [项目进度](docs/2026-07-24-cardputer-codex-companion_PROGRESS.md)
