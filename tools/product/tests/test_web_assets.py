@@ -57,6 +57,18 @@ def test_web_ui_uses_chinese_action_labels_and_key_modal() -> None:
     assert "Alt+V" in html
 
 
+def test_key_editor_saves_and_publishes_with_inline_errors() -> None:
+    html = Path("web/src/index.html").read_text()
+    script = Path("web/src/app.js").read_text()
+
+    assert 'id="key-save-error"' in html
+    assert ">保存并发布</button>" in html
+    assert "function readEditorAction()" in script
+    assert "async function applyEditor(event)" in script
+    assert "await publishProfile(false)" in script
+    assert '$("key-save-error").textContent=error.message' in script
+
+
 def test_generated_asset_header_is_current() -> None:
     import subprocess
 
