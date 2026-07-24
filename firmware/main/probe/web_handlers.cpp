@@ -6,6 +6,7 @@
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -175,9 +176,96 @@ esp_err_t send_json(httpd_req_t* request, uint16_t status_code,
   return httpd_resp_send(request, body.data(), body.size());
 }
 
+}  // namespace
+
+void WebHandlerContext::note_session_item() {
+  if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
+    session_item_count_.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void WebHandlerContext::note_approval_fragment(uint16_t fragment_size) {
+  if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
+    approval_fragment_count_.fetch_add(1, std::memory_order_relaxed);
+    approval_bytes_.fetch_add(fragment_size, std::memory_order_relaxed);
+  }
+}
+
+void WebHandlerContext::note_import_bytes(uint32_t bytes) {
+  if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
+    import_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+  }
+}
+
+void WebHandlerContext::note_wss_frame(uint32_t frame_length) {
+  if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
+    wss_frame_count_.fetch_add(1, std::memory_order_relaxed);
+    wss_bytes_.fetch_add(frame_length, std::memory_order_relaxed);
+  }
+}
+
+void WebHandlerContext::begin_burst_window(uint64_t now_us) {
+  burst_window_start_us_.store(0, std::memory_order_release);
+  wss_frame_count_.store(0, std::memory_order_relaxed);
+  wss_bytes_.store(0, std::memory_order_relaxed);
+  import_bytes_.store(0, std::memory_order_relaxed);
+  session_item_count_.store(0, std::memory_order_relaxed);
+  approval_fragment_count_.store(0, std::memory_order_relaxed);
+  approval_bytes_.store(0, std::memory_order_relaxed);
+  burst_window_end_us_.store(now_us + kTransientBurstWindowUs,
+                             std::memory_order_relaxed);
+  burst_window_start_us_.store(now_us, std::memory_order_release);
+}
+
+void WebHandlerContext::reset_burst_counters() {
+  burst_window_start_us_.store(0, std::memory_order_release);
+  wss_frame_count_.store(0, std::memory_order_relaxed);
+  wss_bytes_.store(0, std::memory_order_relaxed);
+  import_bytes_.store(0, std::memory_order_relaxed);
+  session_item_count_.store(0, std::memory_order_relaxed);
+  approval_fragment_count_.store(0, std::memory_order_relaxed);
+  approval_bytes_.store(0, std::memory_order_relaxed);
+  burst_window_end_us_.store(0, std::memory_order_relaxed);
+}
+
+bool WebHandlerContext::burst_window_accepts(uint64_t observed_at_us) const {
+  const uint64_t start =
+      burst_window_start_us_.load(std::memory_order_acquire);
+  const uint64_t end =
+      burst_window_end_us_.load(std::memory_order_relaxed);
+  return start != 0 && observed_at_us >= start && observed_at_us < end;
+}
+
+BurstMetrics WebHandlerContext::burst_metrics(uint64_t observed_at_us) const {
+  const uint64_t start =
+      burst_window_start_us_.load(std::memory_order_acquire);
+  uint64_t elapsed_us = 0;
+  if (start != 0 && observed_at_us >= start) {
+    elapsed_us =
+        std::min(observed_at_us - start, kTransientBurstWindowUs);
+  }
+  return BurstMetrics{
+      .window_us = elapsed_us,
+      .wss_frames = wss_frame_count_.load(std::memory_order_relaxed),
+      .wss_bytes = wss_bytes_.load(std::memory_order_relaxed),
+      .import_bytes = import_bytes_.load(std::memory_order_relaxed),
+      .session_items = static_cast<uint16_t>(std::min<uint32_t>(
+          session_item_count_.load(std::memory_order_relaxed),
+          std::numeric_limits<uint16_t>::max())),
+      .approval_fragments = static_cast<uint16_t>(std::min<uint32_t>(
+          approval_fragment_count_.load(std::memory_order_relaxed),
+          std::numeric_limits<uint16_t>::max())),
+      .approval_bytes = approval_bytes_.load(std::memory_order_relaxed),
+  };
+}
+
+namespace {
+
 class HttpdPairingAsyncBackend final : public PairingAsyncBackend {
  public:
-  explicit HttpdPairingAsyncBackend(QueueHandle_t queue) : queue_(queue) {}
+  explicit HttpdPairingAsyncBackend(QueueHandle_t queue,
+                                   std::atomic<uint32_t>* overflow_count)
+      : queue_(queue), overflow_count_(overflow_count) {}
 
   bool begin(void* request, void** async_request) override {
     httpd_req_t* copy = nullptr;
@@ -191,7 +279,13 @@ class HttpdPairingAsyncBackend final : public PairingAsyncBackend {
 
   bool enqueue(void* async_request) override {
     auto* request = static_cast<httpd_req_t*>(async_request);
-    return xQueueSend(queue_, &request, 0) == pdTRUE;
+    if (xQueueSend(queue_, &request, 0) == pdTRUE) {
+      return true;
+    }
+    if (overflow_count_ != nullptr) {
+      overflow_count_->fetch_add(1, std::memory_order_relaxed);
+    }
+    return false;
   }
 
   bool send_unavailable(void* async_request) override {
@@ -206,6 +300,7 @@ class HttpdPairingAsyncBackend final : public PairingAsyncBackend {
 
  private:
   QueueHandle_t queue_;
+  std::atomic<uint32_t>* overflow_count_;
 };
 
 esp_err_t send_reject(httpd_req_t* request, WebDecision decision) {
@@ -396,6 +491,7 @@ esp_err_t pairing_submit_handler(httpd_req_t* request) {
 }
 
 esp_err_t session_handler(httpd_req_t* request) {
+  WebHandlerContext* current = context(request);
   WebDecision decision{};
   if (!authorize(request, decision)) {
     return send_reject(request, decision);
@@ -410,12 +506,14 @@ esp_err_t session_handler(httpd_req_t* request) {
         {.reason = WebReject::header_too_large, .http_status_code = 413});
   }
   const std::optional<std::string> csrf_token =
-      context(request)->issue_csrf_token(cookie_token(cookie), now_ms());
+      current->issue_csrf_token(cookie_token(cookie), now_ms());
   if (!csrf_token.has_value()) {
     return send_reject(
         request,
         {.reason = WebReject::unauthenticated, .http_status_code = 401});
   }
+
+  current->note_session_item();
 
   std::array<char, 128> response{};
   const int length =
@@ -461,6 +559,12 @@ esp_err_t import_handler(httpd_req_t* request) {
     return send_reject(
         request, {.reason = reason, .http_status_code = 413});
   }
+
+  if (context(request) != nullptr &&
+      request->content_len > 0 && request->content_len <= UINT32_MAX) {
+    context(request)->note_import_bytes(
+        static_cast<uint32_t>(request->content_len));
+  }
   return send_json(request, 200, "{\"imported\":true}");
 }
 
@@ -492,7 +596,14 @@ esp_err_t websocket_handler(httpd_req_t* request) {
 
   static std::array<uint8_t, kWebSocketFrameLimit> frame_buffer{};
   frame.payload = frame_buffer.data();
-  return httpd_ws_recv_frame(request, &frame, frame_buffer.size());
+  const esp_err_t received = httpd_ws_recv_frame(request, &frame, frame_buffer.size());
+  if (received == ESP_OK && frame.len <= kWebSocketFrameLimit) {
+    if (context(request) != nullptr) {
+      context(request)->note_wss_frame(
+          static_cast<uint32_t>(frame.len));
+    }
+  }
+  return received;
 }
 
 }  // namespace
@@ -506,14 +617,14 @@ WebHandlerContext::WebHandlerContext(std::string expected_host,
       worker_stopped_signal_(
           xSemaphoreCreateBinaryStatic(&worker_stopped_signal_storage_)),
       request_queue_(xQueueCreateStatic(
-          1, sizeof(httpd_req_t*), request_queue_buffer_.data(),
+          kNetworkQueueDepth, sizeof(httpd_req_t*), request_queue_buffer_.data(),
           &request_queue_storage_)) {
   assert(mutex_ != nullptr);
   assert(resolution_signal_ != nullptr);
   assert(worker_stopped_signal_ != nullptr);
   assert(request_queue_ != nullptr);
   pairing_worker_ = xTaskCreateStatic(
-      pairing_worker_entry, "web-pairing", kPairingWorkerStackBytes, this,
+      pairing_worker_entry, "web-pairing", kWebPairingTaskStackBytes, this,
       tskIDLE_PRIORITY + 1, pairing_worker_stack_.data(),
       &pairing_worker_storage_);
   assert(pairing_worker_ != nullptr);
@@ -626,7 +737,8 @@ esp_err_t WebHandlerContext::defer_pairing_response(httpd_req_t* request) {
                            "{\"error\":\"pairing_worker\"}");
   }
 
-  HttpdPairingAsyncBackend backend(request_queue_);
+  HttpdPairingAsyncBackend backend(request_queue_,
+                                  &network_queue_overflow_count_);
   const PairingDeferResult result = defer_pairing_request(request, backend);
   if (result == PairingDeferResult::deferred) {
     return ESP_OK;
@@ -648,6 +760,10 @@ bool WebHandlerContext::has_admin_session() {
   const bool result = guard_.has_admin_session();
   unlock();
   return result;
+}
+
+uint32_t WebHandlerContext::network_queue_overflow_count() const {
+  return network_queue_overflow_count_.load(std::memory_order_relaxed);
 }
 
 PairingResolutionResult WebHandlerContext::take_pairing_resolution() {

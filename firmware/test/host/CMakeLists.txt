@@ -84,6 +84,7 @@ add_executable(test_keyboard_probe
   test_keyboard_probe.cpp
   ../../main/probe/keyboard_probe.cpp
   ../../main/probe/hid_engine.cpp
+  ../../main/probe/resource_metrics.cpp
 )
 target_include_directories(test_keyboard_probe
   PRIVATE
@@ -171,3 +172,13 @@ target_include_directories(test_wss_contract
 target_link_libraries(test_wss_contract PRIVATE OpenSSL::Crypto)
 add_dependencies(test_wss_contract generate_protocol_vectors)
 add_test(NAME wss_contract COMMAND test_wss_contract)
+
+add_executable(test_resource_metrics
+  test_resource_metrics.cpp
+  ../../main/probe/resource_metrics.cpp
+)
+target_include_directories(test_resource_metrics
+  PRIVATE
+    ../../main
+)
+add_test(NAME resource_metrics COMMAND test_resource_metrics)

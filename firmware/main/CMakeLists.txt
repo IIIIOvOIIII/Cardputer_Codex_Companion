@@ -47,6 +47,7 @@ idf_component_register(
         "probe/keyboard_probe.cpp"
         "probe/pre_tls_limiter.cpp"
         "probe/protocol_codec.cpp"
+        "probe/resource_metrics.cpp"
         "probe/web_async_dispatch.cpp"
         "probe/web_guard.cpp"
         "probe/web_handlers.cpp"
