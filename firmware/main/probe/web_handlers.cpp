@@ -15,13 +15,13 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
+#include "probe/web_route_manifest.hpp"
 
 namespace {
 
 constexpr size_t kPairingBodyLimit = 512;
 constexpr size_t kStreamChunkBytes = 1024;
 constexpr size_t kWebSocketFrameLimit = 16384;
-constexpr uint64_t kPairingResponseWaitMs = 300000;
 
 uint64_t now_ms() {
   return static_cast<uint64_t>(esp_timer_get_time()) / 1000;
@@ -184,6 +184,43 @@ esp_err_t send_reject(httpd_req_t* request, WebDecision decision) {
                    std::string_view(body.data(), static_cast<size_t>(length)));
 }
 
+esp_err_t send_pairing_resolution(
+    httpd_req_t* request, PairingResolutionResult resolution) {
+  if (resolution.resolution == PairingResolution::accepted &&
+      resolution.credential.has_value()) {
+    const AdminCredential& credential = *resolution.credential;
+    std::array<char, 160> cookie{};
+    const int cookie_length =
+        std::snprintf(cookie.data(), cookie.size(),
+                      "cp_admin=%s; Secure; HttpOnly; SameSite=Strict; Path=/",
+                      credential.cookie_token.c_str());
+    if (cookie_length < 0 ||
+        static_cast<size_t>(cookie_length) >= cookie.size() ||
+        httpd_resp_set_hdr(request, "Set-Cookie", cookie.data()) != ESP_OK) {
+      return ESP_FAIL;
+    }
+
+    std::array<char, 96> response{};
+    const int length =
+        std::snprintf(response.data(), response.size(),
+                      "{\"csrf_token\":\"%s\"}",
+                      credential.csrf_token.c_str());
+    if (length < 0 || static_cast<size_t>(length) >= response.size()) {
+      return ESP_FAIL;
+    }
+    return send_json(
+        request, 200,
+        std::string_view(response.data(), static_cast<size_t>(length)));
+  }
+  if (resolution.resolution == PairingResolution::rejected) {
+    return send_json(request, 403, "{\"error\":\"physical_rejected\"}");
+  }
+  if (resolution.resolution == PairingResolution::capacity) {
+    return send_json(request, 503, "{\"error\":\"session_capacity\"}");
+  }
+  return send_json(request, 408, "{\"error\":\"physical_timeout\"}");
+}
+
 bool authorize(httpd_req_t* request, WebDecision& decision) {
   WebHandlerContext* current = context(request);
   if (current == nullptr || request->content_len > UINT32_MAX) {
@@ -319,39 +356,7 @@ esp_err_t pairing_submit_handler(httpd_req_t* request) {
   if (result != PairingResult::awaiting_physical_confirmation) {
     return send_json(request, 403, "{\"error\":\"pairing_required\"}");
   }
-
-  const uint64_t deadline = now_ms() + kPairingResponseWaitMs;
-  while (now_ms() <= deadline) {
-    PairingResolutionResult resolution =
-        context(request)->take_pairing_resolution();
-    if (resolution.resolution == PairingResolution::accepted &&
-        resolution.credential.has_value()) {
-      const AdminCredential& credential = *resolution.credential;
-      const std::string cookie =
-          "cp_admin=" + credential.cookie_token +
-          "; Secure; HttpOnly; SameSite=Strict; Path=/";
-      httpd_resp_set_hdr(request, "Set-Cookie", cookie.c_str());
-      std::array<char, 96> response{};
-      const int length =
-          std::snprintf(response.data(), response.size(),
-                        "{\"csrf_token\":\"%s\"}",
-                        credential.csrf_token.c_str());
-      if (length < 0 || static_cast<size_t>(length) >= response.size()) {
-        return ESP_FAIL;
-      }
-      return send_json(
-          request, 200,
-          std::string_view(response.data(), static_cast<size_t>(length)));
-    }
-    if (resolution.resolution == PairingResolution::rejected) {
-      return send_json(request, 403, "{\"error\":\"physical_rejected\"}");
-    }
-    if (resolution.resolution == PairingResolution::capacity_or_expired) {
-      return send_json(request, 503, "{\"error\":\"session_capacity\"}");
-    }
-    vTaskDelay(pdMS_TO_TICKS(50));
-  }
-  return send_json(request, 408, "{\"error\":\"physical_timeout\"}");
+  return context(request)->defer_pairing_response(request);
 }
 
 esp_err_t session_handler(httpd_req_t* request) {
@@ -459,20 +464,48 @@ esp_err_t websocket_handler(httpd_req_t* request) {
 WebHandlerContext::WebHandlerContext(std::string expected_host,
                                      RandomSource& random)
     : guard_(std::move(expected_host), random),
-      mutex_(xSemaphoreCreateMutexStatic(&mutex_storage_)) {
+      mutex_(xSemaphoreCreateMutexStatic(&mutex_storage_)),
+      resolution_signal_(
+          xSemaphoreCreateBinaryStatic(&resolution_signal_storage_)),
+      request_queue_(xQueueCreateStatic(
+          1, sizeof(httpd_req_t*), request_queue_buffer_.data(),
+          &request_queue_storage_)) {
   assert(mutex_ != nullptr);
+  assert(resolution_signal_ != nullptr);
+  assert(request_queue_ != nullptr);
+  pairing_worker_ = xTaskCreateStatic(
+      pairing_worker_entry, "web-pairing", kPairingWorkerStackBytes, this,
+      tskIDLE_PRIORITY + 1, pairing_worker_stack_.data(),
+      &pairing_worker_storage_);
+  assert(pairing_worker_ != nullptr);
 }
 
 void WebHandlerContext::open_pairing_window(
     std::string_view eight_digit_code, uint64_t now_ms) {
   lock();
+  if (response_window_.pending()) {
+    unlock();
+    return;
+  }
   resolution_ = {};
+  response_window_.finish();
+  while (xSemaphoreTake(resolution_signal_, 0) == pdTRUE) {
+  }
   guard_.open_pairing_window(eight_digit_code, now_ms);
   unlock();
 }
 
 void WebHandlerContext::confirm_pairing(bool accepted, uint64_t now_ms) {
   lock();
+  if (!response_window_.pending() || response_window_.expired(now_ms)) {
+    guard_.cancel_pairing_confirmation();
+    response_window_.finish();
+    resolution_ = {};
+    unlock();
+    return;
+  }
+
+  const bool at_capacity = guard_.admin_session_count() >= 5;
   std::optional<AdminCredential> credential =
       guard_.confirm_pairing(accepted, now_ms);
   if (credential.has_value()) {
@@ -482,20 +515,37 @@ void WebHandlerContext::confirm_pairing(bool accepted, uint64_t now_ms) {
     };
   } else {
     resolution_ = {
-        .resolution = accepted ? PairingResolution::capacity_or_expired
-                               : PairingResolution::rejected,
+        .resolution =
+            accepted
+                ? (at_capacity ? PairingResolution::capacity
+                               : PairingResolution::expired)
+                : PairingResolution::rejected,
         .credential = std::nullopt,
     };
   }
   unlock();
+  xSemaphoreGive(resolution_signal_);
 }
 
 PairingResult WebHandlerContext::submit_pairing_code(
     std::string_view code, std::string_view browser_name, uint64_t now_ms) {
   lock();
+  if (response_window_.pending()) {
+    unlock();
+    return PairingResult::window_closed;
+  }
   resolution_ = {};
-  const PairingResult result =
+  PairingResult result =
       guard_.submit_pairing_code(code, browser_name, now_ms);
+  if (result == PairingResult::awaiting_physical_confirmation) {
+    if (!response_window_.begin(now_ms)) {
+      guard_.cancel_pairing_confirmation();
+      result = PairingResult::window_closed;
+    } else {
+      while (xSemaphoreTake(resolution_signal_, 0) == pdTRUE) {
+      }
+    }
+  }
   unlock();
   return result;
 }
@@ -516,6 +566,31 @@ std::optional<std::string> WebHandlerContext::issue_csrf_token(
   return result;
 }
 
+esp_err_t WebHandlerContext::defer_pairing_response(httpd_req_t* request) {
+  if (request == nullptr || pairing_worker_ == nullptr) {
+    cancel_pairing_response();
+    return request == nullptr
+               ? ESP_ERR_INVALID_ARG
+               : send_json(request, 503,
+                           "{\"error\":\"pairing_worker\"}");
+  }
+
+  httpd_req_t* async_request = nullptr;
+  const esp_err_t begin_result =
+      httpd_req_async_handler_begin(request, &async_request);
+  if (begin_result != ESP_OK) {
+    cancel_pairing_response();
+    return send_json(request, 503, "{\"error\":\"pairing_worker\"}");
+  }
+
+  if (xQueueSend(request_queue_, &async_request, 0) != pdTRUE) {
+    send_json(async_request, 503, "{\"error\":\"pairing_worker\"}");
+    httpd_req_async_handler_complete(async_request);
+    cancel_pairing_response();
+  }
+  return ESP_OK;
+}
+
 bool WebHandlerContext::has_admin_session() {
   lock();
   const bool result = guard_.has_admin_session();
@@ -527,8 +602,64 @@ PairingResolutionResult WebHandlerContext::take_pairing_resolution() {
   lock();
   PairingResolutionResult result = std::move(resolution_);
   resolution_ = {};
+  if (result.resolution != PairingResolution::none) {
+    response_window_.finish();
+  }
   unlock();
   return result;
+}
+
+void WebHandlerContext::pairing_worker_entry(void* argument) {
+  static_cast<WebHandlerContext*>(argument)->pairing_worker();
+}
+
+void WebHandlerContext::pairing_worker() {
+  while (true) {
+    httpd_req_t* request = nullptr;
+    if (xQueueReceive(request_queue_, &request, portMAX_DELAY) != pdTRUE ||
+        request == nullptr) {
+      continue;
+    }
+    send_pairing_resolution(request, wait_for_pairing_resolution());
+    httpd_req_async_handler_complete(request);
+  }
+}
+
+PairingResolutionResult WebHandlerContext::wait_for_pairing_resolution() {
+  while (true) {
+    PairingResolutionResult result = take_pairing_resolution();
+    if (result.resolution != PairingResolution::none) {
+      return result;
+    }
+
+    lock();
+    const uint64_t current_ms = now_ms();
+    const bool pending = response_window_.pending();
+    const uint64_t remaining_ms =
+        response_window_.remaining_ms(current_ms);
+    unlock();
+    if (!pending || remaining_ms == 0) {
+      cancel_pairing_response();
+      return {.resolution = PairingResolution::expired,
+              .credential = std::nullopt};
+    }
+
+    TickType_t wait_ticks = pdMS_TO_TICKS(remaining_ms);
+    if (wait_ticks == 0) {
+      wait_ticks = 1;
+    }
+    xSemaphoreTake(resolution_signal_, wait_ticks);
+  }
+}
+
+void WebHandlerContext::cancel_pairing_response() {
+  lock();
+  resolution_ = {};
+  response_window_.finish();
+  guard_.cancel_pairing_confirmation();
+  unlock();
+  while (xSemaphoreTake(resolution_signal_, 0) == pdTRUE) {
+  }
 }
 
 void WebHandlerContext::lock() {
@@ -540,62 +671,28 @@ void WebHandlerContext::unlock() {
 }
 
 std::span<const httpd_uri_t> probe_web_handler_routes() {
-  static const std::array<httpd_uri_t, 6> routes{{
-      {
-          .uri = "/healthz",
-          .method = HTTP_GET,
-          .handler = health_handler,
-          .user_ctx = nullptr,
-          .is_websocket = false,
-          .handle_ws_control_frames = false,
-          .supported_subprotocol = nullptr,
-      },
-      {
-          .uri = "/api/v1/web-pairing/submit",
-          .method = HTTP_POST,
-          .handler = pairing_submit_handler,
-          .user_ctx = nullptr,
-          .is_websocket = false,
-          .handle_ws_control_frames = false,
-          .supported_subprotocol = nullptr,
-      },
-      {
-          .uri = "/api/v1/probe/session",
-          .method = HTTP_GET,
-          .handler = session_handler,
-          .user_ctx = nullptr,
-          .is_websocket = false,
-          .handle_ws_control_frames = false,
-          .supported_subprotocol = nullptr,
-      },
-      {
-          .uri = "/api/v1/probe/echo",
-          .method = HTTP_POST,
-          .handler = echo_handler,
-          .user_ctx = nullptr,
-          .is_websocket = false,
-          .handle_ws_control_frames = false,
-          .supported_subprotocol = nullptr,
-      },
-      {
-          .uri = "/api/v1/config/import",
-          .method = HTTP_POST,
-          .handler = import_handler,
-          .user_ctx = nullptr,
-          .is_websocket = false,
-          .handle_ws_control_frames = false,
-          .supported_subprotocol = nullptr,
-      },
-      {
-          .uri = "/api/v1/probe/ws",
-          .method = HTTP_GET,
-          .handler = websocket_handler,
-          .user_ctx = nullptr,
-          .is_websocket = true,
-          .handle_ws_control_frames = true,
-          .supported_subprotocol = nullptr,
-      },
+  static const std::array<esp_err_t (*)(httpd_req_t*), 6> handlers{{
+      health_handler,
+      pairing_submit_handler,
+      session_handler,
+      echo_handler,
+      import_handler,
+      websocket_handler,
   }};
+  static const std::array<httpd_uri_t, 6> routes = [] {
+    std::array<httpd_uri_t, 6> result{};
+    for (size_t index = 0; index < result.size(); ++index) {
+      result[index].uri = kProbeWebRoutes[index].path.data();
+      result[index].method =
+          kProbeWebRoutes[index].method == HttpMethod::get ? HTTP_GET
+                                                          : HTTP_POST;
+      result[index].handler = handlers[index];
+      result[index].is_websocket = kProbeWebRoutes[index].websocket;
+      result[index].handle_ws_control_frames =
+          kProbeWebRoutes[index].websocket;
+    }
+    return result;
+  }();
   return routes;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -9,14 +10,17 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "probe/web_guard.hpp"
 
 enum class PairingResolution {
   none,
   accepted,
   rejected,
-  capacity_or_expired,
+  capacity,
+  expired,
 };
 
 struct PairingResolutionResult {
@@ -27,6 +31,8 @@ struct PairingResolutionResult {
 class WebHandlerContext final : public WebPairingPhysicalSink {
  public:
   WebHandlerContext(std::string expected_host, RandomSource& random);
+  WebHandlerContext(const WebHandlerContext&) = delete;
+  WebHandlerContext& operator=(const WebHandlerContext&) = delete;
 
   void open_pairing_window(std::string_view eight_digit_code,
                            uint64_t now_ms) override;
@@ -38,16 +44,32 @@ class WebHandlerContext final : public WebPairingPhysicalSink {
   WebDecision authorize(const RequestMeta& request);
   std::optional<std::string> issue_csrf_token(
       std::string_view cookie_token, uint64_t now_ms);
+  esp_err_t defer_pairing_response(httpd_req_t* request);
   [[nodiscard]] bool has_admin_session();
   [[nodiscard]] PairingResolutionResult take_pairing_resolution();
 
  private:
+  static void pairing_worker_entry(void* argument);
+  void pairing_worker();
+  PairingResolutionResult wait_for_pairing_resolution();
+  void cancel_pairing_response();
   void lock();
   void unlock();
 
+  static constexpr uint32_t kPairingWorkerStackBytes = 8192;
+
   WebGuard guard_;
+  PairingResponseWindow response_window_;
   StaticSemaphore_t mutex_storage_{};
   SemaphoreHandle_t mutex_ = nullptr;
+  StaticSemaphore_t resolution_signal_storage_{};
+  SemaphoreHandle_t resolution_signal_ = nullptr;
+  StaticQueue_t request_queue_storage_{};
+  std::array<uint8_t, sizeof(httpd_req_t*)> request_queue_buffer_{};
+  QueueHandle_t request_queue_ = nullptr;
+  StaticTask_t pairing_worker_storage_{};
+  std::array<StackType_t, kPairingWorkerStackBytes> pairing_worker_stack_{};
+  TaskHandle_t pairing_worker_ = nullptr;
   PairingResolutionResult resolution_{};
 };
 

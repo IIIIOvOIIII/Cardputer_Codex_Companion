@@ -99,6 +99,20 @@ class JsonDepthTracker {
   bool valid_ = true;
 };
 
+class PairingResponseWindow {
+ public:
+  bool begin(uint64_t now_ms);
+  void finish();
+  [[nodiscard]] bool pending() const;
+  [[nodiscard]] bool expired(uint64_t now_ms) const;
+  [[nodiscard]] uint64_t deadline_ms() const;
+  [[nodiscard]] uint64_t remaining_ms(uint64_t now_ms) const;
+
+ private:
+  uint64_t deadline_ms_ = 0;
+  bool pending_ = false;
+};
+
 class WebGuard {
  public:
   WebGuard(std::string expected_host, RandomSource& random);
@@ -109,6 +123,7 @@ class WebGuard {
                                     uint64_t now_ms);
   std::optional<AdminCredential> confirm_pairing(bool accepted,
                                                   uint64_t now_ms);
+  void cancel_pairing_confirmation();
   [[nodiscard]] bool has_admin_session() const;
   [[nodiscard]] uint8_t admin_session_count() const;
   [[nodiscard]] uint64_t backoff_remaining_ms(uint64_t now_ms) const;

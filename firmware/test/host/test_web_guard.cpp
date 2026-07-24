@@ -5,6 +5,7 @@
 #include <string>
 
 #include "probe/web_guard.hpp"
+#include "probe/web_route_manifest.hpp"
 
 namespace {
 
@@ -151,6 +152,14 @@ void test_pairing_window_backoff_and_capacity() {
   assert(!denied.confirm_pairing(false, 2000).has_value());
   assert(!denied.has_admin_session());
 
+  WebGuard cancelled(kHost, random);
+  cancelled.open_pairing_window("12345678", 0);
+  assert(cancelled.submit_pairing_code("12345678", "Browser", 1000) ==
+         PairingResult::awaiting_physical_confirmation);
+  cancelled.cancel_pairing_confirmation();
+  assert(!cancelled.confirm_pairing(true, 2000).has_value());
+  assert(!cancelled.has_admin_session());
+
   WebGuard capacity(kHost, random);
   for (uint8_t index = 0; index < 5; ++index) {
     const std::string code = std::to_string(11111111 + index);
@@ -194,6 +203,37 @@ void test_request_budgets_and_json_depth() {
 
   JsonDepthTracker malformed;
   assert(!malformed.consume("}"));
+}
+
+void test_pairing_response_window() {
+  PairingResponseWindow window;
+  assert(window.begin(1000));
+  assert(window.pending());
+  assert(!window.begin(1001));
+  assert(window.deadline_ms() == 301000);
+  assert(window.remaining_ms(1001) == 299999);
+  assert(!window.expired(301000));
+  assert(window.expired(301001));
+  window.finish();
+  assert(!window.pending());
+  assert(window.remaining_ms(301001) == 0);
+
+  assert(window.begin(UINT64_MAX - 100));
+  assert(window.deadline_ms() == UINT64_MAX);
+  window.finish();
+}
+
+void test_exact_web_route_manifest() {
+  constexpr std::array<ProbeWebRoute, 6> expected{{
+      {HttpMethod::get, "/healthz", false},
+      {HttpMethod::post, "/api/v1/web-pairing/submit", false},
+      {HttpMethod::get, "/api/v1/probe/session", false},
+      {HttpMethod::post, "/api/v1/probe/echo", false},
+      {HttpMethod::post, "/api/v1/config/import", false},
+      {HttpMethod::get, "/api/v1/probe/ws", true},
+  }};
+  assert(kProbeWebRoutes.size() == 6);
+  assert(kProbeWebRoutes == expected);
 }
 
 void test_rate_limits_and_route_exceptions() {
@@ -281,6 +321,8 @@ int main() {
   test_pairing_and_write_auth();
   test_pairing_window_backoff_and_capacity();
   test_request_budgets_and_json_depth();
+  test_pairing_response_window();
+  test_exact_web_route_manifest();
   test_rate_limits_and_route_exceptions();
   return 0;
 }

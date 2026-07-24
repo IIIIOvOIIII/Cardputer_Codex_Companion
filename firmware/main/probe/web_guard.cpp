@@ -180,6 +180,39 @@ uint8_t JsonDepthTracker::maximum_depth() const {
   return maximum_depth_;
 }
 
+bool PairingResponseWindow::begin(uint64_t now_ms) {
+  if (pending_) {
+    return false;
+  }
+  deadline_ms_ = saturating_add(now_ms, kPairingWindowMs);
+  pending_ = true;
+  return true;
+}
+
+void PairingResponseWindow::finish() {
+  deadline_ms_ = 0;
+  pending_ = false;
+}
+
+bool PairingResponseWindow::pending() const {
+  return pending_;
+}
+
+bool PairingResponseWindow::expired(uint64_t now_ms) const {
+  return pending_ && now_ms > deadline_ms_;
+}
+
+uint64_t PairingResponseWindow::deadline_ms() const {
+  return deadline_ms_;
+}
+
+uint64_t PairingResponseWindow::remaining_ms(uint64_t now_ms) const {
+  if (!pending_ || now_ms >= deadline_ms_) {
+    return 0;
+  }
+  return deadline_ms_ - now_ms;
+}
+
 WebGuard::WebGuard(std::string expected_host, RandomSource& random)
     : expected_host_(std::move(expected_host)),
       expected_origin_("https://" + expected_host_),
@@ -287,6 +320,11 @@ std::optional<AdminCredential> WebGuard::confirm_pairing(bool accepted,
   available->occupied = true;
   pending_browser_name_.clear();
   return credential;
+}
+
+void WebGuard::cancel_pairing_confirmation() {
+  awaiting_physical_confirmation_ = false;
+  pending_browser_name_.clear();
 }
 
 bool WebGuard::has_admin_session() const {
