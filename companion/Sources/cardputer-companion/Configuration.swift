@@ -6,6 +6,11 @@ enum ConfigurationError: Error {
     case invalidPairingCode
 }
 
+struct CompanionConfigFile: Decodable {
+    let device: String
+    let pairing: String
+}
+
 struct Configuration {
     enum Command {
         case version
@@ -35,8 +40,9 @@ struct Configuration {
         guard arguments.first == "run" else {
             throw ConfigurationError.usage
         }
-        var device: URL?
+        var deviceValue: String?
         var pairing: String?
+        var configFile: URL?
         var index = 1
         while index < arguments.count {
             guard index + 1 < arguments.count else {
@@ -44,14 +50,29 @@ struct Configuration {
             }
             switch arguments[index] {
             case "--device":
-                device = URL(string: arguments[index + 1])
+                deviceValue = arguments[index + 1]
             case "--pairing":
                 pairing = arguments[index + 1]
+            case "--config":
+                configFile = URL(fileURLWithPath: arguments[index + 1])
             default:
                 throw ConfigurationError.usage
             }
             index += 2
         }
+        if let configFile {
+            guard deviceValue == nil, pairing == nil else {
+                throw ConfigurationError.usage
+            }
+            let data = try Data(contentsOf: configFile)
+            let config = try JSONDecoder().decode(
+                CompanionConfigFile.self,
+                from: data
+            )
+            deviceValue = config.device
+            pairing = config.pairing
+        }
+        let device = deviceValue.flatMap(URL.init(string:))
         guard let device, isLANDeviceURL(device) else {
             throw ConfigurationError.invalidDeviceURL
         }

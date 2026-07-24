@@ -19,5 +19,10 @@ int main() {
   assert(parse_codex_action("shell") == CodexAction::none);
   assert(protocol.apply(R"({"type":"snapshot","sequence":9})", 2000) ==
          CompanionMessageResult::resync_required);
+  const std::string restarted =
+      R"({"type":"snapshot","sequence":1,"session_id":"s2","title":"restarted","cwd":"/tmp/Cardputer","state":"idle","approvals":0,"inputs":0})";
+  assert(protocol.apply(restarted, 12000) == CompanionMessageResult::snapshot);
+  assert(protocol.snapshot().sequence == 1);
+  assert(protocol.snapshot().title == "restarted");
   return 0;
 }

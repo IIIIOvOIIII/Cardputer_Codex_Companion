@@ -44,7 +44,8 @@ CompanionMessageResult CompanionProtocol::apply(std::string_view json,
   }
   const auto sequence = integer_field(json, "sequence");
   if (!sequence.has_value()) return CompanionMessageResult::invalid;
-  if (has_snapshot_ && *sequence != snapshot_.sequence + 1) {
+  if (has_snapshot_ && *sequence != snapshot_.sequence + 1 &&
+      !stale(now_ms)) {
     return CompanionMessageResult::resync_required;
   }
   snapshot_.sequence = *sequence;

@@ -97,6 +97,7 @@ struct CardputerCompanionMain {
                   cardputer-companion --version
                   cardputer-companion doctor
                   cardputer-companion run --device https://CARDPUTER-IP --pairing 12345678
+                  cardputer-companion run --config ~/Library/Application\\ Support/CardputerCodexCompanion/config.json
 
                 """.utf8
             )
