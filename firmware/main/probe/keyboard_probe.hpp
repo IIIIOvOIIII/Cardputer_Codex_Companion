@@ -49,6 +49,8 @@ class KeyboardProbe {
 #endif
 
   void enqueue_stable_key_event(const StableKeyEvent& event);
+  void send_complete_report(const HidReport& report);
+  void release_all();
   void synthetic_10k_source_events(std::span<const StableKeyEvent> events);
   void abort_macro();
   void on_mode_changed();

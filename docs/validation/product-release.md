@@ -1,0 +1,40 @@
+# Product release validation
+
+## Automated scope
+
+The release check covers all Python tests, firmware host tests, an
+AddressSanitizer/UndefinedBehaviorSanitizer host build, a clean ESP32-S3 target
+build, the embedded Web asset, the Swift release executable, the app bundle,
+generic/private image assembly, partition offsets, and secret exclusion from
+Git-tracked files and the generic image.
+
+The private image includes a dedicated NVS image at `0x12000`; the firmware
+application begins at `0x20000`. Both full images begin with the bootloader at
+`0x0`.
+
+## Product transport boundary
+
+The delivered LAN status/control path uses device-hosted HTTPS plus the
+screen pairing code. UTF-8 text uses the encrypted, authenticated, bonded BLE
+connection. The earlier Phase 0 P-256/SAS, pinned WSS and cross-channel
+challenge components remain in the repository as probe/security foundations,
+but this product release does not claim that full WSS/SAS binding as completed.
+It exposes no off-LAN relay or cloud control path.
+
+## Hardware boundary
+
+No automated result is recorded as a hardware pass unless a unique Cardputer
+serial device is connected and explicitly selected. Without that device the
+following remain unverified:
+
+- actual LCD visibility and orientation;
+- all 56 physical switch positions;
+- BLE pairing/HID delivery on the target Mac;
+- Wi-Fi association and HTTPS behavior on the target LAN;
+- UTF-8 injection into real foreground applications;
+- sustained 30-minute concurrent HIL measurements.
+
+The 30-minute HIL is a real Hardware-in-the-Loop soak: the compiled firmware
+runs on Cardputer while the Mac Companion, BLE HID/GATT, Wi-Fi, HTTPS Web
+control, Codex status synchronization, reconnect cases, latency and resource
+telemetry are exercised together.

@@ -122,6 +122,14 @@ void KeyboardProbe::enqueue_stable_key_event(const StableKeyEvent& event) {
 #endif
 }
 
+void KeyboardProbe::send_complete_report(const HidReport& report) {
+  send_report(report);
+}
+
+void KeyboardProbe::release_all() {
+  release_state();
+}
+
 void KeyboardProbe::synthetic_10k_source_events(
     std::span<const StableKeyEvent> events) {
   for (const StableKeyEvent& event : events) {

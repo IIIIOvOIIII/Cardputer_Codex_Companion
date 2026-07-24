@@ -62,6 +62,29 @@ bool device_id_is_valid(std::span<const uint8_t, 16> device_id) {
                      [](uint8_t byte) { return byte != 0; });
 }
 
+std::vector<uint8_t> encode_product_text_fragment(
+    uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
+    std::span<const uint8_t> utf8) {
+  if (utf8.size() > UINT16_MAX || fragment_count == 0 ||
+      fragment_index >= fragment_count) {
+    return {};
+  }
+  std::vector<uint8_t> frame;
+  frame.reserve(10 + utf8.size());
+  frame.push_back(1);
+  frame.push_back(1);
+  frame.push_back(static_cast<uint8_t>(operation_id >> 24));
+  frame.push_back(static_cast<uint8_t>(operation_id >> 16));
+  frame.push_back(static_cast<uint8_t>(operation_id >> 8));
+  frame.push_back(static_cast<uint8_t>(operation_id));
+  frame.push_back(fragment_index);
+  frame.push_back(fragment_count);
+  frame.push_back(static_cast<uint8_t>(utf8.size() >> 8));
+  frame.push_back(static_cast<uint8_t>(utf8.size()));
+  frame.insert(frame.end(), utf8.begin(), utf8.end());
+  return frame;
+}
+
 #ifdef ESP_PLATFORM
 
 #include <array>
@@ -107,6 +130,8 @@ uint16_t g_bound_conn = BLE_HS_CONN_HANDLE_NONE;
 CompanionBindingProof g_binding{};
 BleDisconnectHandler g_disconnect_handler = nullptr;
 CompanionControlHandler g_control_handler = nullptr;
+BleConnectionHandler g_connection_handler = nullptr;
+bool g_product_companion_mode = false;
 
 const ble_uuid128_t kServiceUuid = BLE_UUID128_INIT(
     0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
@@ -134,7 +159,8 @@ bool has_bonded_secure_state(uint16_t conn_handle) {
 bool is_current_companion(uint16_t conn_handle) {
   return conn_handle != BLE_HS_CONN_HANDLE_NONE &&
          conn_handle == g_bound_conn &&
-         companion_binding_proof_is_complete(g_binding);
+         (g_product_companion_mode ||
+          companion_binding_proof_is_complete(g_binding));
 }
 
 int companion_characteristic_access(
@@ -153,11 +179,21 @@ int companion_characteristic_access(
 
   if (attr_handle == g_control_handle &&
       ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+    const uint16_t fragment_size = OS_MBUF_PKTLEN(ctxt->om);
+    if (g_product_companion_mode && fragment_size == 5) {
+      std::array<uint8_t, 5> bind{};
+      uint16_t copied = 0;
+      if (ble_hs_mbuf_to_flat(ctxt->om, bind.data(), bind.size(), &copied) == 0 &&
+          copied == bind.size() &&
+          std::memcmp(bind.data(), "BIND1", bind.size()) == 0) {
+        g_bound_conn = conn_handle;
+        return 0;
+      }
+    }
     if (!is_current_companion(conn_handle)) {
       return BLE_ATT_ERR_INSUFFICIENT_AUTHOR;
     }
 
-    const uint16_t fragment_size = OS_MBUF_PKTLEN(ctxt->om);
     if (fragment_size > kMaxControlFragmentBytes) {
       return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
@@ -251,10 +287,20 @@ void ble_hidd_event_callback(
     return;
   }
 
+  if (event == ESP_HIDD_CONNECT_EVENT) {
+    if (g_connection_handler != nullptr) {
+      g_connection_handler(true);
+    }
+    return;
+  }
+
   if (event == ESP_HIDD_DISCONNECT_EVENT) {
     clear_current_companion_binding();
     if (g_disconnect_handler != nullptr) {
       g_disconnect_handler();
+    }
+    if (g_connection_handler != nullptr) {
+      g_connection_handler(false);
     }
     const esp_err_t rc = esp_hid_ble_gap_adv_start();
     if (rc != ESP_OK) {
@@ -402,6 +448,14 @@ void set_companion_control_handler(CompanionControlHandler handler) {
   g_control_handler = handler;
 }
 
+void set_ble_connection_handler(BleConnectionHandler handler) {
+  g_connection_handler = handler;
+}
+
+void enable_product_companion_mode() {
+  g_product_companion_mode = true;
+}
+
 esp_err_t notify_current_companion(std::span<const uint8_t> frame) {
   if (!is_current_companion(g_bound_conn) ||
       !has_bonded_secure_state(g_bound_conn) ||
@@ -417,5 +471,26 @@ esp_err_t notify_current_companion(std::span<const uint8_t> frame) {
   const int rc =
       ble_gatts_notify_custom(g_bound_conn, g_notify_handle, payload);
   return rc == 0 ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t notify_product_utf8(uint32_t operation_id,
+                              std::span<const uint8_t> utf8) {
+  constexpr std::size_t kFragmentBytes = 160;
+  if (utf8.empty() || utf8.size() > 1024) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  const std::size_t count =
+      (utf8.size() + kFragmentBytes - 1) / kFragmentBytes;
+  for (std::size_t index = 0; index < count; ++index) {
+    const std::size_t offset = index * kFragmentBytes;
+    const std::size_t length =
+        std::min(kFragmentBytes, utf8.size() - offset);
+    const auto frame = encode_product_text_fragment(
+        operation_id, static_cast<uint8_t>(index),
+        static_cast<uint8_t>(count), utf8.subspan(offset, length));
+    const esp_err_t result = notify_current_companion(frame);
+    if (result != ESP_OK) return result;
+  }
+  return ESP_OK;
 }
 #endif

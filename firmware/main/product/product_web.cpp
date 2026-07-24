@@ -1,0 +1,522 @@
+#include "product/product_web.hpp"
+
+#ifdef ESP_PLATFORM
+#include <array>
+#include <atomic>
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "cJSON.h"
+#include "esp_https_server.h"
+#include "esp_random.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "nvs.h"
+#include "product/companion_protocol.hpp"
+#include "product/device_identity.hpp"
+#include "product/profile.hpp"
+#include "product/web_assets.hpp"
+#include "product/wifi_manager.hpp"
+
+namespace {
+constexpr std::size_t kRequestLimit = 16384;
+constexpr char kPairingHeader[] = "X-Cardputer-Pairing";
+httpd_handle_t g_server = nullptr;
+std::array<char, 9> g_pairing_code{};
+Profile g_profile = safe_profile();
+StaticSemaphore_t g_profile_mutex_storage{};
+SemaphoreHandle_t g_profile_mutex = nullptr;
+std::atomic<ServiceState> g_ble{ServiceState::offline};
+std::atomic<ServiceState> g_wifi{ServiceState::offline};
+std::atomic<ServiceState> g_companion{ServiceState::offline};
+std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
+std::atomic<uint32_t> g_action_sequence{0};
+ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
+
+class ProfileLock {
+ public:
+  ProfileLock() {
+    locked_ = g_profile_mutex != nullptr &&
+              xSemaphoreTake(g_profile_mutex, pdMS_TO_TICKS(1000)) == pdTRUE;
+  }
+  ~ProfileLock() {
+    if (locked_) xSemaphoreGive(g_profile_mutex);
+  }
+  [[nodiscard]] bool locked() const { return locked_; }
+
+ private:
+  bool locked_ = false;
+};
+
+const char* action_name(ActionKind kind) {
+  switch (kind) {
+    case ActionKind::passthrough: return "passthrough";
+    case ActionKind::hid_chord: return "hid_chord";
+    case ActionKind::text_utf8: return "text_utf8";
+    case ActionKind::input_sequence: return "input_sequence";
+    case ActionKind::device_action: return "device_action";
+    case ActionKind::codex_action: return "codex_action";
+    case ActionKind::disabled: return "disabled";
+  }
+  return "disabled";
+}
+
+ActionKind parse_action(const char* value) {
+  if (value == nullptr) return ActionKind::disabled;
+  if (std::strcmp(value, "passthrough") == 0) return ActionKind::passthrough;
+  if (std::strcmp(value, "hid_chord") == 0) return ActionKind::hid_chord;
+  if (std::strcmp(value, "text_utf8") == 0) return ActionKind::text_utf8;
+  if (std::strcmp(value, "input_sequence") == 0) return ActionKind::input_sequence;
+  if (std::strcmp(value, "device_action") == 0) return ActionKind::device_action;
+  if (std::strcmp(value, "codex_action") == 0) return ActionKind::codex_action;
+  return ActionKind::disabled;
+}
+
+const char* device_action_name(DeviceAction action) {
+  switch (action) {
+    case DeviceAction::toggle_mode: return "toggle_mode";
+    case DeviceAction::next_profile: return "next_profile";
+    case DeviceAction::previous_profile: return "previous_profile";
+    case DeviceAction::open_pairing: return "open_pairing";
+    case DeviceAction::reconnect_wifi: return "reconnect_wifi";
+    case DeviceAction::none: return "none";
+  }
+  return "none";
+}
+
+DeviceAction parse_device_action(const char* value) {
+  if (value == nullptr) return DeviceAction::none;
+  if (std::strcmp(value, "toggle_mode") == 0) return DeviceAction::toggle_mode;
+  if (std::strcmp(value, "next_profile") == 0) return DeviceAction::next_profile;
+  if (std::strcmp(value, "previous_profile") == 0) {
+    return DeviceAction::previous_profile;
+  }
+  if (std::strcmp(value, "open_pairing") == 0) return DeviceAction::open_pairing;
+  if (std::strcmp(value, "reconnect_wifi") == 0) {
+    return DeviceAction::reconnect_wifi;
+  }
+  return DeviceAction::none;
+}
+
+bool authorized(httpd_req_t* request) {
+  const size_t length = httpd_req_get_hdr_value_len(request, kPairingHeader);
+  if (length != 8) return false;
+  std::array<char, 9> supplied{};
+  return httpd_req_get_hdr_value_str(request, kPairingHeader, supplied.data(),
+                                     supplied.size()) == ESP_OK &&
+         std::memcmp(supplied.data(), g_pairing_code.data(), 8) == 0;
+}
+
+esp_err_t json_response(httpd_req_t* request, const char* json,
+                        const char* status = "200 OK") {
+  httpd_resp_set_status(request, status);
+  httpd_resp_set_type(request, "application/json");
+  httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+  return httpd_resp_sendstr(request, json);
+}
+
+esp_err_t reject_pairing(httpd_req_t* request) {
+  return json_response(request, "{\"error\":\"pairing_required\"}",
+                       "401 Unauthorized");
+}
+
+std::string read_body(httpd_req_t* request) {
+  if (request->content_len <= 0 ||
+      request->content_len > static_cast<int>(kRequestLimit)) {
+    return {};
+  }
+  std::string body(static_cast<std::size_t>(request->content_len), '\0');
+  std::size_t received = 0;
+  while (received < body.size()) {
+    const int count = httpd_req_recv(
+        request, body.data() + received, body.size() - received);
+    if (count <= 0) return {};
+    received += static_cast<std::size_t>(count);
+  }
+  return body;
+}
+
+cJSON* action_json(ActionKind kind, uint8_t modifiers,
+                   const std::array<uint8_t, 6>& usage_values,
+                   uint8_t usage_count, std::string_view text,
+                   const std::array<SequenceStep, kMaxSequenceSteps>* sequence,
+                   uint8_t sequence_count, DeviceAction device,
+                   CodexAction codex) {
+    cJSON* item = cJSON_CreateObject();
+    cJSON_AddStringToObject(item, "kind", action_name(kind));
+    if (modifiers != 0) {
+      cJSON_AddNumberToObject(item, "modifiers", modifiers);
+    }
+    if (usage_count != 0) {
+      cJSON* usages_json = cJSON_AddArrayToObject(item, "usages");
+      for (uint8_t index = 0; index < usage_count; ++index) {
+        cJSON_AddItemToArray(
+            usages_json, cJSON_CreateNumber(usage_values[index]));
+      }
+    }
+    if (!text.empty()) {
+      cJSON_AddStringToObject(item, "text", std::string(text).c_str());
+    }
+    if (kind == ActionKind::device_action) {
+      cJSON_AddStringToObject(item, "device", device_action_name(device));
+    }
+    if (kind == ActionKind::codex_action) {
+      const std::string_view name = codex_action_name(codex);
+      cJSON_AddStringToObject(item, "codex", std::string(name).c_str());
+    }
+    if (kind == ActionKind::input_sequence && sequence != nullptr) {
+      cJSON* steps = cJSON_AddArrayToObject(item, "sequence");
+      for (uint8_t index = 0; index < sequence_count; ++index) {
+        const SequenceStep& step = (*sequence)[index];
+        cJSON_AddItemToArray(
+            steps, action_json(step.kind, step.modifiers, step.usages,
+                               step.usage_count, step.text, nullptr, 0,
+                               DeviceAction::none, CodexAction::none));
+        cJSON* encoded_step =
+            cJSON_GetArrayItem(steps, cJSON_GetArraySize(steps) - 1);
+        if (step.delay_ms != 0) {
+          cJSON_AddNumberToObject(encoded_step, "delay_ms", step.delay_ms);
+        }
+      }
+    }
+    return item;
+}
+
+cJSON* profile_json(const Profile& profile) {
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "name", profile.name.c_str());
+  cJSON_AddNumberToObject(root, "revision", profile.revision);
+  cJSON* bindings = cJSON_AddArrayToObject(root, "bindings");
+  for (const KeyBinding& binding : profile.bindings) {
+    const KeyAction& action = binding.action;
+    cJSON_AddItemToArray(
+        bindings, action_json(action.kind, action.modifiers, action.usages,
+                              action.usage_count, action.text,
+                              &action.sequence, action.sequence_count,
+                              action.device, action.codex));
+  }
+  return root;
+}
+
+bool parse_leaf(const cJSON* item, ActionKind& kind, uint8_t& modifiers,
+                std::array<uint8_t, 6>& usage_values, uint8_t& usage_count,
+                std::string& text, DeviceAction* device, CodexAction* codex) {
+  if (!cJSON_IsObject(item)) return false;
+  const cJSON* kind_json = cJSON_GetObjectItemCaseSensitive(item, "kind");
+  kind = parse_action(cJSON_IsString(kind_json) ? kind_json->valuestring : nullptr);
+  const cJSON* modifiers_json =
+      cJSON_GetObjectItemCaseSensitive(item, "modifiers");
+  if (cJSON_IsNumber(modifiers_json)) {
+    if (modifiers_json->valueint < 0 || modifiers_json->valueint > 255) {
+      return false;
+    }
+    modifiers = static_cast<uint8_t>(modifiers_json->valueint);
+  }
+  const cJSON* usages_json = cJSON_GetObjectItemCaseSensitive(item, "usages");
+  if (cJSON_IsArray(usages_json)) {
+    const int count = cJSON_GetArraySize(usages_json);
+    if (count > 6) return false;
+    usage_count = static_cast<uint8_t>(count);
+    for (int usage = 0; usage < count; ++usage) {
+      const cJSON* value = cJSON_GetArrayItem(usages_json, usage);
+      if (!cJSON_IsNumber(value) || value->valueint < 0 ||
+          value->valueint > 255) {
+        return false;
+      }
+      usage_values[usage] = static_cast<uint8_t>(value->valueint);
+    }
+  }
+  const cJSON* text_json = cJSON_GetObjectItemCaseSensitive(item, "text");
+  if (cJSON_IsString(text_json)) text = text_json->valuestring;
+  if (device != nullptr) {
+    const cJSON* value = cJSON_GetObjectItemCaseSensitive(item, "device");
+    *device = parse_device_action(cJSON_IsString(value) ? value->valuestring
+                                                        : nullptr);
+  }
+  if (codex != nullptr) {
+    const cJSON* value = cJSON_GetObjectItemCaseSensitive(item, "codex");
+    *codex = parse_codex_action(
+        cJSON_IsString(value) ? value->valuestring : std::string_view{});
+  }
+  return true;
+}
+
+bool parse_profile(const cJSON* root, Profile& output) {
+  const cJSON* name = cJSON_GetObjectItemCaseSensitive(root, "name");
+  const cJSON* revision = cJSON_GetObjectItemCaseSensitive(root, "revision");
+  const cJSON* bindings = cJSON_GetObjectItemCaseSensitive(root, "bindings");
+  if (!cJSON_IsString(name) || !cJSON_IsNumber(revision) ||
+      !cJSON_IsArray(bindings) ||
+      cJSON_GetArraySize(bindings) != kProfileBindingCount) {
+    return false;
+  }
+  output = safe_profile();
+  output.name = name->valuestring;
+  output.revision = static_cast<uint32_t>(revision->valuedouble);
+  for (int index = 0; index < cJSON_GetArraySize(bindings); ++index) {
+    const cJSON* item = cJSON_GetArrayItem(bindings, index);
+    KeyAction& action = output.bindings[index].action;
+    if (!parse_leaf(item, action.kind, action.modifiers, action.usages,
+                    action.usage_count, action.text, &action.device,
+                    &action.codex)) {
+      return false;
+    }
+    if (action.kind == ActionKind::input_sequence) {
+      const cJSON* steps = cJSON_GetObjectItemCaseSensitive(item, "sequence");
+      if (!cJSON_IsArray(steps) ||
+          cJSON_GetArraySize(steps) > static_cast<int>(kMaxSequenceSteps)) {
+        return false;
+      }
+      action.sequence_count = static_cast<uint8_t>(cJSON_GetArraySize(steps));
+      for (uint8_t step_index = 0; step_index < action.sequence_count;
+           ++step_index) {
+        const cJSON* step_json = cJSON_GetArrayItem(steps, step_index);
+        SequenceStep& step = action.sequence[step_index];
+        if (!parse_leaf(step_json, step.kind, step.modifiers, step.usages,
+                        step.usage_count, step.text, nullptr, nullptr)) {
+          return false;
+        }
+        const cJSON* delay =
+            cJSON_GetObjectItemCaseSensitive(step_json, "delay_ms");
+        if (cJSON_IsNumber(delay)) {
+          if (delay->valuedouble < 0 ||
+              delay->valuedouble > kMaxSequenceDelayMs) {
+            return false;
+          }
+          step.delay_ms = static_cast<uint32_t>(delay->valuedouble);
+        }
+      }
+    }
+  }
+  return validate_profile(output) == ProfileError::none;
+}
+
+void persist_profile(const char* json) {
+  nvs_handle_t handle;
+  if (nvs_open("product", NVS_READWRITE, &handle) != ESP_OK) return;
+  nvs_set_str(handle, "profile", json);
+  nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void load_profile() {
+  nvs_handle_t handle;
+  if (nvs_open("product", NVS_READONLY, &handle) != ESP_OK) return;
+  size_t size = 0;
+  if (nvs_get_str(handle, "profile", nullptr, &size) != ESP_OK ||
+      size == 0 || size > kRequestLimit) {
+    nvs_close(handle);
+    return;
+  }
+  std::string json(size, '\0');
+  if (nvs_get_str(handle, "profile", json.data(), &size) == ESP_OK) {
+    cJSON* root = cJSON_Parse(json.c_str());
+    Profile loaded;
+    if (root != nullptr && parse_profile(root, loaded)) g_profile = loaded;
+    cJSON_Delete(root);
+  }
+  nvs_close(handle);
+}
+
+esp_err_t root_handler(httpd_req_t* request) {
+  httpd_resp_set_type(request, "text/html; charset=utf-8");
+  httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+  return httpd_resp_send(request, kProductWebHtml, kProductWebHtmlSize);
+}
+
+esp_err_t status_handler(httpd_req_t* request) {
+  char json[192]{};
+  const ServiceState ble = g_ble.load();
+  const ServiceState wifi = g_wifi.load();
+  const ServiceState companion = g_companion.load();
+  std::snprintf(json, sizeof(json),
+                "{\"product\":\"Cardputer Codex Companion\","
+                "\"version\":\"1.0.0\",\"ble\":\"%.*s\","
+                "\"wifi\":\"%.*s\",\"companion\":\"%.*s\","
+                "\"ip\":\"%s\"}",
+                static_cast<int>(to_string(ble).size()), to_string(ble).data(),
+                static_cast<int>(to_string(wifi).size()), to_string(wifi).data(),
+                static_cast<int>(to_string(companion).size()),
+                to_string(companion).data(), product_wifi_ipv4());
+  return json_response(request, json);
+}
+
+esp_err_t get_profile_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  ProfileLock lock;
+  if (!lock.locked()) return ESP_ERR_TIMEOUT;
+  cJSON* root = profile_json(g_profile);
+  char* json = cJSON_PrintUnformatted(root);
+  const esp_err_t result =
+      json == nullptr ? ESP_ERR_NO_MEM : json_response(request, json);
+  cJSON_free(json);
+  cJSON_Delete(root);
+  return result;
+}
+
+esp_err_t put_profile_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const std::string body = read_body(request);
+  cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  Profile candidate;
+  if (root == nullptr || !parse_profile(root, candidate)) {
+    cJSON_Delete(root);
+    return json_response(request, "{\"error\":\"invalid_profile\"}",
+                         "400 Bad Request");
+  }
+  cJSON_Delete(root);
+  ProfileLock lock;
+  if (!lock.locked()) return ESP_ERR_TIMEOUT;
+  if (candidate.revision != g_profile.revision) {
+    return json_response(request, "{\"error\":\"revision_conflict\"}",
+                         "409 Conflict");
+  }
+  candidate.revision += 1;
+  cJSON* encoded = profile_json(candidate);
+  char* json = cJSON_PrintUnformatted(encoded);
+  if (json == nullptr) {
+    cJSON_Delete(encoded);
+    return ESP_ERR_NO_MEM;
+  }
+  g_profile = std::move(candidate);
+  persist_profile(json);
+  const esp_err_t result = json_response(request, json);
+  cJSON_free(json);
+  cJSON_Delete(encoded);
+  return result;
+}
+
+esp_err_t wifi_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const std::string body = read_body(request);
+  cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* ssid = root == nullptr ? nullptr
+      : cJSON_GetObjectItemCaseSensitive(root, "ssid");
+  const cJSON* password = root == nullptr ? nullptr
+      : cJSON_GetObjectItemCaseSensitive(root, "password");
+  if (!cJSON_IsString(ssid) || !cJSON_IsString(password)) {
+    cJSON_Delete(root);
+    return json_response(request, "{\"error\":\"invalid_wifi\"}",
+                         "400 Bad Request");
+  }
+  const esp_err_t saved =
+      product_wifi_save(ssid->valuestring, password->valuestring);
+  cJSON_Delete(root);
+  return saved == ESP_OK
+             ? json_response(request, "{\"saved\":true}")
+             : json_response(request, "{\"error\":\"wifi_save_failed\"}",
+                             "400 Bad Request");
+}
+
+esp_err_t companion_status_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const std::string body = read_body(request);
+  if (body.empty() || g_snapshot_handler == nullptr) {
+    return json_response(request, "{\"error\":\"invalid_snapshot\"}",
+                         "400 Bad Request");
+  }
+  g_snapshot_handler(body);
+  return json_response(request, "{\"accepted\":true}");
+}
+
+esp_err_t companion_action_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const CodexAction action =
+      g_pending_codex_action.exchange(CodexAction::none);
+  const uint32_t sequence = g_action_sequence.load();
+  const std::string_view name = codex_action_name(action);
+  char json[96]{};
+  std::snprintf(json, sizeof(json),
+                "{\"sequence\":%lu,\"action\":\"%.*s\"}",
+                static_cast<unsigned long>(sequence),
+                static_cast<int>(name.size()), name.data());
+  return json_response(request, json);
+}
+}  // namespace
+
+esp_err_t product_web_start() {
+  if (g_server != nullptr) return ESP_ERR_INVALID_STATE;
+  if (g_profile_mutex == nullptr) {
+    g_profile_mutex = xSemaphoreCreateMutexStatic(&g_profile_mutex_storage);
+  }
+  if (g_profile_mutex == nullptr) return ESP_ERR_NO_MEM;
+  std::snprintf(g_pairing_code.data(), g_pairing_code.size(), "%08lu",
+                static_cast<unsigned long>(esp_random() % 100000000u));
+  load_profile();
+  DeviceTlsIdentity identity;
+  esp_err_t result = load_or_create_device_tls_identity(&identity);
+  if (result != ESP_OK) return result;
+  httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
+  config.httpd.server_port = 443;
+  config.httpd.max_uri_handlers = kProductWebRoutes.size();
+  config.httpd.stack_size = 10240;
+  config.servercert = identity.certificate;
+  config.servercert_len = identity.certificate_length;
+  config.prvtkey_pem = identity.private_key;
+  config.prvtkey_len = identity.private_key_length;
+  result = httpd_ssl_start(&g_server, &config);
+  if (result != ESP_OK) return result;
+  const std::array<httpd_uri_t, 7> routes{{
+      {.uri = "/", .method = HTTP_GET, .handler = root_handler},
+      {.uri = "/api/v1/status", .method = HTTP_GET, .handler = status_handler},
+      {.uri = "/api/v1/profile", .method = HTTP_GET,
+       .handler = get_profile_handler},
+      {.uri = "/api/v1/profile", .method = HTTP_PUT,
+       .handler = put_profile_handler},
+      {.uri = "/api/v1/wifi", .method = HTTP_POST, .handler = wifi_handler},
+      {.uri = "/api/v1/companion/status", .method = HTTP_POST,
+       .handler = companion_status_handler},
+      {.uri = "/api/v1/companion/action", .method = HTTP_GET,
+       .handler = companion_action_handler},
+  }};
+  for (const auto& route : routes) {
+    result = httpd_register_uri_handler(g_server, &route);
+    if (result != ESP_OK) return result;
+  }
+  return ESP_OK;
+}
+
+const char* product_web_pairing_code() {
+  return g_pairing_code.data();
+}
+
+void product_web_set_status(ServiceState ble, ServiceState wifi,
+                            ServiceState companion) {
+  g_ble.store(ble);
+  g_wifi.store(wifi);
+  g_companion.store(companion);
+}
+
+void product_web_set_companion_snapshot_handler(
+    ProductCompanionSnapshotHandler handler) {
+  g_snapshot_handler = handler;
+}
+
+bool product_web_action(uint8_t layer, uint8_t physical_key,
+                        KeyAction* action) {
+  if (action == nullptr || layer >= kProfileLayerCount ||
+      physical_key >= kPhysicalKeyCount) {
+    return false;
+  }
+  ProfileLock lock;
+  if (!lock.locked()) return false;
+  *action =
+      g_profile.bindings[layer * kPhysicalKeyCount + physical_key].action;
+  return true;
+}
+
+bool product_web_profile_name(char* output, std::size_t output_size) {
+  if (output == nullptr || output_size == 0) return false;
+  ProfileLock lock;
+  if (!lock.locked()) return false;
+  std::snprintf(output, output_size, "%s", g_profile.name.c_str());
+  return true;
+}
+
+void product_web_queue_codex_action(CodexAction action) {
+  if (action == CodexAction::none) return;
+  g_pending_codex_action.store(action);
+  g_action_sequence.fetch_add(1);
+}
+#endif

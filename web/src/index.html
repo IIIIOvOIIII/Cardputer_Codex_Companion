@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cardputer Codex Companion</title>
+  <!--STYLE-->
+</head>
+<body>
+  <header>
+    <div><small>CARDPUTER</small><h1>Codex Companion</h1></div>
+    <span id="status">连接中</span>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="toolbar">
+        <label>Profile <input id="profile-name" maxlength="20" value="CODEX"></label>
+        <label>Layer <select id="layer"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+        <button id="reload">重新载入</button>
+        <button id="publish" class="primary">发布</button>
+      </div>
+      <div id="keyboard" aria-label="Cardputer 56-key layout"></div>
+    </section>
+    <aside class="panel editor">
+      <h2>按键 <span id="selected-key">0</span></h2>
+      <label>动作
+        <select id="action-kind">
+          <option value="passthrough">passthrough</option>
+          <option value="hid_chord">hid_chord</option>
+          <option value="text_utf8">text_utf8</option>
+          <option value="input_sequence">input_sequence</option>
+          <option value="device_action">device_action</option>
+          <option value="codex_action">codex_action</option>
+          <option value="disabled">disabled</option>
+        </select>
+      </label>
+      <label>组合键修饰位 <input id="modifiers" type="number" min="0" max="255" value="0"></label>
+      <label>HID usages（逗号分隔） <input id="usages" placeholder="6,25"></label>
+      <label>UTF-8 / 中文字符串 <textarea id="text" maxlength="1024" placeholder="例如：请检查这段代码"></textarea></label>
+      <label>设备动作
+        <select id="device-action">
+          <option value="none">none</option>
+          <option value="toggle_mode">toggle_mode</option>
+          <option value="open_pairing">open_pairing</option>
+          <option value="reconnect_wifi">reconnect_wifi</option>
+        </select>
+      </label>
+      <label>Codex 动作
+        <select id="codex-action">
+          <option value="none">none</option>
+          <option value="select_next">select_next</option>
+          <option value="select_previous">select_previous</option>
+          <option value="interrupt">interrupt</option>
+          <option value="approve">approve</option>
+          <option value="reject">reject</option>
+        </select>
+      </label>
+      <label>序列 JSON <textarea id="sequence" placeholder='[{"kind":"hid_chord","usages":[6]}]'></textarea></label>
+      <button id="apply-key">应用到按键</button>
+      <hr>
+      <h2>Wi-Fi 配置</h2>
+      <label>SSID <input id="wifi-ssid" maxlength="32"></label>
+      <label>密码 <input id="wifi-password" type="password" maxlength="64"></label>
+      <button id="save-wifi">保存并重连</button>
+      <p class="hint">读取接口永不返回 Wi-Fi 密码。写操作需输入设备屏幕显示的八位配对码。</p>
+      <label>配对码 <input id="pairing-code" inputmode="numeric" maxlength="8"></label>
+    </aside>
+  </main>
+  <!--SCRIPT-->
+</body>
+</html>

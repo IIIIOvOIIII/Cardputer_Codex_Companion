@@ -11,8 +11,11 @@ __pycache__/
 include/secrets.h
 build/
 dist/
+dist/private/
 .tools/
+.tools
 companion/.build/
+build/private/
 .swiftpm/
 web-probe/node_modules/
 *.sqlite

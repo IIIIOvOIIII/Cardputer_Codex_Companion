@@ -1,0 +1,30 @@
+#include <cassert>
+#include <vector>
+
+#include "product/product_controller.hpp"
+
+struct FakeStartup final : ProductStartupBackend {
+  bool display() override { calls.push_back(BootStage::display); return true; }
+  bool config() override { calls.push_back(BootStage::config); return true; }
+  bool keyboard() override { calls.push_back(BootStage::keyboard); return true; }
+  bool ble() override { calls.push_back(BootStage::ble); return true; }
+  bool wifi() override { calls.push_back(BootStage::wifi); return false; }
+  bool web() override { calls.push_back(BootStage::web); return true; }
+  bool companion() override { calls.push_back(BootStage::companion); return false; }
+  std::vector<BootStage> calls;
+};
+
+int main() {
+  FakeStartup startup;
+  ProductController controller(startup);
+  controller.start();
+  assert(startup.calls.size() == 7);
+  for (uint8_t i = 0; i < startup.calls.size(); ++i) {
+    assert(static_cast<uint8_t>(startup.calls[i]) == i);
+  }
+  assert(controller.state(BootStage::display) == ServiceState::ok);
+  assert(controller.state(BootStage::wifi) == ServiceState::offline);
+  assert(controller.state(BootStage::web) == ServiceState::ok);
+  assert(controller.state(BootStage::companion) == ServiceState::offline);
+  return 0;
+}

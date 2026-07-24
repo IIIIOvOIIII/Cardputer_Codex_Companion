@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 using DeviceId = std::array<uint8_t, 16>;
 using Uuid128 = std::array<uint8_t, 16>;
@@ -52,6 +53,9 @@ BleServiceManifest ble_service_manifest();
 CompanionGattUuids companion_gatt_uuids();
 bool companion_binding_proof_is_complete(const CompanionBindingProof& proof);
 bool device_id_is_valid(std::span<const uint8_t, 16> device_id);
+std::vector<uint8_t> encode_product_text_fragment(
+    uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
+    std::span<const uint8_t> utf8);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
@@ -59,6 +63,7 @@ bool device_id_is_valid(std::span<const uint8_t, 16> device_id);
 
 using BleDisconnectHandler = void (*)();
 using CompanionControlHandler = void (*)(std::span<const uint8_t>);
+using BleConnectionHandler = void (*)(bool connected);
 
 esp_err_t load_or_create_device_id(DeviceId* device_id);
 esp_err_t initialize_ble(
@@ -68,5 +73,9 @@ esp_err_t bind_current_companion(const CompanionBindingProof& proof);
 void clear_current_companion_binding();
 void set_ble_disconnect_handler(BleDisconnectHandler handler);
 void set_companion_control_handler(CompanionControlHandler handler);
+void set_ble_connection_handler(BleConnectionHandler handler);
+void enable_product_companion_mode();
 esp_err_t notify_current_companion(std::span<const uint8_t> frame);
+esp_err_t notify_product_utf8(uint32_t operation_id,
+                              std::span<const uint8_t> utf8);
 #endif

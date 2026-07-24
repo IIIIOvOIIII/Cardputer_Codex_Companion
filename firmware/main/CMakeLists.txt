@@ -51,6 +51,18 @@ idf_component_register(
         "probe/web_async_dispatch.cpp"
         "probe/web_guard.cpp"
         "probe/web_handlers.cpp"
+        "product/ui_model.cpp"
+        "product/display.cpp"
+        "product/keyboard_matrix.cpp"
+        "product/input_router.cpp"
+        "product/profile.cpp"
+        "product/profile_store.cpp"
+        "product/macro_engine.cpp"
+        "product/wifi_manager.cpp"
+        "product/product_web.cpp"
+        "product/device_identity.cpp"
+        "product/companion_protocol.cpp"
+        "product/product_controller.cpp"
     INCLUDE_DIRS
         "."
         "probe"
@@ -61,14 +73,19 @@ idf_component_register(
         esp_hid
         esp_hw_support
         esp_http_server
+        esp_https_server
         esp_psram
         esp_timer
+        esp_event
+        esp_netif
+        esp_wifi
         freertos
         json
         lwip
         mbedtls
         nvs_flash
         spi_flash
+        m5unified
     WHOLE_ARCHIVE
 )
 

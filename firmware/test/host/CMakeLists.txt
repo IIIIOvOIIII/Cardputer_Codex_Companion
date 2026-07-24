@@ -182,3 +182,71 @@ target_include_directories(test_resource_metrics
     ../../main
 )
 add_test(NAME resource_metrics COMMAND test_resource_metrics)
+
+add_executable(test_product_types test_product_types.cpp)
+target_include_directories(test_product_types PRIVATE ../../main)
+add_test(NAME product_types COMMAND test_product_types)
+
+add_executable(test_ui_model
+  test_ui_model.cpp
+  ../../main/product/ui_model.cpp
+)
+target_include_directories(test_ui_model PRIVATE ../../main)
+add_test(NAME ui_model COMMAND test_ui_model)
+
+add_executable(test_keyboard_matrix
+  test_keyboard_matrix.cpp
+  ../../main/product/keyboard_matrix.cpp
+)
+target_include_directories(test_keyboard_matrix PRIVATE ../../main)
+add_test(NAME keyboard_matrix COMMAND test_keyboard_matrix)
+
+add_executable(test_input_router
+  test_input_router.cpp
+  ../../main/product/input_router.cpp
+  ../../main/probe/hid_engine.cpp
+)
+target_include_directories(test_input_router PRIVATE ../../main)
+add_test(NAME input_router COMMAND test_input_router)
+
+add_executable(test_profile
+  test_profile.cpp
+  ../../main/product/profile.cpp
+  ../../main/product/profile_store.cpp
+)
+target_include_directories(test_profile PRIVATE ../../main)
+add_test(NAME profile COMMAND test_profile)
+
+add_executable(test_macro_engine
+  test_macro_engine.cpp
+  ../../main/product/profile.cpp
+  ../../main/product/macro_engine.cpp
+  ../../main/probe/hid_engine.cpp
+)
+target_include_directories(test_macro_engine PRIVATE ../../main)
+add_test(NAME macro_engine COMMAND test_macro_engine)
+
+add_executable(test_wifi_manager
+  test_wifi_manager.cpp
+  ../../main/product/wifi_manager.cpp
+)
+target_include_directories(test_wifi_manager PRIVATE ../../main)
+add_test(NAME wifi_manager COMMAND test_wifi_manager)
+
+add_executable(test_product_web test_product_web.cpp)
+target_include_directories(test_product_web PRIVATE ../../main)
+add_test(NAME product_web COMMAND test_product_web)
+
+add_executable(test_companion_protocol
+  test_companion_protocol.cpp
+  ../../main/product/companion_protocol.cpp
+)
+target_include_directories(test_companion_protocol PRIVATE ../../main)
+add_test(NAME companion_protocol COMMAND test_companion_protocol)
+
+add_executable(test_product_controller
+  test_product_controller.cpp
+  ../../main/product/product_controller.cpp
+)
+target_include_directories(test_product_controller PRIVATE ../../main)
+add_test(NAME product_controller COMMAND test_product_controller)

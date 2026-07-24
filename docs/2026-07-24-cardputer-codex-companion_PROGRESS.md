@@ -118,3 +118,10 @@
 - Expected result: 每项任务包含精确文件、RED/GREEN、验证命令和安全边界；56 键矩阵不再沿用错误的 3×7 理解。
 - Result: Achieved — 产品实施计划已写入 `docs/superpowers/plans/2026-07-24-product-firmware-companion.md`，共 14 个测试先行任务。硬件依据固定到 M5Stack 官方 `M5Cardputer` commit `f1392858b9994c3547120e602a57d3553d16ab01`：GPIO 8/9/11 产生 8 个 selector 状态，GPIO 13/15/3/4/5/6/7 读取交错列并映射为 4×14/56 键。
 - Next step: 自审计划、提交文档，然后按 `executing-plans` 在当前侧会话内联执行 Task 1–14；Vault 明文只在 Task 13 的忽略目录和 0600 临时文件中出现。
+
+## 2026-07-24 16:55 HKT
+
+- Current work: 完成产品固件、内嵌 Web、macOS Companion、Vault 私有 Wi-Fi NVS、完整镜像和发布门禁；发布复核时修正四层 Web Profile 仅执行 layer 0 以及屏幕 Profile 名称不更新的问题。
+- Expected result: 从 `0x0` 可刷写的私有完整镜像包含 Vault 指定 Wi-Fi；固件具备可见启动/状态界面、56 键 BLE HID、四层自定义 chord/text/sequence、UTF-8/中文 Companion 链路和 Codex 活跃会话状态；所有可在无实机条件下完成的验证通过且不泄露凭据。
+- Result: Achieved for compiled product delivery — Python 78/78、firmware host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 `fullclean` target build、Swift release build、Companion doctor、Web 资源、通用/私有镜像组装、分区偏移和 secret exclusion 均通过。应用镜像 1,467,152 bytes、SHA-256 `ab81fdd63f97d489ca0f8c46402b1b7d251abc0a143ed6fd62414b47512358b4`；私有完整镜像 1,598,224 bytes、SHA-256 `bf4bc762e15195bd8684aed7d229b8185d561b41b3c4bc09b924680b1109dbeb`。产品 LAN 状态链路使用 HTTPS + 屏幕八位 PIN，中文使用已加密、已认证、已绑定的 BLE GATT；本次不宣称 Phase 0 完整 P-256/SAS/pinned-WSS 双通道绑定已产品化。
+- Next step: 用户将私有完整镜像写入 `0x0` 并启动 Companion。当前没有唯一 Cardputer 串口，因此未刷机，也未执行 30 分钟实机 HIL；LCD 方向、56 个实体键、真实 BLE/Wi-Fi/HTTPS/中文注入和持续并发仍需真机验收。

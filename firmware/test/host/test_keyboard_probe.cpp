@@ -43,6 +43,19 @@ int main() {
   assert(pairing.confirmation);
   assert(pairing.confirmed_at_ms == 2000);
 
+  const HidReport chord{
+      .modifiers = 0x01,
+      .reserved = 0,
+      .keys = {0x06, 0x19, 0, 0, 0, 0},
+  };
+  probe.send_complete_report(chord);
+  assert(sink.reports.size() == 1);
+  assert(sink.reports.back() == chord);
+  probe.release_all();
+  assert(sink.reports.size() == 2);
+  assert(sink.reports.back() == HidReport{});
+  sink.reports.clear();
+
   probe.enqueue_stable_key_event(StableKeyEvent{.physical_key = 0x06, .pressed = true});
   assert(sink.reports.size() == 2);
   assert(sink.reports[0].modifiers == 0);

@@ -62,5 +62,19 @@ int main() {
   const DeviceId zero_id{};
   assert(device_id_is_valid(valid_id));
   assert(!device_id_is_valid(zero_id));
+
+  constexpr std::array<uint8_t, 6> utf8{0xe4, 0xbd, 0xa0, 0xe5, 0xa5, 0xbd};
+  const auto text_frame =
+      encode_product_text_fragment(0x01020304, 0, 1, utf8);
+  assert(text_frame.size() == 16);
+  assert(text_frame[0] == 1);
+  assert(text_frame[1] == 1);
+  assert(text_frame[2] == 0x01);
+  assert(text_frame[5] == 0x04);
+  assert(text_frame[6] == 0);
+  assert(text_frame[7] == 1);
+  assert(text_frame[8] == 0);
+  assert(text_frame[9] == 6);
+  assert(text_frame[10] == 0xe4);
   return 0;
 }
