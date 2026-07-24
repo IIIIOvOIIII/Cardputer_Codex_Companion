@@ -19,6 +19,20 @@
   },
   "pairing_root_hex": "e225b6e453d06283c2f5a424a0b95c6c08da2a2aca15e12d7c4f4a2c6ca61c4d",
   "pairing_version": "1",
+  "post_sas_binding_state": {
+    "peer_spki_sha256_hex": "bfcba2b742a807bbb72b522fa4694c4604ff68ebd21b048c56d53dc18a94d5c4",
+    "wss_challenge_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "post_sas_policy": {
+    "challenge_length_bytes": 32,
+    "challenge_ttl_seconds": 60,
+    "require_authenticated_wss": true,
+    "require_encrypted_bonded_gatt": true,
+    "version": "1"
+  },
+  "post_sas_requirements": {
+    "required_sas_confirmations": 2
+  },
   "protocol_version": "1.0",
   "role": "device",
   "sas": "999757",

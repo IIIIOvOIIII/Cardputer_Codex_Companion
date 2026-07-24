@@ -52,3 +52,19 @@ SAS uses rejection sampling over attempts `0..255` using the transcript hash as 
 4. If no attempt accepted, return an exhaustion error.
 
 Use exactly 4-byte samples and exactly 256 attempts, no host entropy.
+
+## Post-SAS binding gate
+
+Pairing is accepted only when both SAS confirmations are complete and the
+downstream binding policy is also satisfied:
+
+- The same 32-byte fresh WSS challenge arrives within `60` seconds of the second
+  SAS acceptance.
+- The challenge must arrive over authenticated WSS.
+- Bonded GATT transport must already be encrypted.
+- The peer identity used by the binding check must match the pinned
+  `peer_spki_sha256_hex`.
+
+If any condition is missing or mismatched, bind is rejected. The canonical fixture
+encodes this policy in `post_sas_policy`, `post_sas_requirements`, and
+`post_sas_binding_state`.

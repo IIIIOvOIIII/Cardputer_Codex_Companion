@@ -37,6 +37,10 @@ class SecurityVectorFixtureTest(unittest.TestCase):
         self.assertEqual(130, len(fixture["companion_identity_sec1_hex"]))
         self.assertEqual(130, len(fixture["device_ephemeral_sec1_hex"]))
         self.assertEqual(130, len(fixture["companion_ephemeral_sec1_hex"]))
+        self.assertEqual("1", fixture["post_sas_policy"]["version"])
+        self.assertEqual(32, fixture["post_sas_policy"]["challenge_length_bytes"])
+        self.assertEqual(60, fixture["post_sas_policy"]["challenge_ttl_seconds"])
+        self.assertEqual(2, fixture["post_sas_requirements"]["required_sas_confirmations"])
 
     def test_pairing_mutation_changes_outputs(self) -> None:
         base_inputs = vectors._default_inputs()
@@ -128,6 +132,23 @@ class SecurityVectorFixtureTest(unittest.TestCase):
             hashlib.sha256,
         ).digest()[:16].hex()
         self.assertEqual(expected_tag, fixture["tag_hex"])
+
+        self.assertTrue(
+            vectors.verify_gatt_tag(
+                gatt_auth_key_hex=fixture["gatt_auth_hex"],
+                canonical_frame_hex=fixture["canonical_frame_hex"],
+                tag_hex=fixture["tag_hex"],
+                label=fixture["gatt_hmac_label"].encode("ascii"),
+            )
+        )
+        self.assertFalse(
+            vectors.verify_gatt_tag(
+                gatt_auth_key_hex=fixture["gatt_auth_hex"],
+                canonical_frame_hex=fixture["canonical_frame_hex"],
+                tag_hex=("11" + fixture["tag_hex"][2:]),
+                label=fixture["gatt_hmac_label"].encode("ascii"),
+            )
+        )
 
     def test_wss_signature_is_fixed_width_raw_rs(self) -> None:
         fixture = self._load(self.WSS_FIXTURE)
@@ -299,6 +320,15 @@ class SecurityVectorFixtureTest(unittest.TestCase):
         mutated_gatt = vectors._build_all_fixtures(mutated_fragment)
         self.assertNotEqual(base["gatt-auth-v1"]["tag_hex"], mutated_gatt["gatt-auth-v1"]["tag_hex"])
 
+        mutated_full_message = dict(base_inputs)
+        mutated_full_message["gatt_full_message_utf8_hex"] = "48656c6c6f20706f7274666f7263652121"
+        mutated_full_message_gatt = vectors._build_all_fixtures(mutated_full_message)["gatt-auth-v1"]
+        self.assertNotEqual(
+            base["gatt-auth-v1"]["gatt_full_message_sha256_hex"],
+            mutated_full_message_gatt["gatt_full_message_sha256_hex"],
+        )
+        self.assertNotEqual(base["gatt-auth-v1"]["tag_hex"], mutated_full_message_gatt["tag_hex"])
+
         mutated_exporter = dict(base_inputs)
         mutated_exporter["tls_exporter_hex"] = "bb" * 32
         mutated_wss = vectors._build_all_fixtures(mutated_exporter)
@@ -339,6 +369,122 @@ class SecurityVectorFixtureTest(unittest.TestCase):
             bad_private_scalar = dict(base_inputs)
             bad_private_scalar["device_identity_private_scalar_hex"] = "00" * 32
             vectors._build_all_fixtures(bad_private_scalar)
+
+    def test_private_scalar_width_and_range_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar("00")
+
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar("zz" * 32)
+
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar("00" * 31)
+
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar("00" * 33)
+
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar("00" * 32)
+
+        with self.assertRaises(ValueError):
+            vectors._private_key_from_scalar(f"{vectors.CURVE.group_order:064x}")
+
+    def test_post_sas_binding_validator(self) -> None:
+        base_inputs = vectors._default_inputs()
+        pairing = vectors._build_all_fixtures(base_inputs)["pairing-v1"]
+        policy = pairing["post_sas_policy"]
+        requirements = pairing["post_sas_requirements"]
+        expected_challenge = pairing["post_sas_binding_state"]["wss_challenge_hex"]
+        expected_peer = pairing["post_sas_binding_state"]["peer_spki_sha256_hex"]
+
+        self.assertTrue(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_030,
+                challenge_hex=expected_challenge,
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=True,
+                has_encrypted_bonded_gatt=True,
+            )
+        )
+
+        self.assertFalse(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_030,
+                challenge_hex=expected_challenge,
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=False,
+                has_encrypted_bonded_gatt=True,
+            )
+        )
+        self.assertFalse(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_030,
+                challenge_hex=expected_challenge,
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=True,
+                has_encrypted_bonded_gatt=False,
+            )
+        )
+
+        self.assertFalse(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_070,
+                challenge_hex=expected_challenge,
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=True,
+                has_encrypted_bonded_gatt=True,
+            )
+        )
+
+        self.assertFalse(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_010,
+                challenge_hex="11" + expected_challenge[2:],
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=True,
+                has_encrypted_bonded_gatt=True,
+            )
+        )
+
+        self.assertFalse(
+            vectors.validate_post_sas_binding(
+                policy=policy,
+                requirement=requirements,
+                sas_confirmation_unix_s=1_000,
+                wss_arrival_unix_s=1_010,
+                challenge_hex=("11" * 31),
+                expected_challenge_hex=expected_challenge,
+                observed_peer_spki_sha256_hex=expected_peer,
+                expected_peer_spki_sha256_hex=expected_peer,
+                has_wss_channel=True,
+                has_encrypted_bonded_gatt=True,
+            )
+        )
 
     def test_width_and_context_rejections(self) -> None:
         base_inputs = vectors._default_inputs()

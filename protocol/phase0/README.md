@@ -14,6 +14,12 @@ This folder is the canonical protocol contract for Foundation Task 2. The vector
 - `fixtures/gatt-auth-v1.json`: GATT-auth canonical input and 16-byte auth tag.
 - `fixtures/wss-auth-v1.json`: WSS canonical message, 64-byte fixed-width signature, and SPKI pin.
 
+Pairing fixtures also include a deterministic post-SAS binding policy block used by downstream clients:
+`post_sas_policy`, `post_sas_requirements`, and `post_sas_binding_state`.
+
+The policy requires: fresh 32-byte challenge, same-challenge replay within 60 seconds,
+authenticated WSS path, and bonded encrypted GATT.
+
 ## Encoding Rules
 
 1. Use exact UTF-8 encoding.

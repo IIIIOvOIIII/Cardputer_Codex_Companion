@@ -28,6 +28,10 @@ WSS_SIGNED_EXPORTER_LENGTH = 32
 WSS_CHALLENGE_LENGTH = 32
 WSS_ROLE_DEVICE = "device"
 
+POST_SAS_POLICY_VERSION = "1"
+POST_SAS_REQUIRED_CONFIRMATIONS = 2
+POST_SAS_CHALLENGE_TTL_SECONDS = 60
+
 SAS_REJECTION_LIMIT = 4_294_000_000
 SAS_ATTEMPT_MIN = 0
 SAS_ATTEMPT_MAX = 255
@@ -41,6 +45,15 @@ class FixtureValidationError(ValueError):
 
 def _to_bytes(value_hex: str) -> bytes:
     return bytes.fromhex(value_hex)
+
+
+def _validate_hex_length(value_hex: str, exact_bytes: int, name: str) -> bytes:
+    if len(value_hex) != exact_bytes * 2:
+        raise FixtureValidationError(f"{name} must be exactly {exact_bytes} bytes")
+    try:
+        return bytes.fromhex(value_hex)
+    except ValueError as exc:
+        raise FixtureValidationError(f"{name} must be valid hex") from exc
 
 
 def lp16(value: bytes) -> bytes:
@@ -57,7 +70,17 @@ def _require_exact_bytes(value_hex: str, length: int, name: str) -> bytes:
 
 
 def _private_key_from_scalar(hex_scalar: str) -> ec.EllipticCurvePrivateKey:
-    scalar = int(hex_scalar, 16)
+    if len(hex_scalar) != 64:
+        raise ValueError("Private scalar must be exactly 64 hex characters")
+
+    try:
+        scalar = int(hex_scalar, 16)
+    except ValueError as exc:
+        raise ValueError("Private scalar must be hex-encoded") from exc
+
+    if scalar <= 0 or scalar >= CURVE.group_order:
+        raise ValueError("Private scalar must be in range 1..n-1")
+
     return ec.derive_private_key(scalar, CURVE)
 
 
@@ -264,6 +287,103 @@ def gatt_tag(
     return hmac.new(key, message, hashlib.sha256).digest()[:16].hex()
 
 
+def verify_gatt_tag(
+    *,
+    gatt_auth_key_hex: str,
+    canonical_frame_hex: str,
+    tag_hex: str,
+    label: bytes | str = HKDF_LABEL_GATT_AUTH,
+) -> bool:
+    if isinstance(label, str):
+        label_bytes = label.encode("ascii")
+    else:
+        label_bytes = label
+
+    try:
+        key = bytes.fromhex(gatt_auth_key_hex)
+        canonical_frame = bytes.fromhex(canonical_frame_hex)
+        tag = bytes.fromhex(tag_hex)
+    except ValueError:
+        return False
+
+    if len(tag) != 16:
+        return False
+
+    expected = hmac.new(
+        key,
+        label_bytes + canonical_frame,
+        hashlib.sha256,
+    ).digest()[:16]
+
+    return hmac.compare_digest(expected, tag)
+
+
+def validate_post_sas_binding(
+    *,
+    policy: Mapping[str, Any],
+    requirement: Mapping[str, Any],
+    sas_confirmation_unix_s: int,
+    wss_arrival_unix_s: int,
+    challenge_hex: str,
+    expected_challenge_hex: str,
+    observed_peer_spki_sha256_hex: str,
+    expected_peer_spki_sha256_hex: str,
+    has_wss_channel: bool,
+    has_encrypted_bonded_gatt: bool,
+) -> bool:
+    if sas_confirmation_unix_s < 0 or wss_arrival_unix_s < 0:
+        return False
+
+    if wss_arrival_unix_s < sas_confirmation_unix_s:
+        return False
+
+    ttl = int(policy.get("challenge_ttl_seconds", POST_SAS_CHALLENGE_TTL_SECONDS))
+    if policy.get("require_authenticated_wss", True) and not has_wss_channel:
+        return False
+
+    if policy.get("require_encrypted_bonded_gatt", True) and not has_encrypted_bonded_gatt:
+        return False
+
+    challenge_length = int(policy.get("challenge_length_bytes", WSS_CHALLENGE_LENGTH))
+    try:
+        challenge = _validate_hex_length(challenge_hex, challenge_length, "WSS challenge")
+        expected_challenge = _validate_hex_length(
+            expected_challenge_hex,
+            challenge_length,
+            "expected WSS challenge",
+        )
+    except (ValueError, FixtureValidationError):
+        return False
+
+    if not hmac.compare_digest(challenge, expected_challenge):
+        return False
+
+    try:
+        expected_peer = _validate_hex_length(
+            expected_peer_spki_sha256_hex,
+            hashlib.sha256().digest_size,
+            "expected peer SPKI SHA-256",
+        )
+        observed_peer = _validate_hex_length(
+            observed_peer_spki_sha256_hex,
+            hashlib.sha256().digest_size,
+            "observed peer SPKI SHA-256",
+        )
+    except (ValueError, FixtureValidationError):
+        return False
+
+    if not hmac.compare_digest(expected_peer, observed_peer):
+        return False
+
+    if int(requirement.get("required_sas_confirmations", 0)) < POST_SAS_REQUIRED_CONFIRMATIONS:
+        return False
+
+    if (wss_arrival_unix_s - sas_confirmation_unix_s) > ttl:
+        return False
+
+    return True
+
+
 def is_counter_acceptable(
     candidate_counter: int,
     *,
@@ -404,6 +524,21 @@ def build_pairing_fixture(inputs: Mapping[str, Any]) -> Dict[str, str]:
         salt=transcript_sha256,
     )
 
+    post_sas_policy = {
+        "version": POST_SAS_POLICY_VERSION,
+        "challenge_ttl_seconds": POST_SAS_CHALLENGE_TTL_SECONDS,
+        "challenge_length_bytes": WSS_CHALLENGE_LENGTH,
+        "require_authenticated_wss": True,
+        "require_encrypted_bonded_gatt": True,
+    }
+    post_sas_requirements = {
+        "required_sas_confirmations": POST_SAS_REQUIRED_CONFIRMATIONS,
+    }
+    post_sas_binding_state = {
+        "wss_challenge_hex": inputs["wss_challenge_hex"],
+        "peer_spki_sha256_hex": inputs["peer_spki_sha256_hex"],
+    }
+
     return {
         "test_only": True,
         "warnings": [
@@ -439,6 +574,9 @@ def build_pairing_fixture(inputs: Mapping[str, Any]) -> Dict[str, str]:
             "gatt_auth": HKDF_LABEL_GATT_AUTH.decode("ascii"),
             "sas_prefix": HKDF_LABEL_SAS.decode("ascii"),
         },
+        "post_sas_policy": post_sas_policy,
+        "post_sas_requirements": post_sas_requirements,
+        "post_sas_binding_state": post_sas_binding_state,
     }
 
 
