@@ -111,3 +111,10 @@
 - Expected result: 明确区分测试探针与可用产品；批准真实屏幕/键盘/Wi-Fi/Web/Profile/宏、macOS Companion/Codex 联动、私有 NVS 凭据制品和分层验收设计。
 - Result: Achieved — 用户批准延续现有 ESP-IDF/Swift 架构、固件与 Companion 端到端一起完成、Wi-Fi 凭据使用 Git 忽略的私有 NVS 分区封装，并批准架构、数据安全、故障和验收三部分设计。增量设计落盘为 `docs/superpowers/specs/2026-07-24-product-firmware-companion-implementation-design.md`。
 - Next step: 自审并提交增量设计，然后使用 `writing-plans` 创建逐任务、测试先行的产品化实施计划；计划批准前不修改产品代码或读取 Vault 明文。
+
+## 2026-07-24 16:24 HKT
+
+- Current work: 将已批准的产品化增量设计拆成单一依赖顺序的固件、Web、Companion、Vault 私有打包与交付任务，并核对原版 Cardputer 官方键盘扫描实现。
+- Expected result: 每项任务包含精确文件、RED/GREEN、验证命令和安全边界；56 键矩阵不再沿用错误的 3×7 理解。
+- Result: Achieved — 产品实施计划已写入 `docs/superpowers/plans/2026-07-24-product-firmware-companion.md`，共 14 个测试先行任务。硬件依据固定到 M5Stack 官方 `M5Cardputer` commit `f1392858b9994c3547120e602a57d3553d16ab01`：GPIO 8/9/11 产生 8 个 selector 状态，GPIO 13/15/3/4/5/6/7 读取交错列并映射为 4×14/56 键。
+- Next step: 自审计划、提交文档，然后按 `executing-plans` 在当前侧会话内联执行 Task 1–14；Vault 明文只在 Task 13 的忽略目录和 0600 临时文件中出现。
