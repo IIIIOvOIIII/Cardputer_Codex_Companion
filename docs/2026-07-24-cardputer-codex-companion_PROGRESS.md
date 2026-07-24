@@ -195,3 +195,10 @@
 - Expected result: BLE 断线/半连接后进入重试或重新广播，不再把重启后的未连接态显示为 `OFFLINE`；首次生成的 Web PIN 写入 NVS，之后重启保持不变，只有 Web 修改 PIN 才改变；屏幕运行态文字显著增大且不因长行换行。
 - Result: Achieved — 新增 BLE advertising watchdog 与 stale HID link timeout：断开且未广播时每 5 秒恢复 advertising，GAP 已连但未完成加密/认证/HIDD/subscription 的半连接 15 秒后主动 terminate；产品控制器将未连接 BLE 状态呈现为 `starting` 而非 `offline`。`load_pairing_code()` 改为 NVS read/write：已有合法 PIN 直接复用，缺失或非法 PIN 时生成一次并持久化，NVS 不可用时才使用临时 PIN。运行屏状态行压缩为 `B/W/M` 和 `OK/OFF/ERR/...`，IP/PIN 分行，去掉 cwd，显示正文 `TextSize=2`。版本 bump 至 1.0.21。完整 release gate 通过：Python 96/96、firmware host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、产品分区校验、Swift release/doctor、generic/private packaging；目标 DIRAM headroom 141,073 bytes。1.0.21 应用镜像 SHA-256 为 `c5ee200157458e6824526426985428baa1998afe78a34341219900fa0a3a0352`；1.0.21 private full image SHA-256 为 `da56a951d3b8a9e758a93d337e2b4d1478c55652d0b79a9d774badcc695cb3e5`。为保留当前设备上的 product NVS/PIN，实机部署使用应用分区刷写 `0x20000 firmware/build/cardputer_codex_companion.bin`，esptool 写入 hash verified；随后通过 `read_mac --after hard_reset` 做真实复位，未重新写入 PIN，状态接口仍返回 `version=1.0.21`、`wifi=OK`、`companion=OK`，证明 PIN 重启后未刷新。复位后 BLE 先处于重试态 `...` 而非旧 `OFFLINE`，随后自动恢复为 `BLE=OK`；macOS `system_profiler SPBluetoothDataType` 可见 `Cardputer Codex`，类型 Keyboard，RSSI 正常。
 - Next step: 本地提交修复。若需要恢复空白设备或重刷完整镜像，可刷 `dist/private/cardputer_codex_companion-private-full.bin` 到 `0x0`；若是升级已配置设备，为保留 Web PIN，应刷应用分区 `0x20000` 或未来实现 OTA/保 NVS 升级路径。
+
+## 2026-07-24 23:24 HKT
+
+- Current work: 使用 Chrome 在实机 Web 页面复现字符串按键映射无法发布，并通过串口、API 与 NVS 边界检查定位根因；将用户批准的稀疏 Profile 修复方案固化为实施前规格。
+- Expected result: 明确一个兼容旧 Profile、低内存、可持久化且符合用户保存直觉的修复边界，实施前不修改固件代码。
+- Result: Achieved for diagnosis and design — Chrome 复现 `Failed to fetch`，串口在 Profile GET 上稳定记录 `httpd_uri: uri handler execution failed`；默认完整 Profile 实测约 5,193 bytes，超过 ESP-IDF `nvs_set_str()` 4,000-byte 上限，而稀疏 `null` 编码约 1,161 bytes。Mac agent 停止后的对照测试仍复现 Profile handler 失败，排除其为主因；agent 已恢复运行。用户批准使用 224 项稀疏数组、兼容旧 passthrough 对象、持久化成功后再切换内存 Profile，并将弹窗动作改为“保存并发布”。
+- Next step: 用户审阅稀疏持久化规格；批准后创建测试先行实施计划，再实现、构建、刷入并做 Chrome/串口/实体键复验。
