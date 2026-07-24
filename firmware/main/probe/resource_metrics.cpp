@@ -205,6 +205,11 @@ BurstError validate_transient_burst(const BurstMetrics& metrics) {
   return BurstError::none;
 }
 
+bool should_begin_transient_window(uint64_t start_us, uint64_t end_us,
+                                   uint64_t observed_at_us) {
+  return start_us == 0 || end_us <= start_us || observed_at_us >= end_us;
+}
+
 ResourceEncodeError emit_resource_sample_line(
     const ResourceSample& sample,
     std::string_view scenario,

@@ -131,3 +131,5 @@ ResourceEncodeError emit_resource_sample_line(
 StackConstraintResult evaluate_stack_constraints(
     std::span<const TaskStackMetric> metrics);
 BurstError validate_transient_burst(const BurstMetrics& metrics);
+[[nodiscard]] bool should_begin_transient_window(
+    uint64_t start_us, uint64_t end_us, uint64_t observed_at_us);

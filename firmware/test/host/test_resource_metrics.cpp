@@ -143,6 +143,10 @@ int main() {
       .approval_bytes = 65536,
   };
   assert(validate_transient_burst(burst) == BurstError::none);
+  assert(should_begin_transient_window(0, 0, 100));
+  assert(!should_begin_transient_window(100, 5000100, 5000099));
+  assert(should_begin_transient_window(100, 5000100, 5000100));
+  assert(should_begin_transient_window(100, 100, 100));
 
   auto expect_burst_error = [&](BurstMetrics metrics,
                                 BurstError expected) {

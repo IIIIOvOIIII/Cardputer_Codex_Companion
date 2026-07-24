@@ -634,7 +634,14 @@ esp_err_t websocket_handler(httpd_req_t* request) {
       WebHandlerContext* current = context(request);
       const uint64_t observed_at_us =
           static_cast<uint64_t>(esp_timer_get_time());
-      if (current->burst_metrics(observed_at_us).window_us == 0) {
+      const uint64_t window_start =
+          g_probe_web_metrics.burst_window_start_us.load(
+              std::memory_order_acquire);
+      const uint64_t window_end =
+          g_probe_web_metrics.burst_window_end_us.load(
+              std::memory_order_relaxed);
+      if (should_begin_transient_window(window_start, window_end,
+                                        observed_at_us)) {
         current->begin_burst_window(observed_at_us);
       }
       if (frame.fragmented || frame.type == HTTPD_WS_TYPE_CONTINUE) {
