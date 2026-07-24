@@ -209,3 +209,10 @@
 - Expected result: 每个实现步骤包含精确文件、RED/GREEN 命令、持久化顺序、Web 失败行为、app-only 刷写边界与 Chrome/串口/实体键验收。
 - Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-24-web-profile-sparse-persistence.md`，包含四个可独立验收任务：稀疏 JSON 与原子持久化、弹窗保存即发布、1.0.22 完整发布门禁、`0x20000` app-only 刷写和实机复验。自审确认覆盖旧格式兼容、4,000-byte NVS 边界、失败不切换内存 Profile、无秘密日志和物理 UTF-8 输入验收，未发现占位符或接口命名冲突。
 - Next step: 由用户选择执行模式；按当前无子代理授权边界，推荐在本会话使用 executing-plans 内联执行。
+
+## 2026-07-24 23:37 HKT
+
+- Current work: 在隔离 worktree `fix/web-profile-sparse-persistence` 中完成稀疏 Profile、原子 NVS 持久化、Web 弹窗保存即发布和 1.0.22 发布构建。
+- Expected result: 默认 Profile 低于 4,000-byte NVS 字符串上限；旧 passthrough 对象仍可读取；持久化失败不替换内存 Profile；Web 弹窗直接发布并内联显示错误；完整发布门禁通过。
+- Result: Achieved and ready for app-only flash — Task 1 RED 确认缺失稀疏/原子策略，GREEN 后 host policy 与稀疏回归 2/2；Task 2 RED 确认弹窗仍仅本地应用，GREEN 后 Web tests 6/6 与 JavaScript 语法检查通过；版本 RED/GREEN 确认 1.0.22 常量。完整发布门禁通过：Python 99/99、普通 host 21/21、ASan/UBSan 21/21、Web asset、ESP-IDF 5.5.4 target build、产品分区、Swift release/doctor、generic/private packaging 与 secret exclusion 全部通过；目标 DIRAM headroom 141,073 bytes。应用镜像 `firmware/build/cardputer_codex_companion.bin` 为 1,487,072 bytes，SHA-256 `105e742b203a94c81345cda2e21c485443f20f6f6ccaee46ff8acfc8617e5947`；private full image 为 1,618,144 bytes，SHA-256 `6982c14b8e7ca9929e4d01bf68f8bc4dbab97f7d0605d6add05874efb4152d85`。
+- Next step: 将应用镜像刷入 `0x20000`，保留当前 NVS/PIN/Wi-Fi/bonds，然后用 Chrome、认证 API、串口和实体 F 键验证 UTF-8 映射发布及重启持久化。
