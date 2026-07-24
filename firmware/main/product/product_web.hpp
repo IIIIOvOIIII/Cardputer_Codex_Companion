@@ -35,6 +35,22 @@ constexpr ProductWebPinLoadAction product_web_pin_load_action(
              : ProductWebPinLoadAction::generate_and_persist;
 }
 
+constexpr bool product_web_binding_uses_sparse_null(ActionKind kind) {
+  return kind == ActionKind::passthrough;
+}
+
+enum class ProductWebProfileActivation : uint8_t {
+  keep_active,
+  replace_active,
+};
+
+constexpr ProductWebProfileActivation product_web_profile_activation(
+    bool persistence_succeeded) {
+  return persistence_succeeded
+             ? ProductWebProfileActivation::replace_active
+             : ProductWebProfileActivation::keep_active;
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;

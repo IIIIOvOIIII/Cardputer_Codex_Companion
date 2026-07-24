@@ -18,6 +18,13 @@ int main() {
          ProductWebPinLoadAction::generate_and_persist);
   assert(product_web_pin_load_action(false, false, false) ==
          ProductWebPinLoadAction::generate_ephemeral);
+  assert(product_web_binding_uses_sparse_null(ActionKind::passthrough));
+  assert(!product_web_binding_uses_sparse_null(ActionKind::text_utf8));
+  assert(!product_web_binding_uses_sparse_null(ActionKind::hid_chord));
+  assert(product_web_profile_activation(true) ==
+         ProductWebProfileActivation::replace_active);
+  assert(product_web_profile_activation(false) ==
+         ProductWebProfileActivation::keep_active);
   assert(kProductWebRoutes.size() == 8);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");

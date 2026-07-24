@@ -193,6 +193,10 @@ cJSON* profile_json(const Profile& profile) {
   cJSON* bindings = cJSON_AddArrayToObject(root, "bindings");
   for (const KeyBinding& binding : profile.bindings) {
     const KeyAction& action = binding.action;
+    if (product_web_binding_uses_sparse_null(action.kind)) {
+      cJSON_AddItemToArray(bindings, cJSON_CreateNull());
+      continue;
+    }
     cJSON_AddItemToArray(
         bindings, action_json(action.kind, action.modifiers, action.usages,
                               action.usage_count, action.text,
@@ -260,6 +264,10 @@ bool parse_profile(const cJSON* root, Profile& output) {
   for (int index = 0; index < cJSON_GetArraySize(bindings); ++index) {
     const cJSON* item = cJSON_GetArrayItem(bindings, index);
     KeyAction& action = output.bindings[index].action;
+    if (cJSON_IsNull(item)) {
+      action = KeyAction{};
+      continue;
+    }
     if (!parse_leaf(item, action.kind, action.modifiers, action.usages,
                     action.usage_count, action.text, &action.device,
                     &action.codex)) {
@@ -296,12 +304,15 @@ bool parse_profile(const cJSON* root, Profile& output) {
   return validate_profile(output) == ProfileError::none;
 }
 
-void persist_profile(const char* json) {
+esp_err_t persist_profile(const char* json) {
   nvs_handle_t handle;
-  if (nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) return;
-  nvs_set_str(handle, kProfileNvsKey, json);
-  nvs_commit(handle);
+  esp_err_t result =
+      nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle);
+  if (result != ESP_OK) return result;
+  result = nvs_set_str(handle, kProfileNvsKey, json);
+  if (result == ESP_OK) result = nvs_commit(handle);
   nvs_close(handle);
+  return result;
 }
 
 void load_profile() {
@@ -444,8 +455,17 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
     cJSON_Delete(encoded);
     return ESP_ERR_NO_MEM;
   }
+  const esp_err_t persisted = persist_profile(json);
+  if (product_web_profile_activation(persisted == ESP_OK) ==
+      ProductWebProfileActivation::keep_active) {
+    cJSON_free(json);
+    cJSON_Delete(encoded);
+    return json_response(
+        request,
+        "{\"error\":\"profile_persist_failed\"}",
+        "500 Internal Server Error");
+  }
   g_profile = std::move(candidate);
-  persist_profile(json);
   const esp_err_t result = json_response(request, json);
   cJSON_free(json);
   cJSON_Delete(encoded);
