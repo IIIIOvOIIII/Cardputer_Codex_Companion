@@ -175,6 +175,7 @@ esp_err_t start_bounded_https_server(const BoundedHttpsServerConfig& config,
 
   httpd_config_t http_config = HTTPD_DEFAULT_CONFIG();
   http_config.server_port = config.port;
+  http_config.stack_size = kHttpsServerTaskStackBytes;
   http_config.max_open_sockets = 5;
   http_config.lru_purge_enable = false;
   http_config.open_fn = bounded_open;
@@ -202,4 +203,8 @@ esp_err_t start_bounded_https_server(const BoundedHttpsServerConfig& config,
 
 AdmissionSnapshot bounded_https_server_snapshot() {
   return state.limiter.snapshot();
+}
+
+TaskHandle_t bounded_https_server_task() {
+  return state.started ? xTaskGetHandle("httpd") : nullptr;
 }

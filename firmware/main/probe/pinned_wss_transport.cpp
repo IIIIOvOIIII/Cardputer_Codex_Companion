@@ -606,7 +606,9 @@ esp_websocket_client_handle_t create_pinned_wss_client(
   esp_websocket_client_config_t client_config{};
   client_config.uri = context.companion_uri;
   client_config.disable_auto_reconnect = true;
-  client_config.buffer_size = 4096;
+  client_config.buffer_size = kPinnedWssClientBufferBytes;
+  client_config.task_name = kPinnedWssClientTaskName;
+  client_config.task_stack = kPinnedWssClientTaskStackBytes;
   client_config.ext_transport = websocket;
   context.websocket_client = esp_websocket_client_init(&client_config);
   if (context.websocket_client == nullptr) {

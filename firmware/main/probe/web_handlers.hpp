@@ -32,6 +32,11 @@ struct PairingResolutionResult {
   std::optional<AdminCredential> credential;
 };
 
+struct ProbeWebMetricsSnapshot {
+  uint32_t network_queue_overflows = 0;
+  BurstMetrics burst{};
+};
+
 class WebHandlerContext final : public WebPairingPhysicalSink {
  public:
   // Owns a permanent worker and must live for the HTTPS server's lifetime.
@@ -82,15 +87,6 @@ class WebHandlerContext final : public WebPairingPhysicalSink {
   StaticQueue_t request_queue_storage_{};
   std::array<uint8_t, sizeof(httpd_req_t*) * kNetworkQueueDepth>
       request_queue_buffer_{};
-  std::atomic<uint32_t> wss_frame_count_{};
-  std::atomic<uint32_t> wss_bytes_{};
-  std::atomic<uint32_t> import_bytes_{};
-  std::atomic<uint32_t> session_item_count_{};
-  std::atomic<uint32_t> approval_fragment_count_{};
-  std::atomic<uint32_t> approval_bytes_{};
-  std::atomic<uint64_t> burst_window_start_us_{};
-  std::atomic<uint64_t> burst_window_end_us_{};
-  std::atomic<uint32_t> network_queue_overflow_count_{};
   QueueHandle_t request_queue_ = nullptr;
   StaticTask_t pairing_worker_storage_{};
   std::array<StackType_t, kWebPairingTaskStackBytes> pairing_worker_stack_{};
@@ -101,3 +97,5 @@ class WebHandlerContext final : public WebPairingPhysicalSink {
 std::span<const httpd_uri_t> probe_web_handler_routes();
 esp_err_t register_probe_web_handlers(httpd_handle_t server,
                                       WebHandlerContext* context);
+[[nodiscard]] ProbeWebMetricsSnapshot probe_web_metrics_snapshot(
+    uint64_t observed_at_us);

@@ -2,6 +2,7 @@
 #include "probe/hardware_probe.hpp"
 #include "probe/keyboard_probe.hpp"
 #include "probe/bounded_https_server.hpp"
+#include "probe/pinned_wss_transport.hpp"
 #include "probe/web_handlers.hpp"
 #include "probe/resource_metrics.hpp"
 #include "probe/probe_types.hpp"
@@ -100,6 +101,8 @@ void emit_resource_sample_if_identity_available() {
     return;
   }
   sample.monotonic_us = static_cast<uint64_t>(esp_timer_get_time());
+  const ProbeWebMetricsSnapshot web_metrics =
+      probe_web_metrics_snapshot(sample.monotonic_us);
   sample.free_internal_heap = heap_caps_get_free_size(kInternalHeapCaps);
   sample.largest_internal_block =
       heap_caps_get_largest_free_block(kInternalHeapCaps);
@@ -112,11 +115,11 @@ void emit_resource_sample_if_identity_available() {
   sample.hid_queue_failures =
       g_keyboard_probe.has_value() ? g_keyboard_probe->hid_queue_overflow_count()
                                   : 0;
-  sample.network_queue_failures = 0;
+  sample.network_queue_failures = web_metrics.network_queue_overflows;
   sample.display_queue_failures = 0;
   sample.hid = g_keyboard_probe.has_value() ? g_keyboard_probe->hid_latency_metrics()
                                             : HidLatencyMetrics{};
-  sample.burst = {};
+  sample.burst = web_metrics.burst;
   sample.tasks[0] = task_stack_metric("scanner", 0, xTaskGetHandle("scanner"));
   sample.tasks[1] = task_stack_metric("hid_sender", kHidSenderTaskStackBytes,
                                       xTaskGetHandle("keyboard-hid"));
@@ -128,11 +131,13 @@ void emit_resource_sample_if_identity_available() {
 #endif
   sample.tasks[2] =
       task_stack_metric("nimble", kNimbleHostStackBytes,
-                        xTaskGetHandle("nimble_host_task"));
+                        xTaskGetHandle("nimble_host"));
   sample.tasks[3] =
-      task_stack_metric("https", kWebPairingTaskStackBytes,
-                        xTaskGetHandle("web-pairing"));
-  sample.tasks[4] = task_stack_metric("wss", 0, nullptr);
+      task_stack_metric("https", kHttpsServerTaskStackBytes,
+                        bounded_https_server_task());
+  sample.tasks[4] =
+      task_stack_metric("wss", kPinnedWssClientTaskStackBytes,
+                        xTaskGetHandle(kPinnedWssClientTaskName));
   sample.tasks[5] = task_stack_metric("display", 0, nullptr);
   sample.tasks[6] =
       task_stack_metric("metrics", kMetricsTaskStackBytes, g_metrics_task);

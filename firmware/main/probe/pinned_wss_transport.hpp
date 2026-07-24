@@ -12,6 +12,9 @@
 constexpr size_t kWssPeerSpkiLength = 32;
 constexpr size_t kWssExporterLength = 32;
 constexpr size_t kWssSignatureLength = 64;
+constexpr int kPinnedWssClientBufferBytes = 4096;
+constexpr int kPinnedWssClientTaskStackBytes = 8192;
+constexpr char kPinnedWssClientTaskName[] = "wss";
 
 bool spki_pin_matches(std::span<const uint8_t> expected,
                       std::span<const uint8_t> observed);

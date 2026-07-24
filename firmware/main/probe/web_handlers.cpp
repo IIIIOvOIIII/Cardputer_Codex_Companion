@@ -27,6 +27,20 @@ constexpr size_t kStreamChunkBytes = 1024;
 constexpr size_t kWebSocketFrameLimit = 16384;
 constexpr char kTag[] = "web-handlers";
 
+struct ProbeWebMetricsState {
+  std::atomic<uint32_t> wss_frame_count{};
+  std::atomic<uint32_t> wss_bytes{};
+  std::atomic<uint32_t> import_bytes{};
+  std::atomic<uint32_t> session_item_count{};
+  std::atomic<uint32_t> approval_fragment_count{};
+  std::atomic<uint32_t> approval_bytes{};
+  std::atomic<uint64_t> burst_window_start_us{};
+  std::atomic<uint64_t> burst_window_end_us{};
+  std::atomic<uint32_t> network_queue_overflow_count{};
+};
+
+ProbeWebMetricsState g_probe_web_metrics;
+
 uint64_t now_ms() {
   return static_cast<uint64_t>(esp_timer_get_time()) / 1000;
 }
@@ -180,65 +194,77 @@ esp_err_t send_json(httpd_req_t* request, uint16_t status_code,
 
 void WebHandlerContext::note_session_item() {
   if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
-    session_item_count_.fetch_add(1, std::memory_order_relaxed);
+    g_probe_web_metrics.session_item_count.fetch_add(1,
+                                                     std::memory_order_relaxed);
   }
 }
 
 void WebHandlerContext::note_approval_fragment(uint16_t fragment_size) {
   if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
-    approval_fragment_count_.fetch_add(1, std::memory_order_relaxed);
-    approval_bytes_.fetch_add(fragment_size, std::memory_order_relaxed);
+    g_probe_web_metrics.approval_fragment_count.fetch_add(
+        1, std::memory_order_relaxed);
+    g_probe_web_metrics.approval_bytes.fetch_add(fragment_size,
+                                                 std::memory_order_relaxed);
   }
 }
 
 void WebHandlerContext::note_import_bytes(uint32_t bytes) {
   if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
-    import_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+    g_probe_web_metrics.import_bytes.fetch_add(bytes,
+                                               std::memory_order_relaxed);
   }
 }
 
 void WebHandlerContext::note_wss_frame(uint32_t frame_length) {
   if (burst_window_accepts(static_cast<uint64_t>(esp_timer_get_time()))) {
-    wss_frame_count_.fetch_add(1, std::memory_order_relaxed);
-    wss_bytes_.fetch_add(frame_length, std::memory_order_relaxed);
+    g_probe_web_metrics.wss_frame_count.fetch_add(1,
+                                                  std::memory_order_relaxed);
+    g_probe_web_metrics.wss_bytes.fetch_add(frame_length,
+                                            std::memory_order_relaxed);
   }
 }
 
 void WebHandlerContext::begin_burst_window(uint64_t now_us) {
-  burst_window_start_us_.store(0, std::memory_order_release);
-  wss_frame_count_.store(0, std::memory_order_relaxed);
-  wss_bytes_.store(0, std::memory_order_relaxed);
-  import_bytes_.store(0, std::memory_order_relaxed);
-  session_item_count_.store(0, std::memory_order_relaxed);
-  approval_fragment_count_.store(0, std::memory_order_relaxed);
-  approval_bytes_.store(0, std::memory_order_relaxed);
-  burst_window_end_us_.store(now_us + kTransientBurstWindowUs,
-                             std::memory_order_relaxed);
-  burst_window_start_us_.store(now_us, std::memory_order_release);
+  g_probe_web_metrics.burst_window_start_us.store(0,
+                                                   std::memory_order_release);
+  g_probe_web_metrics.wss_frame_count.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.wss_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.import_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.session_item_count.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.approval_fragment_count.store(
+      0, std::memory_order_relaxed);
+  g_probe_web_metrics.approval_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.burst_window_end_us.store(
+      now_us + kTransientBurstWindowUs, std::memory_order_relaxed);
+  g_probe_web_metrics.burst_window_start_us.store(now_us,
+                                                  std::memory_order_release);
 }
 
 void WebHandlerContext::reset_burst_counters() {
-  burst_window_start_us_.store(0, std::memory_order_release);
-  wss_frame_count_.store(0, std::memory_order_relaxed);
-  wss_bytes_.store(0, std::memory_order_relaxed);
-  import_bytes_.store(0, std::memory_order_relaxed);
-  session_item_count_.store(0, std::memory_order_relaxed);
-  approval_fragment_count_.store(0, std::memory_order_relaxed);
-  approval_bytes_.store(0, std::memory_order_relaxed);
-  burst_window_end_us_.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.burst_window_start_us.store(0,
+                                                   std::memory_order_release);
+  g_probe_web_metrics.wss_frame_count.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.wss_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.import_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.session_item_count.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.approval_fragment_count.store(
+      0, std::memory_order_relaxed);
+  g_probe_web_metrics.approval_bytes.store(0, std::memory_order_relaxed);
+  g_probe_web_metrics.burst_window_end_us.store(0,
+                                                 std::memory_order_relaxed);
 }
 
 bool WebHandlerContext::burst_window_accepts(uint64_t observed_at_us) const {
   const uint64_t start =
-      burst_window_start_us_.load(std::memory_order_acquire);
+      g_probe_web_metrics.burst_window_start_us.load(std::memory_order_acquire);
   const uint64_t end =
-      burst_window_end_us_.load(std::memory_order_relaxed);
+      g_probe_web_metrics.burst_window_end_us.load(std::memory_order_relaxed);
   return start != 0 && observed_at_us >= start && observed_at_us < end;
 }
 
 BurstMetrics WebHandlerContext::burst_metrics(uint64_t observed_at_us) const {
   const uint64_t start =
-      burst_window_start_us_.load(std::memory_order_acquire);
+      g_probe_web_metrics.burst_window_start_us.load(std::memory_order_acquire);
   uint64_t elapsed_us = 0;
   if (start != 0 && observed_at_us >= start) {
     elapsed_us =
@@ -246,16 +272,22 @@ BurstMetrics WebHandlerContext::burst_metrics(uint64_t observed_at_us) const {
   }
   return BurstMetrics{
       .window_us = elapsed_us,
-      .wss_frames = wss_frame_count_.load(std::memory_order_relaxed),
-      .wss_bytes = wss_bytes_.load(std::memory_order_relaxed),
-      .import_bytes = import_bytes_.load(std::memory_order_relaxed),
+      .wss_frames =
+          g_probe_web_metrics.wss_frame_count.load(std::memory_order_relaxed),
+      .wss_bytes =
+          g_probe_web_metrics.wss_bytes.load(std::memory_order_relaxed),
+      .import_bytes =
+          g_probe_web_metrics.import_bytes.load(std::memory_order_relaxed),
       .session_items = static_cast<uint16_t>(std::min<uint32_t>(
-          session_item_count_.load(std::memory_order_relaxed),
+          g_probe_web_metrics.session_item_count.load(
+              std::memory_order_relaxed),
           std::numeric_limits<uint16_t>::max())),
       .approval_fragments = static_cast<uint16_t>(std::min<uint32_t>(
-          approval_fragment_count_.load(std::memory_order_relaxed),
+          g_probe_web_metrics.approval_fragment_count.load(
+              std::memory_order_relaxed),
           std::numeric_limits<uint16_t>::max())),
-      .approval_bytes = approval_bytes_.load(std::memory_order_relaxed),
+      .approval_bytes =
+          g_probe_web_metrics.approval_bytes.load(std::memory_order_relaxed),
   };
 }
 
@@ -599,8 +631,17 @@ esp_err_t websocket_handler(httpd_req_t* request) {
   const esp_err_t received = httpd_ws_recv_frame(request, &frame, frame_buffer.size());
   if (received == ESP_OK && frame.len <= kWebSocketFrameLimit) {
     if (context(request) != nullptr) {
-      context(request)->note_wss_frame(
-          static_cast<uint32_t>(frame.len));
+      WebHandlerContext* current = context(request);
+      const uint64_t observed_at_us =
+          static_cast<uint64_t>(esp_timer_get_time());
+      if (current->burst_metrics(observed_at_us).window_us == 0) {
+        current->begin_burst_window(observed_at_us);
+      }
+      if (frame.fragmented || frame.type == HTTPD_WS_TYPE_CONTINUE) {
+        current->note_approval_fragment(static_cast<uint16_t>(frame.len));
+      } else {
+        current->note_wss_frame(static_cast<uint32_t>(frame.len));
+      }
     }
   }
   return received;
@@ -738,7 +779,8 @@ esp_err_t WebHandlerContext::defer_pairing_response(httpd_req_t* request) {
   }
 
   HttpdPairingAsyncBackend backend(request_queue_,
-                                  &network_queue_overflow_count_);
+                                   &g_probe_web_metrics
+                                        .network_queue_overflow_count);
   const PairingDeferResult result = defer_pairing_request(request, backend);
   if (result == PairingDeferResult::deferred) {
     return ESP_OK;
@@ -763,7 +805,8 @@ bool WebHandlerContext::has_admin_session() {
 }
 
 uint32_t WebHandlerContext::network_queue_overflow_count() const {
-  return network_queue_overflow_count_.load(std::memory_order_relaxed);
+  return g_probe_web_metrics.network_queue_overflow_count.load(
+      std::memory_order_relaxed);
 }
 
 PairingResolutionResult WebHandlerContext::take_pairing_resolution() {
@@ -883,4 +926,40 @@ esp_err_t register_probe_web_handlers(httpd_handle_t server,
     }
   }
   return ESP_OK;
+}
+
+ProbeWebMetricsSnapshot probe_web_metrics_snapshot(uint64_t observed_at_us) {
+  const uint64_t start =
+      g_probe_web_metrics.burst_window_start_us.load(std::memory_order_acquire);
+  uint64_t elapsed_us = 0;
+  if (start != 0 && observed_at_us >= start) {
+    elapsed_us =
+        std::min(observed_at_us - start, kTransientBurstWindowUs);
+  }
+  return {
+      .network_queue_overflows =
+          g_probe_web_metrics.network_queue_overflow_count.load(
+              std::memory_order_relaxed),
+      .burst =
+          {
+              .window_us = elapsed_us,
+              .wss_frames = g_probe_web_metrics.wss_frame_count.load(
+                  std::memory_order_relaxed),
+              .wss_bytes = g_probe_web_metrics.wss_bytes.load(
+                  std::memory_order_relaxed),
+              .import_bytes = g_probe_web_metrics.import_bytes.load(
+                  std::memory_order_relaxed),
+              .session_items = static_cast<uint16_t>(std::min<uint32_t>(
+                  g_probe_web_metrics.session_item_count.load(
+                      std::memory_order_relaxed),
+                  std::numeric_limits<uint16_t>::max())),
+              .approval_fragments =
+                  static_cast<uint16_t>(std::min<uint32_t>(
+                      g_probe_web_metrics.approval_fragment_count.load(
+                          std::memory_order_relaxed),
+                      std::numeric_limits<uint16_t>::max())),
+              .approval_bytes = g_probe_web_metrics.approval_bytes.load(
+                  std::memory_order_relaxed),
+          },
+  };
 }
