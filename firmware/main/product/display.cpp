@@ -8,17 +8,20 @@ namespace {
 constexpr uint32_t kBackground = 0x05080d;
 constexpr uint32_t kForeground = 0xe7edf5;
 constexpr uint32_t kAccent = 0x4fd1c5;
+constexpr uint8_t kDisplayTitleTextSize = 1;
+constexpr uint8_t kDisplayBodyTextSize = 2;
 
 void begin_page(const char* title) {
   M5.Display.startWrite();
   M5.Display.fillScreen(kBackground);
   M5.Display.setTextColor(kAccent, kBackground);
-  M5.Display.setTextSize(1);
+  M5.Display.setTextSize(kDisplayTitleTextSize);
   M5.Display.setCursor(6, 5);
   M5.Display.print(title);
-  M5.Display.drawFastHLine(6, 18, 228, kAccent);
+  M5.Display.drawFastHLine(6, 17, 228, kAccent);
   M5.Display.setTextColor(kForeground, kBackground);
-  M5.Display.setCursor(6, 24);
+  M5.Display.setTextSize(kDisplayBodyTextSize);
+  M5.Display.setCursor(6, 20);
 }
 }  // namespace
 

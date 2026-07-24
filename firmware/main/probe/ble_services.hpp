@@ -85,6 +85,10 @@ bool ble_companion_link_allows(bool encrypted, bool authenticated, bool bonded);
 uint8_t ble_bond_store_schema_version();
 bool ble_should_reset_bond_store(uint8_t stored_version);
 bool ble_should_start_advertising(bool connected, bool advertising_active);
+uint32_t ble_stale_link_timeout_ms();
+bool ble_should_reset_stale_link(const BleKeyboardLinkState& state,
+                                 uint64_t now_ms,
+                                 uint64_t state_changed_ms);
 std::vector<uint8_t> encode_product_text_fragment(
     uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
     std::span<const uint8_t> utf8);

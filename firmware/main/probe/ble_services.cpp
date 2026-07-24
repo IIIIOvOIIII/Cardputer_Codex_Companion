@@ -12,6 +12,8 @@ constexpr std::size_t kBleHidFixedAdvertisingBytes =
     3 + 4 + 3 + 4;  // flags + appearance + tx power + HID UUID16
 constexpr int32_t kBleHidAdvertisingDurationMs =
     std::numeric_limits<int32_t>::max();
+constexpr uint32_t kBleAdvertisingWatchdogIntervalMs = 5000;
+constexpr uint32_t kBleStaleLinkTimeoutMs = 15000;
 constexpr uint8_t kBlePairingIoCapability = 2;
 constexpr bool kBlePairingRequiresMitm = true;
 constexpr uint32_t kBlePairingPasskey = 123456;
@@ -69,7 +71,7 @@ int32_t ble_hid_advertising_duration_ms() {
 }
 
 uint32_t ble_advertising_watchdog_interval_ms() {
-  return 0;
+  return kBleAdvertisingWatchdogIntervalMs;
 }
 
 uint8_t ble_pairing_io_capability() {
@@ -149,9 +151,19 @@ bool ble_should_reset_bond_store(uint8_t stored_version) {
 }
 
 bool ble_should_start_advertising(bool connected, bool advertising_active) {
-  (void)connected;
-  (void)advertising_active;
-  return false;
+  return !connected && !advertising_active;
+}
+
+uint32_t ble_stale_link_timeout_ms() {
+  return kBleStaleLinkTimeoutMs;
+}
+
+bool ble_should_reset_stale_link(const BleKeyboardLinkState& state,
+                                 uint64_t now_ms,
+                                 uint64_t state_changed_ms) {
+  return state.gap_connected &&
+         !ble_keyboard_ready_from_state(state) &&
+         now_ms - state_changed_ms >= ble_stale_link_timeout_ms();
 }
 
 BleServiceManifest ble_service_manifest() {
@@ -227,6 +239,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 #include "esp_hid_gap.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "host/ble_gap.h"
@@ -238,6 +251,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 #include "host/ble_store.h"
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
+#include "nimble/ble.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "nvs.h"
@@ -274,10 +288,15 @@ BleConnectionHandler g_connection_handler = nullptr;
 bool g_product_companion_mode = false;
 BleKeyboardLinkState g_hid_state{};
 bool g_last_hid_ready = false;
+uint16_t g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+uint64_t g_hid_state_changed_ms = 0;
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
 uint32_t g_pending_passkey_value = 0;
 uint8_t g_pending_passkey_count = 0;
 ble_uuid16_t g_hid_service_uuid = BLE_UUID16_INIT(0x1812);
+StaticTask_t g_ble_watchdog_storage{};
+std::array<StackType_t, 3072> g_ble_watchdog_stack{};
+TaskHandle_t g_ble_watchdog_task = nullptr;
 
 const ble_uuid128_t kServiceUuid = BLE_UUID128_INIT(
     0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
@@ -310,6 +329,14 @@ bool is_current_companion(uint16_t conn_handle) {
           companion_binding_proof_is_complete(g_binding));
 }
 
+uint64_t now_ms() {
+  return static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+}
+
+void mark_hid_state_changed() {
+  g_hid_state_changed_ms = now_ms();
+}
+
 void publish_hid_ready_if_changed(const char* reason) {
   const bool ready = ble_keyboard_ready_from_state(g_hid_state);
   if (ready == g_last_hid_ready) {
@@ -331,7 +358,9 @@ void publish_hid_ready_if_changed(const char* reason) {
 }
 
 void reset_hid_link_state(const char* reason) {
+  g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
   g_hid_state = {};
+  mark_hid_state_changed();
   publish_hid_ready_if_changed(reason);
 }
 
@@ -481,6 +510,26 @@ void ble_hid_device_host_task(void*) {
   nimble_port_freertos_deinit();
 }
 
+esp_err_t start_hid_advertising(const char* action);
+
+void ble_reconnect_watchdog_task(void*) {
+  while (true) {
+    const bool advertising_active = ble_gap_adv_active();
+    if (ble_should_reset_stale_link(g_hid_state, now_ms(),
+                                    g_hid_state_changed_ms)) {
+      ESP_LOGW(kTag, "terminating stale HID link for reconnect");
+      if (g_hid_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_gap_terminate(g_hid_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+      }
+      reset_hid_link_state("stale-link");
+    } else if (ble_should_start_advertising(g_hid_state.gap_connected,
+                                            advertising_active)) {
+      start_hid_advertising("watchdog");
+    }
+    vTaskDelay(pdMS_TO_TICKS(ble_advertising_watchdog_interval_ms()));
+  }
+}
+
 int hid_gap_event(struct ble_gap_event* event, void*) {
   ble_gap_conn_desc desc{};
   int rc = 0;
@@ -493,7 +542,9 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         reset_hid_link_state("gap-connect-failed");
         return 0;
       }
+      g_hid_conn_handle = event->connect.conn_handle;
       g_hid_state = ble_keyboard_state_after_gap_connected(g_hid_state);
+      mark_hid_state_changed();
       publish_hid_ready_if_changed("gap-connect");
       if (ble_pairing_initiates_security_on_connect()) {
         rc = ble_gap_security_initiate(event->connect.conn_handle);
@@ -516,6 +567,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       if (event->enc_change.status != 0) {
         g_hid_state.encrypted = false;
         g_hid_state.authenticated = false;
+        mark_hid_state_changed();
         publish_hid_ready_if_changed("enc-failed");
         return 0;
       }
@@ -523,6 +575,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       if (rc == 0) {
         g_hid_state.encrypted = desc.sec_state.encrypted;
         g_hid_state.authenticated = desc.sec_state.authenticated;
+        mark_hid_state_changed();
         publish_hid_ready_if_changed("enc-change");
         ble_hid_task_start_up();
       } else {
@@ -543,6 +596,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         return 0;
       }
       g_hid_state.input_report_subscribed = event->subscribe.cur_notify != 0;
+      mark_hid_state_changed();
       publish_hid_ready_if_changed("hid-subscribe");
       return 0;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
@@ -627,12 +681,23 @@ void ble_hidd_event_callback(
     ESP_LOGI(kTag, "HIDD keyboard service started");
     reset_hid_link_state("hidd-start");
     start_hid_advertising("start");
+    if (g_ble_watchdog_task == nullptr) {
+      g_ble_watchdog_task = xTaskCreateStatic(
+          ble_reconnect_watchdog_task,
+          "ble-watchdog",
+          g_ble_watchdog_stack.size(),
+          nullptr,
+          tskIDLE_PRIORITY + 1,
+          g_ble_watchdog_stack.data(),
+          &g_ble_watchdog_storage);
+    }
     return;
   }
 
   if (event == ESP_HIDD_CONNECT_EVENT) {
     ESP_LOGI(kTag, "HIDD keyboard connected");
     g_hid_state.hidd_connected = true;
+    mark_hid_state_changed();
     publish_hid_ready_if_changed("hidd-connect");
     return;
   }

@@ -10,6 +10,14 @@ int main() {
   assert(!product_web_pin_is_valid("123456789"));
   assert(!product_web_pin_is_valid("1234abcd"));
   assert(!product_web_pin_is_valid(""));
+  assert(product_web_pin_load_action(true, true, true) ==
+         ProductWebPinLoadAction::use_stored);
+  assert(product_web_pin_load_action(true, false, false) ==
+         ProductWebPinLoadAction::generate_and_persist);
+  assert(product_web_pin_load_action(true, true, false) ==
+         ProductWebPinLoadAction::generate_and_persist);
+  assert(product_web_pin_load_action(false, false, false) ==
+         ProductWebPinLoadAction::generate_ephemeral);
   assert(kProductWebRoutes.size() == 8);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");

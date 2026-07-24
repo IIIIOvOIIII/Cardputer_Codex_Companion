@@ -60,3 +60,9 @@ def test_lan_bridge_uses_curl_config_stdin_for_launchd_local_network():
     assert '"--config"' in bridge
     assert "LocalTLSDelegate" not in bridge
     assert "URLSession" not in bridge
+
+
+def test_cardputer_display_uses_larger_body_text():
+    display = (ROOT / "firmware/main/product/display.cpp").read_text()
+    assert "kDisplayBodyTextSize = 2" in display
+    assert "setTextSize(kDisplayBodyTextSize)" in display

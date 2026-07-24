@@ -335,16 +335,37 @@ void generate_pairing_code() {
 }
 
 void load_pairing_code() {
-  generate_pairing_code();
   nvs_handle_t handle;
-  if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) return;
+  const esp_err_t open_result =
+      nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle);
   std::array<char, kProductWebPinLength + 1> stored{};
-  size_t size = stored.size();
-  if (nvs_get_str(handle, kWebPinNvsKey, stored.data(), &size) == ESP_OK &&
-      product_web_pin_is_valid(stored.data())) {
-    set_pairing_code(stored.data());
+  bool stored_found = false;
+  bool stored_valid = false;
+  if (open_result == ESP_OK) {
+    size_t size = stored.size();
+    stored_found =
+        nvs_get_str(handle, kWebPinNvsKey, stored.data(), &size) == ESP_OK;
+    stored_valid = stored_found && product_web_pin_is_valid(stored.data());
   }
-  nvs_close(handle);
+
+  switch (product_web_pin_load_action(open_result == ESP_OK,
+                                      stored_found,
+                                      stored_valid)) {
+    case ProductWebPinLoadAction::use_stored:
+      set_pairing_code(stored.data());
+      break;
+    case ProductWebPinLoadAction::generate_and_persist:
+      generate_pairing_code();
+      if (nvs_set_str(handle, kWebPinNvsKey, g_pairing_code.data()) ==
+          ESP_OK) {
+        nvs_commit(handle);
+      }
+      break;
+    case ProductWebPinLoadAction::generate_ephemeral:
+      generate_pairing_code();
+      break;
+  }
+  if (open_result == ESP_OK) nvs_close(handle);
 }
 
 esp_err_t persist_pairing_code(std::string_view pin) {

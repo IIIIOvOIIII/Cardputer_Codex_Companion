@@ -42,13 +42,12 @@ int main() {
   assert(model.revision() == runtime_revision);
 
   const std::string page = model.runtime_text();
-  assert(page.find("BLE:OK") != std::string::npos);
-  assert(page.find("WIFI:OFFLINE") != std::string::npos);
-  assert(page.find("MAC:OK") != std::string::npos);
-  assert(page.find("CODEX") != std::string::npos);
-  assert(page.find("192.168.1.88") != std::string::npos);
+  assert(page.find("B:OK W:OFF M:OK") != std::string::npos);
+  assert(page.find("CODEX / CODEX") != std::string::npos);
+  assert(page.find("IP:192.168.1.88") != std::string::npos);
   assert(page.find("PIN:12345678") != std::string::npos);
   assert(page.find("agent-loop") != std::string::npos);
   assert(page.find("WAITING A:2 I:1") != std::string::npos);
+  assert(page.find("Cardputer_Codex_Companion") == std::string::npos);
   return 0;
 }

@@ -237,7 +237,7 @@ void keyboard_event(const MatrixKeyEvent& event) {
 }
 
 void ble_connection_changed(bool connected) {
-  g_ble_state = connected ? ServiceState::ok : ServiceState::offline;
+  g_ble_state = connected ? ServiceState::ok : ServiceState::starting;
   {
     SemaphoreLock lock(g_ui_mutex);
     if (lock.locked()) g_ui.set_ble(g_ble_state);
@@ -395,7 +395,7 @@ class EspProductStartup final : public ProductStartupBackend {
       enable_product_companion_mode();
       set_ble_disconnect_handler(ble_disconnected);
       set_ble_connection_handler(ble_connection_changed);
-      g_ble_state = ServiceState::offline;
+      g_ble_state = ServiceState::starting;
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
         g_ui.set_ble(g_ble_state);

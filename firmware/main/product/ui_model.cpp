@@ -8,6 +8,20 @@ namespace {
 std::string clipped(std::string_view value, std::size_t maximum) {
   return std::string(value.substr(0, std::min(value.size(), maximum)));
 }
+
+std::string_view compact_state(ServiceState state) {
+  switch (state) {
+    case ServiceState::starting:
+      return "...";
+    case ServiceState::ok:
+      return "OK";
+    case ServiceState::offline:
+      return "OFF";
+    case ServiceState::error:
+      return "ERR";
+  }
+  return "ERR";
+}
 }  // namespace
 
 void UiModel::set_stage(BootStage stage, ServiceState state) {
@@ -90,7 +104,7 @@ void UiModel::set_web(std::string_view ipv4, std::string_view pairing_code) {
 void UiModel::set_session(std::string_view title, std::string_view cwd,
                           std::string_view state, uint8_t approvals,
                           uint8_t inputs) {
-  std::string next_title = clipped(title, 28);
+  std::string next_title = clipped(title, 20);
   std::string next_cwd = clipped(cwd, 28);
   std::string next_state = clipped(state, 16);
   if (session_title_ == next_title && cwd_ == next_cwd &&
@@ -113,13 +127,13 @@ std::string UiModel::runtime_text() const {
                 static_cast<unsigned>(inputs_));
   std::string output;
   output.reserve(192);
-  output.append("BLE:").append(to_string(ble_));
-  output.append(" WIFI:").append(to_string(wifi_));
-  output.append(" MAC:").append(to_string(companion_)).push_back('\n');
+  output.append("B:").append(compact_state(ble_));
+  output.append(" W:").append(compact_state(wifi_));
+  output.append(" M:").append(compact_state(companion_)).push_back('\n');
   output.append(to_string(mode_)).append(" / ").append(profile_).push_back('\n');
-  output.append(ipv4_).append(" PIN:").append(pairing_code_).push_back('\n');
+  output.append("IP:").append(ipv4_).push_back('\n');
+  output.append("PIN:").append(pairing_code_).push_back('\n');
   output.append(session_title_).push_back('\n');
-  output.append(cwd_).push_back('\n');
   output.append(session_state_).append(counts);
   return output;
 }

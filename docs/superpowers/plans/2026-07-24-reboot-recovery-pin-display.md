@@ -30,14 +30,14 @@
 - Produces: `ble_stale_link_timeout_ms() -> uint32_t`
 - Produces: `ble_should_reset_stale_link(const BleKeyboardLinkState&, uint64_t now_ms, uint64_t state_changed_ms) -> bool`
 
-- [ ] Write failing tests in `test_ble_manifest.cpp` asserting:
+- [x] Write failing tests in `test_ble_manifest.cpp` asserting:
   - advertising watchdog interval is non-zero;
   - advertising starts when disconnected and inactive;
   - stale half-ready links time out;
   - fully ready links do not time out.
-- [ ] Run `cmake --build build/product-host --target test_ble_manifest && build/product-host/test_ble_manifest` and confirm failure.
-- [ ] Implement the helpers and runtime watchdog task.
-- [ ] Run the same test and confirm pass.
+- [x] Run `cmake --build build/product-host --target test_ble_manifest && build/product-host/test_ble_manifest` and confirm failure.
+- [x] Implement the helpers and runtime watchdog task.
+- [x] Run the same test and confirm pass.
 
 ### Task 2: Stable Web PIN lifecycle
 
@@ -50,10 +50,10 @@
 - Produces: `enum class ProductWebPinLoadAction { use_stored, generate_and_persist, generate_ephemeral }`
 - Produces: `product_web_pin_load_action(bool nvs_open_ok, bool stored_found, bool stored_valid) -> ProductWebPinLoadAction`
 
-- [ ] Write failing tests asserting first valid NVS PIN is reused, missing/invalid NVS PIN is generated and persisted, and NVS-open failure is ephemeral.
-- [ ] Run `cmake --build build/product-host --target test_product_web && build/product-host/test_product_web` and confirm failure.
-- [ ] Modify `load_pairing_code()` to open NVS read/write, reuse valid stored PIN, otherwise generate once and persist.
-- [ ] Run the same test and confirm pass.
+- [x] Write failing tests asserting first valid NVS PIN is reused, missing/invalid NVS PIN is generated and persisted, and NVS-open failure is ephemeral.
+- [x] Run `cmake --build build/product-host --target test_product_web && build/product-host/test_product_web` and confirm failure.
+- [x] Modify `load_pairing_code()` to open NVS read/write, reuse valid stored PIN, otherwise generate once and persist.
+- [x] Run the same test and confirm pass.
 
 ### Task 3: Larger display text
 
@@ -67,11 +67,11 @@
 - Produces: shortened `UiModel::runtime_text()` suitable for text size 2.
 - Produces: display body text size constant of `2`.
 
-- [ ] Write failing tests asserting runtime text uses `B:`, `W:`, `M:`, separates IP/PIN, and does not include cwd.
-- [ ] Add Python regression asserting display body text size constant is `2`.
-- [ ] Run `cmake --build build/product-host --target test_ui_model && build/product-host/test_ui_model` and `python3 -m pytest tools/product/tests/test_companion_packaging.py -q`; confirm failure.
-- [ ] Implement shortened runtime text and display renderer size constants.
-- [ ] Run the same tests and confirm pass.
+- [x] Write failing tests asserting runtime text uses `B:`, `W:`, `M:`, separates IP/PIN, and does not include cwd.
+- [x] Add Python regression asserting display body text size constant is `2`.
+- [x] Run `cmake --build build/product-host --target test_ui_model && build/product-host/test_ui_model` and `python3 -m pytest tools/product/tests/test_companion_packaging.py -q`; confirm failure.
+- [x] Implement shortened runtime text and display renderer size constants.
+- [x] Run the same tests and confirm pass.
 
 ### Task 4: Version, full release, flash, and evidence
 
@@ -82,9 +82,9 @@
 - Modify: `docs/2026-07-24-cardputer-codex-companion_PROGRESS.md`
 - Modify: `/Users/nicholasliao/clawd/memory/2026-07-24.md`
 
-- [ ] Bump product version to `1.0.21`.
-- [ ] Run `scripts/verify_product_release.sh`.
-- [ ] Flash `dist/private/cardputer_codex_companion-private-full.bin` to `/dev/cu.usbmodem21201` at `0x0`.
-- [ ] Verify status endpoint and Mac agent state.
-- [ ] Update progress and workspace memory without recording secrets.
-- [ ] Commit all changes locally.
+- [x] Bump product version to `1.0.21`.
+- [x] Run `scripts/verify_product_release.sh`.
+- [x] Flash the 1.0.21 application image to `/dev/cu.usbmodem21201` at `0x20000` to preserve product NVS and the current Web PIN; full private image remains generated for blank-device/full-recovery flashing.
+- [x] Verify status endpoint and Mac agent state.
+- [x] Update progress and workspace memory without recording secrets.
+- [x] Commit all changes locally.

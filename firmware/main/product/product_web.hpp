@@ -19,6 +19,22 @@ constexpr bool product_web_pin_is_valid(std::string_view pin) {
   return true;
 }
 
+enum class ProductWebPinLoadAction : uint8_t {
+  use_stored,
+  generate_and_persist,
+  generate_ephemeral,
+};
+
+constexpr ProductWebPinLoadAction product_web_pin_load_action(
+    bool nvs_open_ok,
+    bool stored_found,
+    bool stored_valid) {
+  if (!nvs_open_ok) return ProductWebPinLoadAction::generate_ephemeral;
+  return stored_found && stored_valid
+             ? ProductWebPinLoadAction::use_stored
+             : ProductWebPinLoadAction::generate_and_persist;
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;
