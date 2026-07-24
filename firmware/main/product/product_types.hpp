@@ -6,9 +6,9 @@
 
 inline constexpr std::size_t kPhysicalKeyCount = 56;
 inline constexpr std::string_view kProductName = "Cardputer Codex Companion";
-inline constexpr std::string_view kProductVersion = "1.0.5";
+inline constexpr std::string_view kProductVersion = "1.0.15";
 inline constexpr std::string_view kProductBootTitle =
-    "CARDPUTER CODEX 1.0.5";
+    "CARDPUTER CODEX 1.0.15";
 
 enum class BootStage : uint8_t {
   display,

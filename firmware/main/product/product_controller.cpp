@@ -178,7 +178,7 @@ uint8_t current_profile_layer_locked() {
 }
 
 void send_passthrough_report_locked() {
-  if (!g_keyboard.has_value()) return;
+  if (!g_keyboard.has_value() || !ble_keyboard_ready()) return;
   std::array<bool, kPhysicalKeyCount> passthrough = g_pressed;
   if (!g_input_router.safe_profile()) {
     const uint8_t layer = current_profile_layer_locked();
@@ -199,12 +199,31 @@ void keyboard_event(const MatrixKeyEvent& event) {
   if (!lock.locked() || event.physical_key >= g_pressed.size()) return;
   g_pressed[event.physical_key] = event.pressed;
 
+  if (event.pressed && ble_pairing_input_active()) {
+    const auto digit =
+        ble_pairing_digit_from_hid_usage(kPhysicalKeymap[event.physical_key].usage);
+    if (digit.has_value()) {
+      ble_pairing_input_digit(*digit);
+      SemaphoreLock ui_lock(g_ui_mutex);
+      if (ui_lock.locked()) {
+        g_ui.set_session("TYPE MAC PIN", "CARDPUTER KEYS",
+                         "PAIRING", 0, 0);
+      }
+      return;
+    }
+  }
+
   KeyAction action;
   const uint8_t layer = current_profile_layer_locked();
   const bool mapped =
       !g_input_router.safe_profile() &&
       product_web_action(layer, event.physical_key, &action) &&
       action.kind != ActionKind::passthrough;
+  ESP_LOGI(kTag, "keyboard key=%u %s layer=%u mapped=%d",
+           static_cast<unsigned>(event.physical_key),
+           event.pressed ? "down" : "up",
+           static_cast<unsigned>(layer),
+           mapped ? 1 : 0);
   if (event.pressed && mapped && g_macro_queue != nullptr) {
     const MacroInvocation invocation{
         .layer = layer,
@@ -377,8 +396,7 @@ class EspProductStartup final : public ProductStartupBackend {
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
         g_ui.set_ble(g_ble_state);
-        g_ui.set_session("PAIR BLE KEYBOARD", "PIN 123456",
-                         "WAITING FOR MAC", 0, 0);
+        g_ui.set_session("WAITING FOR MAC", "CONNECT BLE", "PAIRING", 0, 0);
       }
     }
     set_stage(BootStage::ble, result);

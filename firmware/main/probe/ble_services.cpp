@@ -6,13 +6,19 @@
 
 namespace {
 constexpr char kBleAdvertisedName[] = "Cardputer Codex";
+constexpr uint16_t kBleGapAppearance = 0x03C1;
 constexpr std::size_t kBleLegacyAdvertisingBudgetBytes = 31;
 constexpr std::size_t kBleHidFixedAdvertisingBytes =
     3 + 4 + 3 + 4;  // flags + appearance + tx power + HID UUID16
 constexpr int32_t kBleHidAdvertisingDurationMs =
     std::numeric_limits<int32_t>::max();
-constexpr uint32_t kBleAdvertisingWatchdogIntervalMs = 5000;
-constexpr uint8_t kBlePairingIoCapability = 0;
+constexpr uint8_t kBlePairingIoCapability = 3;
+constexpr bool kBlePairingRequiresMitm = false;
+constexpr uint32_t kBlePairingPasskey = 123456;
+constexpr uint8_t kBlePairingPasskeyDigits = 6;
+constexpr bool kBlePairingInitiatesSecurityOnConnect = true;
+constexpr bool kBleKeyboardReadyRequiresSuccessfulEncryption = true;
+constexpr uint8_t kBleBondStoreSchemaVersion = 5;
 
 constexpr std::size_t legacy_advertising_payload_bytes(
     std::string_view name) {
@@ -48,6 +54,10 @@ std::string_view ble_device_name() {
   return kBleAdvertisedName;
 }
 
+uint16_t ble_gap_appearance() {
+  return kBleGapAppearance;
+}
+
 std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name) {
   return legacy_advertising_payload_bytes(name);
 }
@@ -57,15 +67,59 @@ int32_t ble_hid_advertising_duration_ms() {
 }
 
 uint32_t ble_advertising_watchdog_interval_ms() {
-  return kBleAdvertisingWatchdogIntervalMs;
+  return 0;
 }
 
 uint8_t ble_pairing_io_capability() {
   return kBlePairingIoCapability;
 }
 
+bool ble_pairing_requires_mitm() {
+  return kBlePairingRequiresMitm;
+}
+
+uint32_t ble_pairing_passkey() {
+  return kBlePairingPasskey;
+}
+
+bool ble_pairing_requires_keyboard_input() {
+  return false;
+}
+
+bool ble_pairing_initiates_security_on_connect() {
+  return kBlePairingInitiatesSecurityOnConnect;
+}
+
+bool ble_keyboard_ready_requires_successful_encryption() {
+  return kBleKeyboardReadyRequiresSuccessfulEncryption;
+}
+
+std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage) {
+  if (usage >= 0x1e && usage <= 0x26) {
+    return static_cast<uint8_t>(usage - 0x1d);
+  }
+  if (usage == 0x27) {
+    return 0;
+  }
+  return std::nullopt;
+}
+
+bool ble_companion_link_allows(bool encrypted, bool, bool bonded) {
+  return encrypted && bonded;
+}
+
+uint8_t ble_bond_store_schema_version() {
+  return kBleBondStoreSchemaVersion;
+}
+
+bool ble_should_reset_bond_store(uint8_t stored_version) {
+  return stored_version != ble_bond_store_schema_version();
+}
+
 bool ble_should_start_advertising(bool connected, bool advertising_active) {
-  return !connected && !advertising_active;
+  (void)connected;
+  (void)advertising_active;
+  return false;
 }
 
 BleServiceManifest ble_service_manifest() {
@@ -85,7 +139,7 @@ BleServiceManifest ble_service_manifest() {
       1,
       1,
       true,
-      true,
+      false,
       true,
       1,
   };
@@ -166,6 +220,7 @@ namespace {
 constexpr char kTag[] = "phase0-ble";
 constexpr char kNvsNamespace[] = "phase0_id";
 constexpr char kDeviceIdKey[] = "device_id";
+constexpr char kBleStoreSchemaKey[] = "ble_store_v";
 constexpr const char* kDeviceName = kBleAdvertisedName;
 constexpr char kManufacturer[] = "Cardputer";
 constexpr uint16_t kVendorId = 0x16C0;
@@ -186,9 +241,9 @@ CompanionControlHandler g_control_handler = nullptr;
 BleConnectionHandler g_connection_handler = nullptr;
 bool g_product_companion_mode = false;
 bool g_hid_connected = false;
-TaskHandle_t g_advertising_watchdog_task = nullptr;
-StaticTask_t g_advertising_watchdog_task_storage{};
-std::array<StackType_t, 2048> g_advertising_watchdog_task_stack{};
+uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
+uint32_t g_pending_passkey_value = 0;
+uint8_t g_pending_passkey_count = 0;
 ble_uuid16_t g_hid_service_uuid = BLE_UUID16_INIT(0x1812);
 
 const ble_uuid128_t kServiceUuid = BLE_UUID128_INIT(
@@ -210,8 +265,9 @@ bool has_bonded_secure_state(uint16_t conn_handle) {
       ble_gap_conn_find(conn_handle, &desc) != 0) {
     return false;
   }
-  return desc.sec_state.encrypted && desc.sec_state.authenticated &&
-         desc.sec_state.bonded;
+  return ble_companion_link_allows(desc.sec_state.encrypted,
+                                   desc.sec_state.authenticated,
+                                   desc.sec_state.bonded);
 }
 
 bool is_current_companion(uint16_t conn_handle) {
@@ -221,13 +277,53 @@ bool is_current_companion(uint16_t conn_handle) {
           companion_binding_proof_is_complete(g_binding));
 }
 
+esp_err_t migrate_ble_bond_store_if_needed() {
+  nvs_handle_t handle = 0;
+  esp_err_t rc = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
+  if (rc != ESP_OK) {
+    return rc;
+  }
+
+  uint8_t stored_version = 0;
+  rc = nvs_get_u8(handle, kBleStoreSchemaKey, &stored_version);
+  if (rc != ESP_OK && rc != ESP_ERR_NVS_NOT_FOUND) {
+    nvs_close(handle);
+    return rc;
+  }
+
+  if (!ble_should_reset_bond_store(stored_version)) {
+    nvs_close(handle);
+    return ESP_OK;
+  }
+
+  const int clear_rc = ble_store_clear();
+  if (clear_rc != 0) {
+    ESP_LOGW(kTag, "failed to clear BLE bond store for schema migration: rc=%d",
+             clear_rc);
+    nvs_close(handle);
+    return ESP_FAIL;
+  }
+
+  rc = nvs_set_u8(handle, kBleStoreSchemaKey,
+                  ble_bond_store_schema_version());
+  if (rc == ESP_OK) {
+    rc = nvs_commit(handle);
+  }
+  nvs_close(handle);
+  if (rc == ESP_OK) {
+    ESP_LOGI(kTag, "BLE bond store migrated to schema %u",
+             static_cast<unsigned>(ble_bond_store_schema_version()));
+  }
+  return rc;
+}
+
 int companion_characteristic_access(
     uint16_t conn_handle,
     uint16_t attr_handle,
     ble_gatt_access_ctxt* ctxt,
     void*) {
   if (!has_bonded_secure_state(conn_handle)) {
-    return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    return BLE_ATT_ERR_INSUFFICIENT_ENC;
   }
 
   if (attr_handle == g_identity_handle &&
@@ -282,8 +378,7 @@ ble_gatt_chr_def kCompanionCharacteristics[] = {
         .arg = nullptr,
         .descriptors = nullptr,
         .flags = BLE_GATT_CHR_F_NOTIFY |
-                 BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC |
-                 BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN,
+                 BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
         .min_key_size = 16,
         .val_handle = &g_notify_handle,
         .cpfd = nullptr,
@@ -294,8 +389,7 @@ ble_gatt_chr_def kCompanionCharacteristics[] = {
         .arg = nullptr,
         .descriptors = nullptr,
         .flags = BLE_GATT_CHR_F_WRITE |
-                 BLE_GATT_CHR_F_WRITE_ENC |
-                 BLE_GATT_CHR_F_WRITE_AUTHEN,
+                 BLE_GATT_CHR_F_WRITE_ENC,
         .min_key_size = 16,
         .val_handle = &g_control_handle,
         .cpfd = nullptr,
@@ -306,8 +400,7 @@ ble_gatt_chr_def kCompanionCharacteristics[] = {
         .arg = nullptr,
         .descriptors = nullptr,
         .flags = BLE_GATT_CHR_F_READ |
-                 BLE_GATT_CHR_F_READ_ENC |
-                 BLE_GATT_CHR_F_READ_AUTHEN,
+                 BLE_GATT_CHR_F_READ_ENC,
         .min_key_size = 16,
         .val_handle = &g_identity_handle,
         .cpfd = nullptr,
@@ -338,8 +431,13 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       ESP_LOGI(kTag, "HID GAP connection %s; status=%d",
                event->connect.status == 0 ? "established" : "failed",
                event->connect.status);
+      g_hid_connected = false;
       if (event->connect.status != 0) {
-        g_hid_connected = false;
+        return 0;
+      }
+      if (ble_pairing_initiates_security_on_connect()) {
+        rc = ble_gap_security_initiate(event->connect.conn_handle);
+        ESP_LOGI(kTag, "HID GAP security initiate: rc=%d", rc);
       }
       return 0;
     case BLE_GAP_EVENT_DISCONNECT:
@@ -355,8 +453,19 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
     case BLE_GAP_EVENT_ENC_CHANGE:
       ESP_LOGI(kTag, "HID GAP encryption changed; status=%d",
                event->enc_change.status);
+      if (event->enc_change.status != 0) {
+        g_hid_connected = false;
+        if (g_connection_handler != nullptr) {
+          g_connection_handler(false);
+        }
+        return 0;
+      }
       rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
       if (rc == 0) {
+        g_hid_connected = true;
+        if (g_connection_handler != nullptr) {
+          g_connection_handler(true);
+        }
         ble_hid_task_start_up();
       } else {
         ESP_LOGW(kTag, "encrypted connection lookup failed: rc=%d", rc);
@@ -372,7 +481,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       ble_sm_io passkey{};
       if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
         passkey.action = event->passkey.params.action;
-        passkey.passkey = 123456;
+        passkey.passkey = ble_pairing_passkey();
         rc = ble_sm_inject_io(event->passkey.conn_handle, &passkey);
         ESP_LOGI(kTag, "display passkey injected: rc=%d", rc);
       } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
@@ -380,6 +489,11 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         passkey.numcmp_accept = 1;
         rc = ble_sm_inject_io(event->passkey.conn_handle, &passkey);
         ESP_LOGI(kTag, "numeric comparison accepted: rc=%d", rc);
+      } else if (event->passkey.params.action == BLE_SM_IOACT_INPUT) {
+        g_pending_passkey_conn = event->passkey.conn_handle;
+        g_pending_passkey_value = 0;
+        g_pending_passkey_count = 0;
+        ESP_LOGI(kTag, "passkey input requested");
       } else {
         ESP_LOGW(kTag, "unsupported passkey action: %d",
                  event->passkey.params.action);
@@ -394,7 +508,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
 esp_err_t start_hid_advertising(const char* action) {
   ble_hs_adv_fields fields{};
   fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-  fields.appearance = ESP_HID_APPEARANCE_KEYBOARD;
+  fields.appearance = ble_gap_appearance();
   fields.appearance_is_present = 1;
   fields.tx_pwr_lvl_is_present = 1;
   fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
@@ -428,52 +542,29 @@ esp_err_t start_hid_advertising(const char* action) {
   return ESP_OK;
 }
 
-void ble_advertising_watchdog_task(void*) {
-  while (true) {
-    vTaskDelay(pdMS_TO_TICKS(ble_advertising_watchdog_interval_ms()));
-    if (!ble_should_start_advertising(
-            g_hid_connected, ble_gap_adv_active() != 0)) {
-      continue;
-    }
-    ESP_LOGW(kTag, "HID advertising inactive while disconnected; restarting");
-    start_hid_advertising("restart");
-  }
-}
-
-void ensure_ble_advertising_watchdog_started() {
-  if (g_advertising_watchdog_task != nullptr) return;
-  g_advertising_watchdog_task = xTaskCreateStatic(
-      ble_advertising_watchdog_task, "ble-adv-watch",
-      g_advertising_watchdog_task_stack.size(), nullptr,
-      tskIDLE_PRIORITY + 1, g_advertising_watchdog_task_stack.data(),
-      &g_advertising_watchdog_task_storage);
-  if (g_advertising_watchdog_task == nullptr) {
-    ESP_LOGE(kTag, "failed to start BLE advertising watchdog");
-  }
-}
-
 void ble_hidd_event_callback(
     void*,
     esp_event_base_t,
     int32_t id,
-    void*) {
+    void* event_data) {
   const auto event = static_cast<esp_hidd_event_t>(id);
+  auto* param = static_cast<esp_hidd_event_data_t*>(event_data);
   if (event == ESP_HIDD_START_EVENT) {
+    ESP_LOGI(kTag, "HIDD keyboard service started");
     g_hid_connected = false;
-    ensure_ble_advertising_watchdog_started();
     start_hid_advertising("start");
     return;
   }
 
   if (event == ESP_HIDD_CONNECT_EVENT) {
-    g_hid_connected = true;
-    if (g_connection_handler != nullptr) {
-      g_connection_handler(true);
-    }
+    ESP_LOGI(kTag, "HIDD keyboard connected");
+    g_hid_connected = false;
     return;
   }
 
   if (event == ESP_HIDD_DISCONNECT_EVENT) {
+    ESP_LOGI(kTag, "HIDD keyboard disconnected; reason=%d",
+             param == nullptr ? -1 : static_cast<int>(param->disconnect.reason));
     g_hid_connected = false;
     clear_current_companion_binding();
     if (g_disconnect_handler != nullptr) {
@@ -483,6 +574,29 @@ void ble_hidd_event_callback(
       g_connection_handler(false);
     }
     start_hid_advertising("restart");
+    return;
+  }
+
+  if (event == ESP_HIDD_PROTOCOL_MODE_EVENT && param != nullptr) {
+    ESP_LOGI(kTag, "HIDD protocol mode map=%u mode=%u",
+             static_cast<unsigned>(param->protocol_mode.map_index),
+             static_cast<unsigned>(param->protocol_mode.protocol_mode));
+  } else if (event == ESP_HIDD_CONTROL_EVENT && param != nullptr) {
+    ESP_LOGI(kTag, "HIDD control map=%u value=%u",
+             static_cast<unsigned>(param->control.map_index),
+             static_cast<unsigned>(param->control.control));
+  } else if (event == ESP_HIDD_OUTPUT_EVENT && param != nullptr) {
+    ESP_LOGI(kTag, "HIDD output map=%u report=%u len=%u",
+             static_cast<unsigned>(param->output.map_index),
+             static_cast<unsigned>(param->output.report_id),
+             static_cast<unsigned>(param->output.length));
+  } else if (event == ESP_HIDD_FEATURE_EVENT && param != nullptr) {
+    ESP_LOGI(kTag, "HIDD feature map=%u report=%u len=%u",
+             static_cast<unsigned>(param->feature.map_index),
+             static_cast<unsigned>(param->feature.report_id),
+             static_cast<unsigned>(param->feature.length));
+  } else {
+    ESP_LOGI(kTag, "HIDD event id=%ld", static_cast<long>(id));
   }
 }
 
@@ -580,6 +694,9 @@ esp_err_t initialize_ble(
   if (ble_svc_gap_device_name_set(kDeviceName) != 0) {
     return ESP_FAIL;
   }
+  if (ble_svc_gap_device_appearance_set(ble_gap_appearance()) != 0) {
+    return ESP_FAIL;
+  }
 
   int nimble_rc = ble_gatts_count_cfg(kCompanionServices);
   if (nimble_rc != 0) {
@@ -591,7 +708,7 @@ esp_err_t initialize_ble(
   }
 
   ble_hs_cfg.sm_bonding = 1;
-  ble_hs_cfg.sm_mitm = 1;
+  ble_hs_cfg.sm_mitm = ble_pairing_requires_mitm() ? 1 : 0;
   ble_hs_cfg.sm_sc = 1;
   ble_hs_cfg.sm_io_cap = ble_pairing_io_capability();
   ble_hs_cfg.sm_our_key_dist =
@@ -599,6 +716,10 @@ esp_err_t initialize_ble(
   ble_hs_cfg.sm_their_key_dist =
       BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
   ble_store_config_init();
+  rc = migrate_ble_bond_store_if_needed();
+  if (rc != ESP_OK) {
+    return rc;
+  }
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
   return esp_nimble_enable(
@@ -634,6 +755,37 @@ void set_ble_connection_handler(BleConnectionHandler handler) {
 
 void enable_product_companion_mode() {
   g_product_companion_mode = true;
+}
+
+bool ble_pairing_input_active() {
+  return g_pending_passkey_conn != BLE_HS_CONN_HANDLE_NONE;
+}
+
+bool ble_pairing_input_digit(uint8_t digit) {
+  if (digit > 9 || g_pending_passkey_conn == BLE_HS_CONN_HANDLE_NONE) {
+    return false;
+  }
+  g_pending_passkey_value =
+      static_cast<uint32_t>(g_pending_passkey_value * 10 + digit);
+  ++g_pending_passkey_count;
+  if (g_pending_passkey_count < kBlePairingPasskeyDigits) {
+    return true;
+  }
+
+  ble_sm_io passkey{};
+  passkey.action = BLE_SM_IOACT_INPUT;
+  passkey.passkey = g_pending_passkey_value;
+  const int rc = ble_sm_inject_io(g_pending_passkey_conn, &passkey);
+  ESP_LOGI(kTag, "input passkey injected: digits=%u rc=%d",
+           static_cast<unsigned>(g_pending_passkey_count), rc);
+  g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
+  g_pending_passkey_value = 0;
+  g_pending_passkey_count = 0;
+  return rc == 0;
+}
+
+bool ble_keyboard_ready() {
+  return g_hid_connected;
 }
 
 esp_err_t notify_current_companion(std::span<const uint8_t> frame) {

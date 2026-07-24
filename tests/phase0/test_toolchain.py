@@ -12,6 +12,8 @@ from scripts.phase0.check_toolchain import validate_lock
 
 
 class ToolchainTest(unittest.TestCase):
+    repo_root = Path(__file__).resolve().parents[2]
+
     def test_exact_phase0_lock(self) -> None:
         lock = {
             "esp_idf": {
@@ -39,6 +41,14 @@ class ToolchainTest(unittest.TestCase):
             "python": {"version": "3.11.11"},
         }
         self.assertIn("esp_idf.commit", validate_lock(lock))
+
+    def test_sdkconfig_defaults_publish_keyboard_gap_identity(self) -> None:
+        defaults = (self.repo_root / "firmware" / "sdkconfig.defaults").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="Cardputer Codex"', defaults)
+        self.assertIn("CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=961", defaults)
+        self.assertIn("CONFIG_BT_NIMBLE_SM_LVL=2", defaults)
 
 
 class BootstrapScriptTest(unittest.TestCase):

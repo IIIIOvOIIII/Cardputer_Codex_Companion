@@ -1,6 +1,7 @@
 #include "probe/keyboard_probe.hpp"
 
 #ifdef ESP_PLATFORM
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_hidd.h"
 #include "esp_timer.h"
@@ -28,7 +29,21 @@ void EspHidReportSink::send_report(const HidReport& report) {
       const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&report)),
       sizeof(report));
   if (status != ESP_OK) {
-    ESP_LOGW(kTag, "failed to send keyboard report");
+    ESP_LOGW(kTag, "failed to send keyboard report: %s (%d)",
+             esp_err_to_name(status), static_cast<int>(status));
+  } else if (report.modifiers != 0 || report.keys[0] != 0 ||
+             report.keys[1] != 0 || report.keys[2] != 0 ||
+             report.keys[3] != 0 || report.keys[4] != 0 ||
+             report.keys[5] != 0) {
+    ESP_LOGI(kTag,
+             "sent keyboard report mod=0x%02x keys=%02x,%02x,%02x,%02x,%02x,%02x",
+             static_cast<unsigned>(report.modifiers),
+             static_cast<unsigned>(report.keys[0]),
+             static_cast<unsigned>(report.keys[1]),
+             static_cast<unsigned>(report.keys[2]),
+             static_cast<unsigned>(report.keys[3]),
+             static_cast<unsigned>(report.keys[4]),
+             static_cast<unsigned>(report.keys[5]));
   }
 }
 #endif

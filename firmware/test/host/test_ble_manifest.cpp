@@ -23,7 +23,7 @@ int main() {
   assert(manifest.custom_count_cfg_calls == 1);
   assert(manifest.custom_add_svcs_calls == 1);
   assert(manifest.identity_read_requires_encryption);
-  assert(manifest.identity_read_requires_authentication);
+  assert(!manifest.identity_read_requires_authentication);
   assert(manifest.text_write_requires_current_companion);
   assert(manifest.max_bonds == 1);
 
@@ -47,14 +47,35 @@ int main() {
 
   assert(ble_advertised_name() == "Cardputer Codex");
   assert(ble_device_name() == ble_advertised_name());
+  assert(ble_gap_appearance() == 0x03C1);
   assert(ble_hid_legacy_advertising_payload_bytes(
              "Cardputer Companion") > 31);
   assert(ble_hid_legacy_advertising_payload_bytes(
              ble_advertised_name()) <= 31);
   assert(ble_hid_advertising_duration_ms() == 2147483647);
-  assert(ble_advertising_watchdog_interval_ms() == 5000);
-  assert(ble_pairing_io_capability() == 0);
-  assert(ble_should_start_advertising(false, false));
+  assert(ble_advertising_watchdog_interval_ms() == 0);
+  assert(ble_pairing_io_capability() == 3);
+  assert(!ble_pairing_requires_mitm());
+  assert(ble_pairing_passkey() == 123456);
+  assert(!ble_pairing_requires_keyboard_input());
+  assert(ble_pairing_initiates_security_on_connect());
+  assert(ble_keyboard_ready_requires_successful_encryption());
+  assert(ble_pairing_digit_from_hid_usage(0x1e).has_value());
+  assert(*ble_pairing_digit_from_hid_usage(0x1e) == 1);
+  assert(*ble_pairing_digit_from_hid_usage(0x27) == 0);
+  assert(!ble_pairing_digit_from_hid_usage(0x04).has_value());
+  assert(ble_companion_link_allows(true, false, true));
+  assert(ble_companion_link_allows(true, true, true));
+  assert(!ble_companion_link_allows(false, true, true));
+  assert(!ble_companion_link_allows(true, true, false));
+  assert(ble_bond_store_schema_version() == 5);
+  assert(ble_should_reset_bond_store(0));
+  assert(ble_should_reset_bond_store(1));
+  assert(ble_should_reset_bond_store(2));
+  assert(ble_should_reset_bond_store(3));
+  assert(ble_should_reset_bond_store(4));
+  assert(!ble_should_reset_bond_store(ble_bond_store_schema_version()));
+  assert(!ble_should_start_advertising(false, false));
   assert(!ble_should_start_advertising(true, false));
   assert(!ble_should_start_advertising(false, true));
 

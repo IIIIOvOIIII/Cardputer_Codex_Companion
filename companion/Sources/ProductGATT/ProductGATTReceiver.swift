@@ -14,6 +14,21 @@ private enum ProductUUID {
     )
 }
 
+public enum ProductGATTDeviceIdentity {
+    public static let currentName = "Cardputer Codex"
+    public static let legacyName = "Cardputer Companion"
+
+    public static func accepts(
+        peripheralName: String?,
+        advertisedName: String?
+    ) -> Bool {
+        peripheralName == currentName ||
+            advertisedName == currentName ||
+            peripheralName == legacyName ||
+            advertisedName == legacyName
+    }
+}
+
 private struct PartialText {
     let count: Int
     var fragments: [Int: Data]
@@ -110,8 +125,10 @@ extension ProductGATTReceiver: CBCentralManagerDelegate {
     ) {
         let advertisedName =
             advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        guard peripheral.name == "Cardputer Companion" ||
-                advertisedName == "Cardputer Companion" else {
+        guard ProductGATTDeviceIdentity.accepts(
+            peripheralName: peripheral.name,
+            advertisedName: advertisedName
+        ) else {
             return
         }
         central.stopScan()

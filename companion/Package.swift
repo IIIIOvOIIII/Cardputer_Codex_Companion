@@ -90,6 +90,7 @@ let package = Package(
         .testTarget(name: "Phase0GATTTests", dependencies: ["Phase0GATT"]),
         .testTarget(name: "Phase0UnicodeTests", dependencies: ["Phase0Unicode"]),
         .testTarget(name: "ProductContractsTests", dependencies: ["ProductContracts"]),
+        .testTarget(name: "ProductGATTTests", dependencies: ["ProductGATT"]),
         .testTarget(name: "CodexAppServerTests", dependencies: ["CodexAppServer"])
     ]
 )

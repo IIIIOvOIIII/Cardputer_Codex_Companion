@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -56,10 +57,20 @@ bool companion_binding_proof_is_complete(const CompanionBindingProof& proof);
 bool device_id_is_valid(std::span<const uint8_t, 16> device_id);
 std::string_view ble_advertised_name();
 std::string_view ble_device_name();
+uint16_t ble_gap_appearance();
 std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name);
 int32_t ble_hid_advertising_duration_ms();
 uint32_t ble_advertising_watchdog_interval_ms();
 uint8_t ble_pairing_io_capability();
+bool ble_pairing_requires_mitm();
+uint32_t ble_pairing_passkey();
+bool ble_pairing_requires_keyboard_input();
+bool ble_pairing_initiates_security_on_connect();
+bool ble_keyboard_ready_requires_successful_encryption();
+std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage);
+bool ble_companion_link_allows(bool encrypted, bool authenticated, bool bonded);
+uint8_t ble_bond_store_schema_version();
+bool ble_should_reset_bond_store(uint8_t stored_version);
 bool ble_should_start_advertising(bool connected, bool advertising_active);
 std::vector<uint8_t> encode_product_text_fragment(
     uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
@@ -83,6 +94,9 @@ void set_ble_disconnect_handler(BleDisconnectHandler handler);
 void set_companion_control_handler(CompanionControlHandler handler);
 void set_ble_connection_handler(BleConnectionHandler handler);
 void enable_product_companion_mode();
+bool ble_pairing_input_active();
+bool ble_pairing_input_digit(uint8_t digit);
+bool ble_keyboard_ready();
 esp_err_t notify_current_companion(std::span<const uint8_t> frame);
 esp_err_t notify_product_utf8(uint32_t operation_id,
                               std::span<const uint8_t> utf8);
