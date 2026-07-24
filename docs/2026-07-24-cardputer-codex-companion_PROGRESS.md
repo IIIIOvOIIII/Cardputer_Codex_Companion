@@ -202,3 +202,10 @@
 - Expected result: 明确一个兼容旧 Profile、低内存、可持久化且符合用户保存直觉的修复边界，实施前不修改固件代码。
 - Result: Achieved for diagnosis and design — Chrome 复现 `Failed to fetch`，串口在 Profile GET 上稳定记录 `httpd_uri: uri handler execution failed`；默认完整 Profile 实测约 5,193 bytes，超过 ESP-IDF `nvs_set_str()` 4,000-byte 上限，而稀疏 `null` 编码约 1,161 bytes。Mac agent 停止后的对照测试仍复现 Profile handler 失败，排除其为主因；agent 已恢复运行。用户批准使用 224 项稀疏数组、兼容旧 passthrough 对象、持久化成功后再切换内存 Profile，并将弹窗动作改为“保存并发布”。
 - Next step: 用户审阅稀疏持久化规格；批准后创建测试先行实施计划，再实现、构建、刷入并做 Chrome/串口/实体键复验。
+
+## 2026-07-24 23:30 HKT
+
+- Current work: 将已批准的稀疏 Profile 规格拆成测试先行的固件、Web、版本发布和实机验证任务。
+- Expected result: 每个实现步骤包含精确文件、RED/GREEN 命令、持久化顺序、Web 失败行为、app-only 刷写边界与 Chrome/串口/实体键验收。
+- Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-24-web-profile-sparse-persistence.md`，包含四个可独立验收任务：稀疏 JSON 与原子持久化、弹窗保存即发布、1.0.22 完整发布门禁、`0x20000` app-only 刷写和实机复验。自审确认覆盖旧格式兼容、4,000-byte NVS 边界、失败不切换内存 Profile、无秘密日志和物理 UTF-8 输入验收，未发现占位符或接口命名冲突。
+- Next step: 由用户选择执行模式；按当前无子代理授权边界，推荐在本会话使用 executing-plans 内联执行。
