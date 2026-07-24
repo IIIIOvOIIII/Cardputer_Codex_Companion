@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "producer",
+    "kind",
+    "run_id",
+    "boot_id",
+    "app_elf_sha256",
+    "firmware_image_sha256",
+    "device_id_sha256",
+    "producer_monotonic_ns"
+  ],
+  "properties": {
+    "producer": {
+      "type": "string",
+      "const": "macos_companion"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "ble_identity",
+        "hid_observation",
+        "gatt_security",
+        "gatt_replay_result",
+        "wss_auth",
+        "heartbeat",
+        "interface_changed",
+        "stopped"
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "boot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "app_elf_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "firmware_image_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "device_id_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "producer_monotonic_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_at_ns": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

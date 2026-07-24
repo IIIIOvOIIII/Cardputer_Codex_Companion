@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "capture_complete": {
+      "type": "boolean"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "boot_id",
+        "app_elf_sha256",
+        "firmware_image_sha256",
+        "device_id_sha256",
+        "git_commit",
+        "git_tree_clean",
+        "toolchain_manifest_sha256",
+        "started_at",
+        "ended_at",
+        "duration_seconds",
+        "continuous_capture"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "boot_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "app_elf_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "firmware_image_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "device_id_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "git_tree_clean": {
+          "type": "boolean"
+        },
+        "toolchain_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ended_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "continuous_capture": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "chip",
+        "flash_bytes",
+        "psram_bytes"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chip": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flash_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "psram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ble_hid",
+        "encrypted_gatt",
+        "wifi",
+        "https",
+        "wss_authenticated",
+        "all_live"
+      ],
+      "properties": {
+        "ble_hid": {
+          "type": "boolean"
+        },
+        "encrypted_gatt": {
+          "type": "boolean"
+        },
+        "wifi": {
+          "type": "boolean"
+        },
+        "https": {
+          "type": "boolean"
+        },
+        "wss_authenticated": {
+          "type": "boolean"
+        },
+        "all_live": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ble_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hid_serial_base32",
+        "gatt_device_id_hex",
+        "gatt_link_encrypted",
+        "gatt_link_authenticated",
+        "bonded",
+        "same_device"
+      ],
+      "properties": {
+        "hid_serial_base32": {
+          "type": "string",
+          "pattern": "^[A-Z2-7]+$"
+        },
+        "gatt_device_id_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "gatt_link_encrypted": {
+          "type": "boolean"
+        },
+        "gatt_link_authenticated": {
+          "type": "boolean"
+        },
+        "bonded": {
+          "type": "boolean"
+        },
+        "same_device": {
+          "type": "boolean"
+        }
+      }
+    },
+    "https": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "running",
+        "requests_served",
+        "bad_requests",
+        "connection_errors"
+      ],
+      "properties": {
+        "running": {
+          "type": "boolean"
+        },
+        "requests_served": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bad_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_errors": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "web_security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge_accepted",
+        "gatt_replay_rejects"
+      ],
+      "properties": {
+        "challenge_accepted": {
+          "type": "boolean"
+        },
+        "gatt_replay_rejects": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "wss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "active",
+        "handshake_failures",
+        "authenticated_seconds"
+      ],
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "handshake_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authenticated_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heap_free_bytes",
+        "largest_block_bytes",
+        "max_stack_bytes"
+      ],
+      "properties": {
+        "heap_free_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "largest_block_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_stack_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "hid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generated",
+        "queued",
+        "queue_failures",
+        "buckets"
+      ],
+      "properties": {
+        "generated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queue_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buckets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "upper_us",
+              "count"
+            ],
+            "properties": {
+              "upper_us": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_log_sha256",
+        "raw_hid_log_sha256",
+        "raw_resource_log_sha256",
+        "report_sha256"
+      ],
+      "properties": {
+        "raw_log_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "raw_hid_log_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "raw_resource_log_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "consistency_errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "capture_complete",
+    "run",
+    "hardware",
+    "services",
+    "ble_identity",
+    "https",
+    "web_security",
+    "wss",
+    "resources",
+    "hid",
+    "artifacts",
+    "blockers",
+    "consistency_errors"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capture_complete": {
+            "const": true
+          }
+        },
+        "required": ["capture_complete"]
+      },
+      "then": {
+        "properties": {
+          "run": {
+            "properties": {
+              "git_tree_clean": {
+                "const": true
+              }
+            },
+            "required": ["git_tree_clean"]
+          }
+        }
+      }
+    }
+  ]
+}
