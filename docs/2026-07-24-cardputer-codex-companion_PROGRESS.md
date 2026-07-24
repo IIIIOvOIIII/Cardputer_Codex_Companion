@@ -223,3 +223,10 @@
 - Expected result: Profile PUT 不再因 HTTPS task 栈溢出而挂起或重启；中文 UTF-8 映射可写入、读回并跨重启持久化；Mac agent 不再使用不安全的长连接流；Cardputer 重启后 BLE、Wi-Fi、Mac 状态自动恢复。
 - Result: Achieved — `Profile` 解析和加载改为 heap 分配且原地重置，消除大对象及 `safe_profile()` 临时值占用 HTTPS task 栈；实机 PUT 返回 200，F 键索引 33 的 `字符串调试测试` 从 revision 3 更新至 revision 4，并在两次重启后原样读回。原异步 NDJSON 事件流在 ESP HTTPS server 上复现 TLS allocator assert/StoreProhibited，已改为 Mac 每 2 秒短轮询 action、仅内容变化或设备请求时 POST snapshot；120 秒串口观察无 TLS、heap、panic 或重启。Companion/BLE 跨任务状态改为原子快照，GAP connect 保留先到达的加密/HIDD/subscription 事件；实机发现一次 `ENC_CHANGE status=13` 后旧 watchdog 最终恢复，但等待过长，最终策略改为明确加密失败立即 terminate 并重新广播，保留 15 秒 stale fallback。1.0.25 已 app-only 刷入并 hash verified；重启后状态 API 返回 `BLE=OK`、`Wi-Fi=OK`、`companion=OK`。
 - Next step: 提交当前分支，合并到 `main`，在合并结果上重跑发布门禁并交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`。
+
+## 2026-07-25 01:05 HKT
+
+- Current work: 将修复分支 fast-forward 合并到 `main`，在主分支重新生成最终发布制品，并把同一主分支应用镜像刷入实机做最后回归。
+- Expected result: 主分支、LaunchAgent、实机运行固件和交付制品来自同一份源代码；完整门禁、BLE 失败快速恢复、Mac 在线和中文 Profile 持久化均有新鲜证据。
+- Result: Achieved — 主分支完整门禁通过：Python 103/103、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 目标构建、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging 与 secret exclusion。主分支应用镜像 app-only 刷入 `0x20000`，esptool 报告 `Hash of data verified`；LaunchAgent 已切换到主仓库 app。最终重启实测在 `ENC_CHANGE status=13` 后立即 terminate，约 0.75 秒重新连接、加密并恢复 `HID keyboard ready=1`，随后无 panic/reboot/TLS allocator 错误。状态 API 返回 version `1.0.25` 且 BLE/Wi-Fi/Mac 全部 `OK`；Profile revision 4 的 F 键中文字符串仍精确读回。最终 private full image 为 1,618,912 bytes，SHA-256 `12e0554ddca105dd252ed720ec7ded08add773009a9d5742a2d0f16084752db3`。
+- Next step: 交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`；当前仓库无 remote，故没有可执行的 push。
