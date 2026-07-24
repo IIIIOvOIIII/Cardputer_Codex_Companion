@@ -55,3 +55,10 @@
 - Expected result: Wi-Fi/WSS 状态变化不得清除 BLE HID/GATT；不同 run/boot/app/image/device 证据不得合并；Companion 事件必须带 producer 与 runner 双时钟；child report 不得携带任何裁决字段。
 - Result: Achieved — 实现提交 `a7df6ec` 与接收时间修复提交 `392f8a3` 已完成；C++ host test 1/1、schema/validator tests 12/12、Task 1 回归 9/9 通过。复审确认 `observed_at_ns` 已成为必填字段，报告 head 元数据已纠正；最终结论为 Spec compliant、Task quality Approved，无 Critical/Important/Minor 遗留。
 - Next step: 执行 Firmware Task 3，接入官方 ESP HID、单一自定义加密 GATT 服务，并以 Foundation 确定性向量验证固件协议字节。
+
+## 2026-07-24 11:28 HKT
+
+- Current work: 完成 Firmware Task 3 的官方 ESP HID 初始化、唯一自定义加密 GATT 服务、不可变设备身份、HID 报告释放保证与 Foundation canonical 协议向量固件消费。
+- Expected result: 固件严格沿用锁定 ESP-IDF 的官方 HID helper，不注册第二套 HID/GATT owner；Identity/Control 特征失败关闭；六份 canonical source 与生成头精确绑定；主机测试和 ESP32-S3 目标构建通过。
+- Result: Achieved — 实现提交 `52b381a`、构建新鲜度修复 `6dbf379` 与 canonical SHA-256 钉扎修复 `bc4c313` 已完成；C++ host tests 6/6、Python tests 29/29、完整 ESP-IDF build、官方 helper diff 校验与 forbidden scans 全部通过。最终规格审查合规、质量审查 Approved，无 Critical/Important/Minor 遗留。实机 BLE 配对、加密特征访问与 HID 送达仍按计划留给 HIL。
+- Next step: 执行 Firmware Task 4，在任何 TLS 分配前实施固定容量 admission limiter，并验证 4 个已建立会话加 1 个 pending handshake 的硬上限。
