@@ -32,6 +32,7 @@ class WebHandlerContext final : public WebPairingPhysicalSink {
  public:
   // Owns a permanent worker and must live for the HTTPS server's lifetime.
   WebHandlerContext(std::string expected_host, RandomSource& random);
+  ~WebHandlerContext();
   WebHandlerContext(const WebHandlerContext&) = delete;
   WebHandlerContext& operator=(const WebHandlerContext&) = delete;
 
@@ -65,6 +66,8 @@ class WebHandlerContext final : public WebPairingPhysicalSink {
   SemaphoreHandle_t mutex_ = nullptr;
   StaticSemaphore_t resolution_signal_storage_{};
   SemaphoreHandle_t resolution_signal_ = nullptr;
+  StaticSemaphore_t worker_stopped_signal_storage_{};
+  SemaphoreHandle_t worker_stopped_signal_ = nullptr;
   StaticQueue_t request_queue_storage_{};
   std::array<uint8_t, sizeof(httpd_req_t*)> request_queue_buffer_{};
   QueueHandle_t request_queue_ = nullptr;

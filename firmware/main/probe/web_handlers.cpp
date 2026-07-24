@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "cJSON.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
@@ -23,6 +24,7 @@ namespace {
 constexpr size_t kPairingBodyLimit = 512;
 constexpr size_t kStreamChunkBytes = 1024;
 constexpr size_t kWebSocketFrameLimit = 16384;
+constexpr char kTag[] = "web-handlers";
 
 uint64_t now_ms() {
   return static_cast<uint64_t>(esp_timer_get_time()) / 1000;
@@ -501,17 +503,32 @@ WebHandlerContext::WebHandlerContext(std::string expected_host,
       mutex_(xSemaphoreCreateMutexStatic(&mutex_storage_)),
       resolution_signal_(
           xSemaphoreCreateBinaryStatic(&resolution_signal_storage_)),
+      worker_stopped_signal_(
+          xSemaphoreCreateBinaryStatic(&worker_stopped_signal_storage_)),
       request_queue_(xQueueCreateStatic(
           1, sizeof(httpd_req_t*), request_queue_buffer_.data(),
           &request_queue_storage_)) {
   assert(mutex_ != nullptr);
   assert(resolution_signal_ != nullptr);
+  assert(worker_stopped_signal_ != nullptr);
   assert(request_queue_ != nullptr);
   pairing_worker_ = xTaskCreateStatic(
       pairing_worker_entry, "web-pairing", kPairingWorkerStackBytes, this,
       tskIDLE_PRIORITY + 1, pairing_worker_stack_.data(),
       &pairing_worker_storage_);
   assert(pairing_worker_ != nullptr);
+}
+
+WebHandlerContext::~WebHandlerContext() {
+  if (pairing_worker_ == nullptr) {
+    return;
+  }
+  cancel_pairing_response();
+  xSemaphoreGive(resolution_signal_);
+  httpd_req_t* stop_request = nullptr;
+  xQueueSend(request_queue_, &stop_request, portMAX_DELAY);
+  xSemaphoreTake(worker_stopped_signal_, portMAX_DELAY);
+  pairing_worker_ = nullptr;
 }
 
 void WebHandlerContext::open_pairing_window(
@@ -619,7 +636,11 @@ esp_err_t WebHandlerContext::defer_pairing_response(httpd_req_t* request) {
   if (result == PairingDeferResult::begin_failed) {
     return send_json(request, 503, "{\"error\":\"pairing_worker\"}");
   }
-  return result == PairingDeferResult::unavailable_sent ? ESP_OK : ESP_FAIL;
+  if (result == PairingDeferResult::unavailable_sent) {
+    return ESP_OK;
+  }
+  ESP_LOGW(kTag, "failed to return pairing worker error");
+  return ESP_FAIL;
 }
 
 bool WebHandlerContext::has_admin_session() {
@@ -647,9 +668,13 @@ void WebHandlerContext::pairing_worker_entry(void* argument) {
 void WebHandlerContext::pairing_worker() {
   while (true) {
     httpd_req_t* request = nullptr;
-    if (xQueueReceive(request_queue_, &request, portMAX_DELAY) != pdTRUE ||
-        request == nullptr) {
+    if (xQueueReceive(request_queue_, &request, portMAX_DELAY) != pdTRUE) {
       continue;
+    }
+    if (request == nullptr) {
+      xSemaphoreGive(worker_stopped_signal_);
+      vTaskDelete(nullptr);
+      return;
     }
     send_pairing_resolution(request, wait_for_pairing_resolution());
     httpd_req_async_handler_complete(request);
