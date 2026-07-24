@@ -83,3 +83,10 @@
 - Expected result: 仅使用 ESP-IDF 5.5.4 公共 API 建立自有 ESP-TLS 并包装为 websocket `ext_transport`；hostname 与 SPKI 双重验证后才保留 exporter；旧连接 `auth_ok` 不得认证新连接；foundation fixture 不被固件侧重定义。
 - Result: Achieved — 实现提交 `e5fbb12` 与审查接入修复 `da62e8c` 已完成；同时修复了固件向量生成器误将 Companion peer SPKI 当作设备 signer 公钥的根因。生成器 tests 9/9、普通 host tests 10/10、ASan/UBSan 10/10、公开 API/硬编码 label 扫描与完整 ESP-IDF build 均通过；最终镜像 `0xa9290`，最小 app 分区余量 34%。规格复审 Spec compliant，质量复审 Approved；真实 app-level Companion 配置与 auth wire handler 接入保留为跨任务 warning，未通过硬编码伪配置制造运行假象。
 - Next step: 执行 Firmware Task 7，加入固定内存 HID 延迟直方图、堆/栈/分配失败、固定队列和 transient burst JSONL 测量。
+
+## 2026-07-24 14:41 HKT
+
+- Current work: 完成 Firmware Task 7 的固定内存 HID 延迟直方图、堆/栈/分配失败、固定队列、真实 5 秒 transient burst 与 1Hz JSONL 证据采样。
+- Expected result: HID 32 深度队列零等待且失败不伪造延迟；资源阈值、七任务栈水位、HTTPS/WSS 占用、网络队列溢出和 transient WSS/import/session/approval 计数进入同一身份绑定样本；原始设备 ID 与请求秘密不得输出。
+- Result: Achieved — 实现提交 `80f02d1`，运行闭环修复 `dde3f49` 与窗口重开修复 `37bee7b` 已完成。JSONL 根对象与设备摘要泄漏问题在提交前修正；普通 host tests 11/11、ASan/UBSan 11/11、ESP-IDF 5.5.4 build 与 forbidden scans 通过。最终镜像 700,992 bytes，SHA-256 `62f7bf560d249ac4f86d2d3b1e81bc498c886f4dfac61d06c10e998e80657df9`，最小 app 分区余量 33%。规格复审 Spec compliant、质量复审 Approved，无遗留 finding。
+- Next step: 执行 Firmware Task 8，提交严格 HIL runner/validator；若仍无唯一 Cardputer 串口设备，则生成 schema-valid `capture_complete=false` blocker 报告并继续最终干净构建交付，绝不误刷其他串口。
