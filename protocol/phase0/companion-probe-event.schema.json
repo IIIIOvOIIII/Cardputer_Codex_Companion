@@ -10,7 +10,8 @@
     "app_elf_sha256",
     "firmware_image_sha256",
     "device_id_sha256",
-    "producer_monotonic_ns"
+    "producer_monotonic_ns",
+    "observed_at_ns"
   ],
   "properties": {
     "producer": {

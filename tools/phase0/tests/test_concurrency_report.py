@@ -215,6 +215,12 @@ def test_companion_schema_rejects_missing_monotonic_time() -> None:
     assert _validate(_companion_schema(), data)
 
 
+def test_companion_schema_rejects_missing_observed_time() -> None:
+    data = _good_event()
+    del data["observed_at_ns"]
+    assert _validate(_companion_schema(), data)
+
+
 def test_valid_fixtures_pass_schema_validation() -> None:
     assert not _validate(_firmware_schema(), _good_report())
     assert not _validate(_companion_schema(), _good_event())
