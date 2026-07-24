@@ -104,3 +104,10 @@
 - Expected result: 所有可在当前主机完成的测试、静态边界检查与目标构建通过；交付应用镜像和从 `0x0` 刷写的完整合并镜像，并保留实机 HIL 的真实 blocker。
 - Result: Achieved for compiled-firmware delivery — Phase 0 Python tests 57/57、firmware host tests 11/11、ASan/UBSan tests 11/11 和四组禁止项扫描通过；锁定 ESP-IDF 5.5.4 从零构建通过。应用镜像 700,992 bytes、SHA-256 `0458d987288abdde9af080c7cd64150943677b7537aa333b536bb43f72811025`；完整合并镜像 766,528 bytes、SHA-256 `525a2a7b0130089ae0ca2aefd868b121b8cb51f57ea636bc8cae309ae21f3b96`。最终质量审查无新增 finding；规格审查确认 Tasks 4–7 实现边界，Task 8 仍按文档保持 preflight-only blocker。由于没有 Cardputer 串口设备，未刷机、未执行 30 分钟 HIL。
 - Next step: 向用户交付 `firmware/build/cardputer_codex_phase0-full.bin` 和应用分区镜像路径。后续连接唯一 Cardputer 并补齐 mDNS/TLS Web pairing、macOS concurrency agent、17 地址 bench 后，继续完成 Task 8 `capture_complete=true` 实机门槛。
+
+## 2026-07-24 16:02 HKT
+
+- Current work: 在用户发现 Phase 0 探针无屏幕、无 Wi-Fi 和无产品运行时后，重新建立端到端产品化实施边界；通过 `lynx-vault` 仅确认 `shared.wifi.ssid` 与 `shared.wifi.password` 两个 scalar ref 可读取，未获取或落盘明文。
+- Expected result: 明确区分测试探针与可用产品；批准真实屏幕/键盘/Wi-Fi/Web/Profile/宏、macOS Companion/Codex 联动、私有 NVS 凭据制品和分层验收设计。
+- Result: Achieved — 用户批准延续现有 ESP-IDF/Swift 架构、固件与 Companion 端到端一起完成、Wi-Fi 凭据使用 Git 忽略的私有 NVS 分区封装，并批准架构、数据安全、故障和验收三部分设计。增量设计落盘为 `docs/superpowers/specs/2026-07-24-product-firmware-companion-implementation-design.md`。
+- Next step: 自审并提交增量设计，然后使用 `writing-plans` 创建逐任务、测试先行的产品化实施计划；计划批准前不修改产品代码或读取 Vault 明文。
