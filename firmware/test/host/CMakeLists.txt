@@ -29,6 +29,10 @@ add_custom_command(
   COMMAND ${UV_EXECUTABLE} run python ${GENERATOR_SCRIPT}
     --protocol-root ${PROTOCOL_ROOT}
     --output ${PROTOCOL_VECTOR_HEADER}
+  COMMAND ${UV_EXECUTABLE} run python ${GENERATOR_SCRIPT}
+    --protocol-root ${PROTOCOL_ROOT}
+    --output ${PROTOCOL_VECTOR_HEADER}
+    --check
   WORKING_DIRECTORY ${REPO_ROOT}
   COMMENT "Generating phase0 protocol vectors"
 )

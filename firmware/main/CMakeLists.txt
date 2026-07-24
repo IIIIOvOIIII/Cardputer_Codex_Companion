@@ -16,6 +16,11 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
             "${UV_EXECUTABLE}" run python "${PROTOCOL_GENERATOR}"
             --protocol-root "${PROTOCOL_ROOT}"
             --output "${PROTOCOL_HEADER}"
+        COMMAND
+            "${UV_EXECUTABLE}" run python "${PROTOCOL_GENERATOR}"
+            --protocol-root "${PROTOCOL_ROOT}"
+            --output "${PROTOCOL_HEADER}"
+            --check
         DEPENDS
             "${PROTOCOL_GENERATOR}"
             "${PROTOCOL_ROOT}/pairing-v1.md"

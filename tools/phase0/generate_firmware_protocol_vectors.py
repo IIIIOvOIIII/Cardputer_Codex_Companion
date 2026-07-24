@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Output path for generated C++ header",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify that the existing output exactly matches canonical sources",
+    )
     return parser.parse_args()
 
 
@@ -211,7 +216,7 @@ def build_and_validate_inputs(
     return pairing, gatt, wss
 
 
-def generate_cpp(protocol_root: Path, output: Path) -> None:
+def generate_cpp(protocol_root: Path, output: Path, *, check: bool = False) -> None:
     pairing_doc = protocol_root / "pairing-v1.md"
     gatt_doc = protocol_root / "gatt-auth-v1.md"
     wss_doc = protocol_root / "wss-auth-v1.md"
@@ -408,13 +413,19 @@ def generate_cpp(protocol_root: Path, output: Path) -> None:
         ]
     )
 
+    rendered = "\n".join(lines)
+    if check:
+        if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
+            raise ValueError("generated protocol header is stale")
+        return
+
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines), encoding="utf-8")
+    output.write_text(rendered, encoding="utf-8")
 
 
 def main() -> int:
     args = parse_args()
-    generate_cpp(args.protocol_root, args.output)
+    generate_cpp(args.protocol_root, args.output, check=args.check)
     return 0
 
 
