@@ -62,3 +62,10 @@
 - Expected result: 固件严格沿用锁定 ESP-IDF 的官方 HID helper，不注册第二套 HID/GATT owner；Identity/Control 特征失败关闭；六份 canonical source 与生成头精确绑定；主机测试和 ESP32-S3 目标构建通过。
 - Result: Achieved — 实现提交 `52b381a`、构建新鲜度修复 `6dbf379` 与 canonical SHA-256 钉扎修复 `bc4c313` 已完成；C++ host tests 6/6、Python tests 29/29、完整 ESP-IDF build、官方 helper diff 校验与 forbidden scans 全部通过。最终规格审查合规、质量审查 Approved，无 Critical/Important/Minor 遗留。实机 BLE 配对、加密特征访问与 HID 送达仍按计划留给 HIL。
 - Next step: 执行 Firmware Task 4，在任何 TLS 分配前实施固定容量 admission limiter，并验证 4 个已建立会话加 1 个 pending handshake 的硬上限。
+
+## 2026-07-24 11:38 HKT
+
+- Current work: 完成 Firmware Task 4 的固定容量 pre-TLS admission limiter 与基于 ESP HTTP Server 公共 session hook 的 bounded HTTPS server spike。
+- Expected result: 16 个固定 source slots、每源 3 次/分钟与全局 6 次/分钟限流均在 `esp_tls_init()` 前执行；运行时最多 4 个 established 加 1 个 pending；TLS、transport context、socket 和计数在所有失败/关闭路径只释放一次。
+- Result: Achieved — 实现提交 `00075e7` 与空白修复 `09d67e6` 已完成；主机 tests 7/7、完整 ESP-IDF 5.5.4 build、动态分配禁用扫描与 `httpd_ssl_start()` 禁用扫描通过。规格审查判定 Spec compliant；质量审查依据锁定 IDF 的同步 `open_fn` 失败清理链判定 Approved，无 Critical/Important/Minor 遗留。真实并发 TLS 占用仍按计划留给 Task 7 HIL。
+- Next step: 执行 Firmware Task 5，建立真实 Web 配对、物理确认、管理员 session、Host/Origin/CSRF 校验和请求预算状态机。
