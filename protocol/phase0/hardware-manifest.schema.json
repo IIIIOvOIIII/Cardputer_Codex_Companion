@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "product_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pcb_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chip_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chip_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "flash_jedec_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{6}$"
+    },
+    "flash_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "psram_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "usb_serial_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "keyboard_matrix_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 1
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 1
+        },
+        "physically_verified": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "repository",
+        "commit",
+        "outputs",
+        "inputs",
+        "physically_verified"
+      ],
+      "additionalProperties": false
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "manifest_version",
+    "model",
+    "product_revision",
+    "pcb_revision",
+    "chip_model",
+    "chip_revision",
+    "flash_jedec_id",
+    "flash_bytes",
+    "psram_bytes",
+    "usb_serial_sha256",
+    "keyboard_matrix_source",
+    "captured_at"
+  ]
+}
