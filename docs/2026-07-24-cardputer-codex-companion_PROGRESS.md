@@ -90,3 +90,10 @@
 - Expected result: HID 32 深度队列零等待且失败不伪造延迟；资源阈值、七任务栈水位、HTTPS/WSS 占用、网络队列溢出和 transient WSS/import/session/approval 计数进入同一身份绑定样本；原始设备 ID 与请求秘密不得输出。
 - Result: Achieved — 实现提交 `80f02d1`，运行闭环修复 `dde3f49` 与窗口重开修复 `37bee7b` 已完成。JSONL 根对象与设备摘要泄漏问题在提交前修正；普通 host tests 11/11、ASan/UBSan 11/11、ESP-IDF 5.5.4 build 与 forbidden scans 通过。最终镜像 700,992 bytes，SHA-256 `62f7bf560d249ac4f86d2d3b1e81bc498c886f4dfac61d06c10e998e80657df9`，最小 app 分区余量 33%。规格复审 Spec compliant、质量复审 Approved，无遗留 finding。
 - Next step: 执行 Firmware Task 8，提交严格 HIL runner/validator；若仍无唯一 Cardputer 串口设备，则生成 schema-valid `capture_complete=false` blocker 报告并继续最终干净构建交付，绝不误刷其他串口。
+
+## 2026-07-24 15:04 HKT
+
+- Current work: 完成 Firmware Task 8 的并发报告 schema/validator、严格 HIL 预检与破坏性动作屏障，并在已提交 runner 的干净树上执行正式预检。
+- Expected result: 条件齐备时执行一次独立 30 分钟实机 HIL；条件缺失时仅生成 schema-valid、`capture_complete=false`、无裁决字段的 blocker 报告，且不读取或刷写任何非目标串口。
+- Result: Partial — validator 与 runner 提交 `5aea871`、`4158f4b` 已完成，组合测试 37/37 通过。实际预检只发现蓝牙、DJI 麦克风、打印机和调试串口，没有唯一 ESP32-S3；同时缺少实机 hardware manifest、macOS concurrency agent、GATT secret 和 17 个已分配 LAN 地址。runner 非零退出并生成六项明确 blocker 的有效报告，输出目录没有 flash backup 或其他运行证据，未发生读写/刷机。Task 8 的 `capture_complete=true` 退出条件因此未达成。
+- Next step: 对 Task 8 harness 与整个 Firmware Tasks 1–8 变更做独立规格/质量复审；修复发现后执行全部 host/sanitizer/Python 回归和 ESP-IDF 干净构建，交付可刷写固件。实机 HIL 必须在连接唯一 Cardputer 并补齐 Companion 与 LAN bench 后重新运行。
