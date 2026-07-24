@@ -48,3 +48,10 @@
 - Expected result: 仅接受唯一明确的 `hardware_runtime` 事件；USB serial 只以 SHA-256 落盘；键盘矩阵物理验证必须由操作员显式确认；固件在锁定的 ESP-IDF 5.5.4 与组件版本下真实编译通过。
 - Result: Achieved — 实现提交 `82433ec` 与硬化提交 `ade5f22` 已完成；9 项主机测试、`set-target`、`reconfigure`、依赖锁对账和完整 `idf build` 通过。构建实测发现无 PSRAM 基线直接链接 `esp_psram_get_size()` 会失败，现以 `CONFIG_SPIRAM` 条件编译保留规定 API，并在无 PSRAM 时明确返回 0。最终复审为 Spec compliant、Task quality Approved，无 Critical/Important/Minor 遗留；未生成或伪造任何实机硬件清单。
 - Next step: 执行 Firmware Task 2，建立单次运行服务状态、不可混合的 evidence identity 与 child report 禁止裁决字段规则。
+
+## 2026-07-24 10:37 HKT
+
+- Current work: 完成 Firmware Task 2 的单次运行服务状态、证据身份、严格报告 schema 与跨运行失败关闭校验。
+- Expected result: Wi-Fi/WSS 状态变化不得清除 BLE HID/GATT；不同 run/boot/app/image/device 证据不得合并；Companion 事件必须带 producer 与 runner 双时钟；child report 不得携带任何裁决字段。
+- Result: Achieved — 实现提交 `a7df6ec` 与接收时间修复提交 `392f8a3` 已完成；C++ host test 1/1、schema/validator tests 12/12、Task 1 回归 9/9 通过。复审确认 `observed_at_ns` 已成为必填字段，报告 head 元数据已纠正；最终结论为 Spec compliant、Task quality Approved，无 Critical/Important/Minor 遗留。
+- Next step: 执行 Firmware Task 3，接入官方 ESP HID、单一自定义加密 GATT 服务，并以 Foundation 确定性向量验证固件协议字节。
