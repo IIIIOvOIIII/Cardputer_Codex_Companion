@@ -1,5 +1,6 @@
 .DS_Store
 .superpowers/
+.worktrees/
 .pio/
 .venv/
 __pycache__/
