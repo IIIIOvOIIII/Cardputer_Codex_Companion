@@ -22,6 +22,9 @@
 namespace {
 constexpr std::size_t kRequestLimit = 16384;
 constexpr char kPairingHeader[] = "X-Cardputer-Pairing";
+constexpr char kProductNvsNamespace[] = "product";
+constexpr char kProfileNvsKey[] = "profile";
+constexpr char kWebPinNvsKey[] = "web_pin";
 httpd_handle_t g_server = nullptr;
 std::array<char, 9> g_pairing_code{};
 Profile g_profile = safe_profile();
@@ -101,11 +104,12 @@ DeviceAction parse_device_action(const char* value) {
 
 bool authorized(httpd_req_t* request) {
   const size_t length = httpd_req_get_hdr_value_len(request, kPairingHeader);
-  if (length != 8) return false;
+  if (length != kProductWebPinLength) return false;
   std::array<char, 9> supplied{};
   return httpd_req_get_hdr_value_str(request, kPairingHeader, supplied.data(),
                                      supplied.size()) == ESP_OK &&
-         std::memcmp(supplied.data(), g_pairing_code.data(), 8) == 0;
+         std::memcmp(supplied.data(), g_pairing_code.data(),
+                     kProductWebPinLength) == 0;
 }
 
 esp_err_t json_response(httpd_req_t* request, const char* json,
@@ -294,29 +298,67 @@ bool parse_profile(const cJSON* root, Profile& output) {
 
 void persist_profile(const char* json) {
   nvs_handle_t handle;
-  if (nvs_open("product", NVS_READWRITE, &handle) != ESP_OK) return;
-  nvs_set_str(handle, "profile", json);
+  if (nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) return;
+  nvs_set_str(handle, kProfileNvsKey, json);
   nvs_commit(handle);
   nvs_close(handle);
 }
 
 void load_profile() {
   nvs_handle_t handle;
-  if (nvs_open("product", NVS_READONLY, &handle) != ESP_OK) return;
+  if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) return;
   size_t size = 0;
-  if (nvs_get_str(handle, "profile", nullptr, &size) != ESP_OK ||
+  if (nvs_get_str(handle, kProfileNvsKey, nullptr, &size) != ESP_OK ||
       size == 0 || size > kRequestLimit) {
     nvs_close(handle);
     return;
   }
   std::string json(size, '\0');
-  if (nvs_get_str(handle, "profile", json.data(), &size) == ESP_OK) {
+  if (nvs_get_str(handle, kProfileNvsKey, json.data(), &size) == ESP_OK) {
     cJSON* root = cJSON_Parse(json.c_str());
     Profile loaded;
     if (root != nullptr && parse_profile(root, loaded)) g_profile = loaded;
     cJSON_Delete(root);
   }
   nvs_close(handle);
+}
+
+void set_pairing_code(std::string_view pin) {
+  if (!product_web_pin_is_valid(pin)) return;
+  std::memset(g_pairing_code.data(), 0, g_pairing_code.size());
+  std::memcpy(g_pairing_code.data(), pin.data(), kProductWebPinLength);
+}
+
+void generate_pairing_code() {
+  std::snprintf(g_pairing_code.data(), g_pairing_code.size(), "%08lu",
+                static_cast<unsigned long>(esp_random() % 100000000u));
+}
+
+void load_pairing_code() {
+  generate_pairing_code();
+  nvs_handle_t handle;
+  if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) return;
+  std::array<char, kProductWebPinLength + 1> stored{};
+  size_t size = stored.size();
+  if (nvs_get_str(handle, kWebPinNvsKey, stored.data(), &size) == ESP_OK &&
+      product_web_pin_is_valid(stored.data())) {
+    set_pairing_code(stored.data());
+  }
+  nvs_close(handle);
+}
+
+esp_err_t persist_pairing_code(std::string_view pin) {
+  if (!product_web_pin_is_valid(pin)) return ESP_ERR_INVALID_ARG;
+  nvs_handle_t handle;
+  esp_err_t result =
+      nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle);
+  if (result != ESP_OK) return result;
+  const std::string pin_copy(pin);
+  result = nvs_set_str(handle, kWebPinNvsKey, pin_copy.c_str());
+  if (result == ESP_OK) result = nvs_commit(handle);
+  nvs_close(handle);
+  if (result == ESP_OK) set_pairing_code(pin);
+  return result;
 }
 
 esp_err_t root_handler(httpd_req_t* request) {
@@ -411,6 +453,25 @@ esp_err_t wifi_handler(httpd_req_t* request) {
                              "400 Bad Request");
 }
 
+esp_err_t pin_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const std::string body = read_body(request);
+  cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* pin = root == nullptr ? nullptr
+      : cJSON_GetObjectItemCaseSensitive(root, "pin");
+  if (!cJSON_IsString(pin) || !product_web_pin_is_valid(pin->valuestring)) {
+    cJSON_Delete(root);
+    return json_response(request, "{\"error\":\"invalid_pin\"}",
+                         "400 Bad Request");
+  }
+  const esp_err_t saved = persist_pairing_code(pin->valuestring);
+  cJSON_Delete(root);
+  return saved == ESP_OK
+             ? json_response(request, "{\"saved\":true}")
+             : json_response(request, "{\"error\":\"pin_save_failed\"}",
+                             "400 Bad Request");
+}
+
 esp_err_t companion_status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   const std::string body = read_body(request);
@@ -443,8 +504,7 @@ esp_err_t product_web_start() {
     g_profile_mutex = xSemaphoreCreateMutexStatic(&g_profile_mutex_storage);
   }
   if (g_profile_mutex == nullptr) return ESP_ERR_NO_MEM;
-  std::snprintf(g_pairing_code.data(), g_pairing_code.size(), "%08lu",
-                static_cast<unsigned long>(esp_random() % 100000000u));
+  load_pairing_code();
   load_profile();
   DeviceTlsIdentity identity;
   esp_err_t result = load_or_create_device_tls_identity(&identity);
@@ -459,7 +519,7 @@ esp_err_t product_web_start() {
   config.prvtkey_len = identity.private_key_length;
   result = httpd_ssl_start(&g_server, &config);
   if (result != ESP_OK) return result;
-  const std::array<httpd_uri_t, 7> routes{{
+  const std::array<httpd_uri_t, 8> routes{{
       {.uri = "/", .method = HTTP_GET, .handler = root_handler},
       {.uri = "/api/v1/status", .method = HTTP_GET, .handler = status_handler},
       {.uri = "/api/v1/profile", .method = HTTP_GET,
@@ -467,6 +527,7 @@ esp_err_t product_web_start() {
       {.uri = "/api/v1/profile", .method = HTTP_PUT,
        .handler = put_profile_handler},
       {.uri = "/api/v1/wifi", .method = HTTP_POST, .handler = wifi_handler},
+      {.uri = "/api/v1/pin", .method = HTTP_POST, .handler = pin_handler},
       {.uri = "/api/v1/companion/status", .method = HTTP_POST,
        .handler = companion_status_handler},
       {.uri = "/api/v1/companion/action", .method = HTTP_GET,

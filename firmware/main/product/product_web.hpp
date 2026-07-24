@@ -9,6 +9,15 @@
 
 enum class ProductHttpMethod : uint8_t { get, post, put };
 inline constexpr bool kProductWebUsesTls = true;
+inline constexpr std::size_t kProductWebPinLength = 8;
+
+constexpr bool product_web_pin_is_valid(std::string_view pin) {
+  if (pin.size() != kProductWebPinLength) return false;
+  for (char digit : pin) {
+    if (digit < '0' || digit > '9') return false;
+  }
+  return true;
+}
 
 struct ProductWebRoute {
   ProductHttpMethod method;
@@ -16,12 +25,13 @@ struct ProductWebRoute {
   bool requires_pairing;
 };
 
-inline constexpr std::array<ProductWebRoute, 7> kProductWebRoutes{{
+inline constexpr std::array<ProductWebRoute, 8> kProductWebRoutes{{
     {ProductHttpMethod::get, "/", false},
     {ProductHttpMethod::get, "/api/v1/status", false},
     {ProductHttpMethod::get, "/api/v1/profile", true},
     {ProductHttpMethod::put, "/api/v1/profile", true},
     {ProductHttpMethod::post, "/api/v1/wifi", true},
+    {ProductHttpMethod::post, "/api/v1/pin", true},
     {ProductHttpMethod::post, "/api/v1/companion/status", true},
     {ProductHttpMethod::get, "/api/v1/companion/action", true},
 }};

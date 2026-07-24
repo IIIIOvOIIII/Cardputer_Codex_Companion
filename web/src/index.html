@@ -9,63 +9,140 @@
 <body>
   <header>
     <div><small>CARDPUTER</small><h1>Codex Companion</h1></div>
-    <span id="status">连接中</span>
+    <span id="status">未鉴权</span>
   </header>
-  <main>
-    <section class="panel">
+
+  <main id="auth-screen" class="auth-layout">
+    <section class="panel auth-card">
+      <h2>先输入设备 PIN</h2>
+      <p class="hint">PIN 显示在 Cardputer 屏幕上。鉴权通过后才进入键盘配置页面。</p>
+      <form id="pin-form">
+        <label>设备 PIN
+          <input id="login-pin" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" placeholder="8 位数字">
+        </label>
+        <button class="primary" type="submit">进入控制台</button>
+      </form>
+      <p id="auth-error" class="error" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <main id="app-shell" class="hidden">
+    <nav class="tabs" aria-label="控制台选项卡">
+      <button id="tab-keyboard" class="tab active" data-tab="keyboard" type="button">键盘配置</button>
+      <button id="tab-settings" class="tab" data-tab="settings" type="button">Settings</button>
+      <button id="logout" type="button">退出鉴权</button>
+    </nav>
+
+    <section id="keyboard-view" class="panel">
       <div class="toolbar">
-        <label>Profile <input id="profile-name" maxlength="20" value="CODEX"></label>
-        <label>Layer <select id="layer"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
-        <button id="reload">重新载入</button>
-        <button id="publish" class="primary">发布</button>
+        <label>Profile 名称 <input id="profile-name" maxlength="20" value="CODEX"></label>
+        <label>Layer
+          <select id="layer">
+            <option value="0">0 - Keyboard</option>
+            <option value="1">1 - Codex</option>
+            <option value="2">2 - Fn Keyboard</option>
+            <option value="3">3 - Fn Codex</option>
+          </select>
+        </label>
+        <button id="reload" type="button">重新载入</button>
+        <button id="publish" class="primary" type="button">发布配置</button>
       </div>
+      <p class="hint">非直通按键会直接在键帽上显示真实用途。点击任意键位，在页面内弹窗中修改。</p>
       <div id="keyboard" aria-label="Cardputer 56-key layout"></div>
     </section>
-    <aside class="panel editor">
-      <h2>按键 <span id="selected-key">0</span></h2>
+
+    <section id="settings-view" class="panel hidden">
+      <div class="settings-grid">
+        <section>
+          <h2>修改 PIN</h2>
+          <p class="hint">PIN 必须是 8 位数字。保存后，后续 Web 请求立即使用新 PIN。</p>
+          <form id="change-pin">
+            <label>新 PIN
+              <input id="new-pin" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="例如 12345678">
+            </label>
+            <button class="primary" type="submit">保存 PIN</button>
+          </form>
+        </section>
+
+        <section>
+          <h2>Wi-Fi 配置</h2>
+          <p class="hint">Wi-Fi 密码只写入设备，不会被接口读回或导出。</p>
+          <form id="wifi-form">
+            <label>SSID <input id="wifi-ssid" maxlength="32" autocomplete="off"></label>
+            <label>密码 <input id="wifi-password" type="password" maxlength="64" autocomplete="new-password"></label>
+            <button id="save-wifi" class="primary" type="submit">保存并重连</button>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="key-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <form id="key-form" class="modal-card">
+      <div class="modal-head">
+        <h2 id="modal-title">修改按键</h2>
+        <button id="close-modal" type="button" aria-label="关闭">×</button>
+      </div>
+      <p id="selected-key" class="hint">0</p>
       <label>动作
         <select id="action-kind">
-          <option value="passthrough">passthrough</option>
-          <option value="hid_chord">hid_chord</option>
-          <option value="text_utf8">text_utf8</option>
-          <option value="input_sequence">input_sequence</option>
-          <option value="device_action">device_action</option>
-          <option value="codex_action">codex_action</option>
-          <option value="disabled">disabled</option>
+          <option value="passthrough">直通原按键</option>
+          <option value="hid_chord">组合键</option>
+          <option value="text_utf8">中文字符串 / UTF-8 文本</option>
+          <option value="input_sequence">输入序列</option>
+          <option value="device_action">设备动作</option>
+          <option value="codex_action">Codex 动作</option>
+          <option value="disabled">禁用</option>
         </select>
       </label>
-      <label>组合键修饰位 <input id="modifiers" type="number" min="0" max="255" value="0"></label>
-      <label>HID usages（逗号分隔） <input id="usages" placeholder="6,25"></label>
-      <label>UTF-8 / 中文字符串 <textarea id="text" maxlength="1024" placeholder="例如：请检查这段代码"></textarea></label>
-      <label>设备动作
-        <select id="device-action">
-          <option value="none">none</option>
-          <option value="toggle_mode">toggle_mode</option>
-          <option value="open_pairing">open_pairing</option>
-          <option value="reconnect_wifi">reconnect_wifi</option>
-        </select>
-      </label>
-      <label>Codex 动作
-        <select id="codex-action">
-          <option value="none">none</option>
-          <option value="select_next">select_next</option>
-          <option value="select_previous">select_previous</option>
-          <option value="interrupt">interrupt</option>
-          <option value="approve">approve</option>
-          <option value="reject">reject</option>
-        </select>
-      </label>
-      <label>序列 JSON <textarea id="sequence" placeholder='[{"kind":"hid_chord","usages":[6]}]'></textarea></label>
-      <button id="apply-key">应用到按键</button>
-      <hr>
-      <h2>Wi-Fi 配置</h2>
-      <label>SSID <input id="wifi-ssid" maxlength="32"></label>
-      <label>密码 <input id="wifi-password" type="password" maxlength="64"></label>
-      <button id="save-wifi">保存并重连</button>
-      <p class="hint">读取接口永不返回 Wi-Fi 密码。写操作需输入设备屏幕显示的八位配对码。</p>
-      <label>配对码 <input id="pairing-code" inputmode="numeric" maxlength="8"></label>
-    </aside>
-  </main>
+      <section id="chord-fields" class="editor-block">
+        <label>采集组合键
+          <input id="chord-capture" readonly placeholder="点击后按下组合键，例如 Alt+V">
+        </label>
+        <p class="hint">示例：Alt+V、Ctrl+Shift+P、Cmd+Enter。保存时写入 HID modifiers/usages。</p>
+        <input id="modifiers" type="hidden" value="0">
+        <input id="usages" type="hidden" value="">
+      </section>
+      <section id="text-fields" class="editor-block">
+        <label>中文字符串 / UTF-8 文本
+          <textarea id="text" maxlength="1024" placeholder="例如：请检查这段代码"></textarea>
+        </label>
+      </section>
+      <section id="device-fields" class="editor-block">
+        <label>设备动作
+          <select id="device-action">
+            <option value="none">无</option>
+            <option value="toggle_mode">切换 Keyboard / Codex 模式</option>
+            <option value="open_pairing">显示 Web PIN</option>
+            <option value="reconnect_wifi">重新连接 Wi-Fi</option>
+          </select>
+        </label>
+      </section>
+      <section id="codex-fields" class="editor-block">
+        <label>Codex 动作
+          <select id="codex-action">
+            <option value="none">无</option>
+            <option value="select_next">选择下一个会话</option>
+            <option value="select_previous">选择上一个会话</option>
+            <option value="interrupt">中断当前任务</option>
+            <option value="approve">批准请求</option>
+            <option value="reject">拒绝请求</option>
+          </select>
+        </label>
+      </section>
+      <section id="sequence-fields" class="editor-block">
+        <label>序列 JSON
+          <textarea id="sequence" placeholder='[{"kind":"hid_chord","usages":[6]}]'></textarea>
+        </label>
+      </section>
+      <p class="hint">动作摘要：保存后会显示在当前键帽上。</p>
+      <div class="modal-actions">
+        <button id="delete-mapping" type="button">恢复直通</button>
+        <button id="apply-key" class="primary" type="submit">应用到按键</button>
+      </div>
+    </form>
+  </div>
+
   <!--SCRIPT-->
 </body>
 </html>

@@ -338,6 +338,7 @@ void ui_task(void*) {
                                      profile_name.size())) {
           g_ui.set_profile(profile_name.data());
         }
+        g_ui.set_web(product_wifi_ipv4(), product_web_pairing_code());
         const uint32_t revision = g_ui.revision();
         if (revision != rendered_revision) {
           display_render_runtime(g_ui);
