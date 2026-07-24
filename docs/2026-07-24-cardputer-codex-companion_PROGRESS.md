@@ -97,3 +97,10 @@
 - Expected result: 条件齐备时执行一次独立 30 分钟实机 HIL；条件缺失时仅生成 schema-valid、`capture_complete=false`、无裁决字段的 blocker 报告，且不读取或刷写任何非目标串口。
 - Result: Partial — validator、初版 runner 与审查硬化提交 `5aea871`、`4158f4b`、`2415e96` 已完成，组合测试 39/39 通过。双审指出完整 1800 秒场景、真实 Web pairing 与证据聚合尚未实现；为避免未来误用，已删除不可达的刷写/随机 `boot_id` 路径，补齐 ESP-IDF 双锁与 checkout commit 检查，并将当前 runner 明确收敛为非破坏性预检。复跑只发现蓝牙、DJI 麦克风、打印机和调试串口，没有唯一 ESP32-S3；同时缺少实机 hardware manifest、macOS concurrency agent、GATT secret 和 17 个已分配 LAN 地址。runner 非零退出并生成六项明确 blocker 的有效报告，输出目录没有 flash backup 或其他运行证据，未发生读写/刷机。Task 8 的 `capture_complete=true` 退出条件因此未达成。
 - Next step: 对 Task 8 harness 与整个 Firmware Tasks 1–8 变更做独立规格/质量复审；修复发现后执行全部 host/sanitizer/Python 回归和 ESP-IDF 干净构建，交付可刷写固件。实机 HIL 必须在连接唯一 Cardputer 并补齐 Companion 与 LAN bench 后重新运行。
+
+## 2026-07-24 15:14 HKT
+
+- Current work: 对 Firmware Tasks 1–8 做最终跨任务规格/质量审查、完整回归、ESP-IDF `fullclean` 构建与合并镜像打包。
+- Expected result: 所有可在当前主机完成的测试、静态边界检查与目标构建通过；交付应用镜像和从 `0x0` 刷写的完整合并镜像，并保留实机 HIL 的真实 blocker。
+- Result: Achieved for compiled-firmware delivery — Phase 0 Python tests 57/57、firmware host tests 11/11、ASan/UBSan tests 11/11 和四组禁止项扫描通过；锁定 ESP-IDF 5.5.4 从零构建通过。应用镜像 700,992 bytes、SHA-256 `0458d987288abdde9af080c7cd64150943677b7537aa333b536bb43f72811025`；完整合并镜像 766,528 bytes、SHA-256 `525a2a7b0130089ae0ca2aefd868b121b8cb51f57ea636bc8cae309ae21f3b96`。最终质量审查无新增 finding；规格审查确认 Tasks 4–7 实现边界，Task 8 仍按文档保持 preflight-only blocker。由于没有 Cardputer 串口设备，未刷机、未执行 30 分钟 HIL。
+- Next step: 向用户交付 `firmware/build/cardputer_codex_phase0-full.bin` 和应用分区镜像路径。后续连接唯一 Cardputer 并补齐 mDNS/TLS Web pairing、macOS concurrency agent、17 地址 bench 后，继续完成 Task 8 `capture_complete=true` 实机门槛。
