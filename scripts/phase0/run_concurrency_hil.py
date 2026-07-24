@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import hashlib
 import json
 import os
@@ -39,6 +38,8 @@ CONCURRENCY_SCHEDULE = (
 DURATION_SECONDS = 1800
 FLASH_SIZE_BYTES = 8_388_608
 APP_PARTITION_OFFSET = 0x10000
+EXPECTED_IDF_TAG = "v5.5.4"
+EXPECTED_IDF_COMMIT = "735507283d5b2f9fb363a1901172dbd9e847945d"
 EXPECTED_COMPANION_OPTIONS = (
     "--interface",
     "--interface-address",
@@ -419,6 +420,52 @@ def _validate_git_tree(command_runner: Callable[..., subprocess.CompletedProcess
     return []
 
 
+def _validate_idf_locks(
+    command_runner: Callable[..., subprocess.CompletedProcess] = _run_command,
+) -> list[str]:
+    blockers: list[str] = []
+    toolchain_lock = REPO_ROOT / "toolchain.lock.json"
+    dependencies_lock = REPO_ROOT / "firmware/dependencies.lock"
+    idf_repo = REPO_ROOT / ".tools/esp-idf"
+
+    try:
+        toolchain = json.loads(toolchain_lock.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ["invalid_toolchain_lock"]
+
+    idf = toolchain.get("esp_idf")
+    if not isinstance(idf, dict):
+        blockers.append("toolchain_lock_missing_idf")
+    else:
+        if idf.get("tag") != EXPECTED_IDF_TAG:
+            blockers.append("toolchain_lock_idf_tag_mismatch")
+        if idf.get("commit") != EXPECTED_IDF_COMMIT:
+            blockers.append("toolchain_lock_idf_commit_mismatch")
+
+    try:
+        dependencies_text = dependencies_lock.read_text(encoding="utf-8")
+    except OSError:
+        blockers.append("missing_firmware_dependencies_lock")
+    else:
+        if not re.search(
+            r"(?m)^\s+idf:\n(?:.*\n)*?\s+version:\s+['\"]?5\.5\.4['\"]?\s*$",
+            dependencies_text,
+        ):
+            blockers.append("firmware_dependencies_idf_mismatch")
+        if not re.search(r"(?m)^target:\s+esp32s3\s*$", dependencies_text):
+            blockers.append("firmware_dependencies_target_mismatch")
+
+    completed = command_runner(
+        ["git", "-C", str(idf_repo), "rev-parse", "HEAD"]
+    )
+    if completed.returncode != 0:
+        blockers.append("idf_checkout_unavailable")
+    elif completed.stdout.strip() != EXPECTED_IDF_COMMIT:
+        blockers.append("idf_checkout_commit_mismatch")
+
+    return sorted(set(blockers))
+
+
 def _validate_output(output: Path) -> list[str]:
     if output.exists():
         return ["output_directory_not_fresh"]
@@ -478,6 +525,7 @@ def _validate_preflight(
         blockers.append("invalid_attacker_interface")
 
     blockers.extend(_validate_git_tree(command_runner=command_runner))
+    blockers.extend(_validate_idf_locks(command_runner=command_runner))
 
     blockers = sorted(set(blockers))
     if blockers or port is None or not manifest:
@@ -555,8 +603,12 @@ def _artifact_reference(
     path: Path, first_ns: int, last_ns: int, *, output_root: Path
 ) -> ArtifactMetadata:
     digest = _sha256_file(path)
+    try:
+        relative_path = path.resolve().relative_to(output_root.resolve())
+    except ValueError as exc:
+        raise RuntimeError("artifact_outside_output_root") from exc
     return ArtifactMetadata(
-        path=str(path.resolve().relative_to(output_root.resolve())),
+        path=str(relative_path),
         sha256=digest,
         byte_length=path.stat().st_size,
         first_runner_receipt_ns=first_ns,
@@ -662,24 +714,6 @@ def _flash_firmware(
 
 def _parse_device_id_sha256(device_id_hex: str) -> str:
     return _sha256_bytes(bytes.fromhex(device_id_hex))
-
-
-def _typeback_device_identity(expected_hash: str, *, typeback_input: Callable[[str], str]) -> bool:
-    response = typeback_input(f"Typeback device identity hash: {expected_hash}\n").strip().lower()
-    return response == expected_hash
-
-
-def _read_pairing_code(
-    *,
-    is_tty: Callable[[], bool] = sys.stdin.isatty,
-    pass_getter: Callable[[str], str] = getpass.getpass,
-) -> str:
-    if not is_tty():
-        raise RuntimeError("pairing_code_noninteractive")
-    code = pass_getter("Pairing code: ").strip()
-    if not code:
-        raise RuntimeError("missing_pairing_code")
-    return code
 
 
 class ConcurrencyCompanionSession:
@@ -932,10 +966,6 @@ def _run_main_flow(
     command_runner: Callable[..., subprocess.CompletedProcess] = _run_command,
     ifconfig_runner: Callable[[str], subprocess.CompletedProcess] | None = None,
     report_writer: Callable[[Path, dict[str, Any]], None] = _write_report,
-    clock: Callable[[], int] = monotonic_ns,
-    popen_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
-    typeback_input: Callable[[str], str] = input,
-    pairing_getter: Callable[[str], str] = getpass.getpass,
     is_tty: Callable[[], bool] = sys.stdin.isatty,
 ) -> tuple[int, dict[str, Any], list[str]]:
     run_id = uuid.uuid4().hex
@@ -953,128 +983,18 @@ def _run_main_flow(
         report_writer(report_path, report)
         return 1, report, preflight_blockers
 
-    if not _typeback_device_identity(context.companion_device_id_sha256, typeback_input=typeback_input):
-        report = _build_incomplete_report(context.run_id, ["device_typeback_mismatch"])
-        report_writer(report_path, report)
-        return 1, report, ["device_typeback_mismatch"]
-
-    blockers: list[str] = []
-
     # The approved CLI has no Cardputer Web endpoint parameter. Do not guess a
-    # host or request a code that cannot be consumed: fail before backup/flash
-    # until mDNS/TLS pairing is implemented.
-    blockers.append(
+    # host, prompt for identity or request a code that cannot be consumed. This
+    # committed version is intentionally preflight-only and cannot reach any
+    # flash helper until mDNS/TLS pairing and live evidence aggregation exist.
+    blockers = [
         "web_pairing_tls_flow_unavailable"
         if is_tty()
         else "pairing_code_noninteractive"
-    )
-
-    if blockers:
-        report = _build_incomplete_report(context.run_id, blockers)
-        report_writer(report_path, report)
-        return 1, report, blockers
-
-    try:
-        backup_path, _backup_sha = _backup_flash(
-            serial_port=context.serial_port,
-            output=context.output,
-            command_runner=command_runner,
-        )
-    except Exception as exc:
-        blockers.append(str(exc))
-        report = _build_incomplete_report(context.run_id, blockers)
-        report_writer(report_path, report)
-        return 1, report, blockers
-
-    if backup_path.stat().st_size != FLASH_SIZE_BYTES:
-        blockers.append("flash_backup_length_mismatch")
-
-    if blockers:
-        report = _build_incomplete_report(context.run_id, blockers)
-        report_writer(report_path, report)
-        return 1, report, blockers
-
-    try:
-        if _sha256_file(context.firmware_bin) != context.firmware_sha256:
-            raise RuntimeError("firmware_image_changed_after_preflight")
-        app_elf_sha256 = _read_app_sha256(
-            context.firmware_bin,
-            command_runner=command_runner,
-        )
-    except Exception as exc:
-        blockers.append(str(exc))
-        report = _build_incomplete_report(context.run_id, blockers)
-        report_writer(report_path, report)
-        return 1, report, blockers
-
-    flash_result = _flash_firmware(
-        firmware_bin=context.firmware_bin,
-        serial_port=context.serial_port,
-        command_runner=command_runner,
-    )
-    if flash_result.returncode != 0:
-        blockers.append("flash_failed")
-
-    if blockers:
-        report = _build_incomplete_report(context.run_id, blockers)
-        report_writer(report_path, report)
-        return 1, report, blockers
-
-    boot_id = uuid.uuid4().hex
-    companion = ConcurrencyCompanionSession(
-        probe=context.companion_probe,
-        interface=context.companion_interface,
-        interface_address=context.companion_address,
-        interface_netmask=context.companion_netmask,
-        peripheral_id=context.companion_peripheral_id,
-        device_id_hex=context.companion_device_id_hex,
-        run_id=context.run_id,
-        boot_id=boot_id,
-        app_elf_sha256=app_elf_sha256,
-        firmware_image_sha256=context.firmware_sha256,
-        duration_seconds=context.duration_seconds,
-        gatt_secret_file=context.companion_gatt_secret_file,
-        tls_identity_label=context.companion_tls_identity_label,
-        raw_event_path=context.output / "raw" / "raw_companion.log",
-        clock=clock,
-        popen_factory=popen_factory,
-        stderr_sink=lambda text: print(text, end="", file=sys.stderr, flush=True),
-    )
-
-    events, companion_errors, companion_artifact = companion.run()
-    blockers.extend(companion_errors)
-
-    if blockers:
-        report = _build_incomplete_report(context.run_id, sorted(set(blockers)))
-        if companion_artifact is not None:
-            report["artifacts"] = {
-                "raw_companion_log": {
-                    "path": companion_artifact.path,
-                    "sha256": companion_artifact.sha256,
-                    "byte_length": companion_artifact.byte_length,
-                    "first_runner_receipt_ns": companion_artifact.first_runner_receipt_ns,
-                    "last_runner_receipt_ns": companion_artifact.last_runner_receipt_ns,
-                }
-            }
-        report_writer(report_path, report)
-        return 1, report, sorted(set(blockers))
-
-    report = _build_incomplete_report(
-        context.run_id, ["live_measurement_aggregation_unavailable"]
-    )
-    if companion_artifact is not None:
-        report["artifacts"] = {
-            "raw_companion_log": {
-                "path": companion_artifact.path,
-                "sha256": companion_artifact.sha256,
-                "byte_length": companion_artifact.byte_length,
-                "first_runner_receipt_ns": companion_artifact.first_runner_receipt_ns,
-                "last_runner_receipt_ns": companion_artifact.last_runner_receipt_ns,
-            }
-        }
-
+    ]
+    report = _build_incomplete_report(context.run_id, blockers)
     report_writer(report_path, report)
-    return 1, report, report["blockers"]
+    return 1, report, blockers
 
 
 def _safe_unlink_secret(secret_path: Path) -> None:
@@ -1091,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        return_code, _report, blockers = _run_main_flow(args)
+        return_code, _report, _blockers = _run_main_flow(args)
         return return_code
     except KeyboardInterrupt:
         report = _build_incomplete_report(

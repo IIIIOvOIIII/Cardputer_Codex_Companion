@@ -128,6 +128,8 @@ def _runner_default(cmd: list[str], **_: object) -> FakeCompleted:
         return FakeCompleted(cmd, 0, "Chip is ESP32-S3", "")
     if "flash_id" in cmd:
         return FakeCompleted(cmd, 0, "Detected flash size: 8MB", "")
+    if "rev-parse" in cmd:
+        return FakeCompleted(cmd, 0, hil.EXPECTED_IDF_COMMIT + "\n", "")
     if "status" in cmd:
         return FakeCompleted(cmd, 0, "", "")
     if cmd and cmd[0] == "esptool.py" and cmd[1] == "image_info":
@@ -270,6 +272,52 @@ def test_duration_validation_and_source_boundary(tmp_path: Path) -> None:
     assert context is None
 
 
+def test_idf_locks_bind_the_exact_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir()
+    (tmp_path / "toolchain.lock.json").write_text(
+        json.dumps(
+            {
+                "esp_idf": {
+                    "tag": hil.EXPECTED_IDF_TAG,
+                    "commit": hil.EXPECTED_IDF_COMMIT,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (firmware_dir / "dependencies.lock").write_text(
+        "dependencies:\n"
+        "  idf:\n"
+        "    source:\n"
+        "      type: idf\n"
+        "    version: 5.5.4\n"
+        "target: esp32s3\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(hil, "REPO_ROOT", tmp_path)
+
+    assert hil._validate_idf_locks(command_runner=_runner_default) == []
+
+    def wrong_checkout(cmd: list[str], **_: object) -> FakeCompleted:
+        return FakeCompleted(cmd, 0, "0" * 40 + "\n")
+
+    assert hil._validate_idf_locks(command_runner=wrong_checkout) == [
+        "idf_checkout_commit_mismatch"
+    ]
+
+    (tmp_path / "toolchain.lock.json").write_text(
+        json.dumps({"esp_idf": {"tag": "v0", "commit": "0" * 40}}),
+        encoding="utf-8",
+    )
+    assert hil._validate_idf_locks(command_runner=_runner_default) == [
+        "toolchain_lock_idf_commit_mismatch",
+        "toolchain_lock_idf_tag_mismatch",
+    ]
+
+
 def test_manifest_secret_and_help_failure_blocks_preflight(tmp_path: Path) -> None:
     args, _ = _args_for(tmp_path)
 
@@ -324,7 +372,9 @@ def test_manifest_secret_and_help_failure_blocks_preflight(tmp_path: Path) -> No
     assert context is None
 
 
-def test_typeback_and_backup_barriers_before_flash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unavailable_web_flow_prevents_all_prompts_backup_and_flash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     args, _ = _args_for(tmp_path)
 
     flash_calls: list[str] = []
@@ -332,7 +382,6 @@ def test_typeback_and_backup_barriers_before_flash(tmp_path: Path, monkeypatch: 
     def no_flash(*_: object, **__: object) -> None:
         flash_calls.append("flash")
 
-    # typeback mismatch should prevent flash
     monkeypatch.setattr(
         hil,
         "_validate_preflight",
@@ -359,37 +408,27 @@ def test_typeback_and_backup_barriers_before_flash(tmp_path: Path, monkeypatch: 
                 ),
         ),
     )
-    monkeypatch.setattr(hil, "_typeback_device_identity", lambda *_a, **_k: False)
-    return_code, report, blockers = hil._run_main_flow(
-        args,
-        command_runner=_runner_default,
-        ifconfig_runner=lambda _: FakeCompleted([], 0, _ifconfig_output()),
-        pairing_getter=lambda _: "12345678",
-        is_tty=lambda: True,
-        report_writer=lambda *_: None,
-    )
-    assert return_code == 1
-    assert blockers == ["device_typeback_mismatch"]
-    assert report["run"] == {"run_id": report["run"]["run_id"]}
-
-    # An unavailable TLS pairing flow must also prevent backup and flash.
-    monkeypatch.setattr(hil, "_typeback_device_identity", lambda *_a, **_k: True)
+    prompt_calls: list[str] = []
     backup_calls: list[str] = []
+    monkeypatch.setattr(
+        "builtins.input", lambda *_: prompt_calls.append("input") or ""
+    )
     monkeypatch.setattr(
         hil, "_backup_flash", lambda **_: backup_calls.append("backup")
     )
     monkeypatch.setattr(hil, "_flash_firmware", lambda **_: no_flash())
+
     return_code, report, blockers = hil._run_main_flow(
         args,
         command_runner=_runner_default,
         ifconfig_runner=lambda _: FakeCompleted([], 0, _ifconfig_output()),
-        typeback_input=lambda _: "x",
-        pairing_getter=lambda _: "12345678",
         is_tty=lambda: True,
         report_writer=lambda *_: None,
     )
     assert return_code == 1
-    assert "web_pairing_tls_flow_unavailable" in blockers
+    assert blockers == ["web_pairing_tls_flow_unavailable"]
+    assert report["run"] == {"run_id": report["run"]["run_id"]}
+    assert not prompt_calls
     assert not backup_calls
     assert not flash_calls
 
@@ -420,6 +459,19 @@ def test_full_flash_backup_and_app_offset_are_fixed(tmp_path: Path) -> None:
         command_runner=command_runner,
     )
     assert "0x10000" in commands[1]
+
+
+def test_artifact_must_stay_inside_its_output_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.log"
+    outside.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="artifact_outside_output_root"):
+        hil._artifact_reference(
+            outside,
+            1,
+            2,
+            output_root=tmp_path / "output",
+        )
 
 
 class FakePopen:
@@ -611,20 +663,16 @@ def test_pairing_code_is_not_requested_when_tls_flow_is_unavailable(
 ) -> None:
     args, _ = _args_for(tmp_path)
 
-    requested_codes: list[str] = []
     rc, report, blockers = hil._run_main_flow(
         args,
         list_ports=lambda: [FakePort("/dev/ttyACM0", "ESP32-S3")],
         command_runner=_runner_default,
         ifconfig_runner=lambda _: FakeCompleted([], 0, _ifconfig_output()),
         report_writer=lambda *_: None,
-        typeback_input=lambda _: hil._parse_device_id_sha256(args.companion_device_id_hex),
-        pairing_getter=lambda _: requested_codes.append("requested") or "12345678",
         is_tty=lambda: True,
     )
 
     assert rc == 1
-    assert not requested_codes
     assert blockers == ["web_pairing_tls_flow_unavailable"]
     assert "12345678" not in json.dumps(report)
 
