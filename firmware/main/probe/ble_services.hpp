@@ -77,6 +77,7 @@ bool ble_pairing_initiates_security_on_connect();
 bool ble_keyboard_ready_requires_successful_encryption();
 bool ble_keyboard_ready_requires_authenticated_link();
 bool ble_keyboard_ready_requires_input_report_subscription();
+bool ble_should_terminate_after_encryption_change(int status);
 bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state);
 BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
     const BleKeyboardLinkState& current);

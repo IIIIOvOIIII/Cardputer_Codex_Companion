@@ -24,5 +24,8 @@ int main() {
   assert(protocol.apply(restarted, 12000) == CompanionMessageResult::snapshot);
   assert(protocol.snapshot().sequence == 1);
   assert(protocol.snapshot().title == "restarted");
+  protocol.heartbeat(22000);
+  assert(!protocol.stale(31999));
+  assert(protocol.stale(32000));
   return 0;
 }

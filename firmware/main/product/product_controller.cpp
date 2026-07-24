@@ -23,6 +23,7 @@ void ProductController::start() {
 
 #ifdef ESP_PLATFORM
 
+#include <atomic>
 #include <array>
 #include <optional>
 #include <span>
@@ -76,7 +77,7 @@ StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
 ServiceState g_ble_state = ServiceState::offline;
 ServiceState g_wifi_state = ServiceState::offline;
-ServiceState g_companion_state = ServiceState::offline;
+std::atomic<ServiceState> g_companion_state{ServiceState::offline};
 
 class SemaphoreLock {
  public:
@@ -95,7 +96,7 @@ class SemaphoreLock {
 };
 
 void update_web_status() {
-  product_web_set_status(g_ble_state, g_wifi_state, g_companion_state);
+  product_web_set_status(g_ble_state, g_wifi_state, g_companion_state.load());
 }
 
 void release_and_set_mode(bool safe) {
@@ -288,9 +289,11 @@ void companion_snapshot(std::string_view json) {
       static_cast<uint64_t>(esp_timer_get_time()) / 1000;
   const CompanionMessageResult result =
       g_companion_protocol.apply(json, now_ms);
+  ESP_LOGI(kTag, "companion snapshot result=%u",
+           static_cast<unsigned>(result));
   if (result != CompanionMessageResult::snapshot) return;
   const CompanionSnapshot& snapshot = g_companion_protocol.snapshot();
-  g_companion_state = ServiceState::ok;
+  g_companion_state.store(ServiceState::ok);
   {
     SemaphoreLock lock(g_ui_mutex);
     if (lock.locked()) {
@@ -300,6 +303,13 @@ void companion_snapshot(std::string_view json) {
     }
   }
   update_web_status();
+}
+
+void companion_heartbeat() {
+  if (g_companion_state.load() != ServiceState::ok) return;
+  const uint64_t now_ms =
+      static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  g_companion_protocol.heartbeat(now_ms);
 }
 
 void ui_task(void*) {
@@ -319,9 +329,9 @@ void ui_task(void*) {
 
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-    if (g_companion_state == ServiceState::ok &&
+    if (g_companion_state.load() == ServiceState::ok &&
         g_companion_protocol.stale(now_ms)) {
-      g_companion_state = ServiceState::offline;
+      g_companion_state.store(ServiceState::offline);
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
         g_ui.set_companion(ServiceState::offline);
@@ -416,6 +426,7 @@ class EspProductStartup final : public ProductStartupBackend {
 
   bool web() override {
     product_web_set_companion_snapshot_handler(companion_snapshot);
+    product_web_set_companion_heartbeat_handler(companion_heartbeat);
     const esp_err_t result = product_web_start();
     if (result == ESP_OK) {
       SemaphoreLock lock(g_ui_mutex);
@@ -428,7 +439,7 @@ class EspProductStartup final : public ProductStartupBackend {
   }
 
   bool companion() override {
-    g_companion_state = ServiceState::offline;
+    g_companion_state.store(ServiceState::offline);
     {
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {

@@ -5,8 +5,8 @@
 
 int main() {
   static_assert(kPhysicalKeyCount == 56);
-  static_assert(kProductVersion == std::string_view{"1.0.22"});
-  static_assert(kProductBootTitle == std::string_view{"CARDPUTER CODEX 1.0.22"});
+  static_assert(kProductVersion == std::string_view{"1.0.25"});
+  static_assert(kProductBootTitle == std::string_view{"CARDPUTER CODEX 1.0.25"});
   static_assert(kProductName == std::string_view{"Cardputer Codex Companion"});
 
   assert(to_string(BootStage::display) == "DISPLAY");

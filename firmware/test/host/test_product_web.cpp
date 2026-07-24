@@ -25,6 +25,9 @@ int main() {
          ProductWebProfileActivation::replace_active);
   assert(product_web_profile_activation(false) ==
          ProductWebProfileActivation::keep_active);
+  assert(product_web_companion_needs_snapshot(ServiceState::offline));
+  assert(product_web_companion_needs_snapshot(ServiceState::starting));
+  assert(!product_web_companion_needs_snapshot(ServiceState::ok));
   assert(kProductWebRoutes.size() == 8);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");

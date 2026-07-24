@@ -62,6 +62,10 @@ CompanionMessageResult CompanionProtocol::apply(std::string_view json,
   return CompanionMessageResult::snapshot;
 }
 
+void CompanionProtocol::heartbeat(uint64_t now_ms) {
+  if (has_snapshot_) updated_at_ms_ = now_ms;
+}
+
 bool CompanionProtocol::stale(uint64_t now_ms) const {
   return !has_snapshot_ || now_ms - updated_at_ms_ >= kCompanionStaleAfterMs;
 }

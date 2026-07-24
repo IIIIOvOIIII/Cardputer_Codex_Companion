@@ -1,6 +1,7 @@
 #include "probe/ble_services.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <string_view>
 
@@ -106,6 +107,10 @@ bool ble_keyboard_ready_requires_input_report_subscription() {
   return kBleKeyboardReadyRequiresInputReportSubscription;
 }
 
+bool ble_should_terminate_after_encryption_change(int status) {
+  return status != 0;
+}
+
 bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state) {
   return state.gap_connected &&
          (!ble_keyboard_ready_requires_successful_encryption() ||
@@ -119,13 +124,9 @@ bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state) {
 
 BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
     const BleKeyboardLinkState& current) {
-  return {
-      .gap_connected = true,
-      .encrypted = false,
-      .authenticated = false,
-      .hidd_connected = current.hidd_connected,
-      .input_report_subscribed = false,
-  };
+  BleKeyboardLinkState connected = current;
+  connected.gap_connected = true;
+  return connected;
 }
 
 std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage) {
@@ -287,9 +288,11 @@ CompanionControlHandler g_control_handler = nullptr;
 BleConnectionHandler g_connection_handler = nullptr;
 bool g_product_companion_mode = false;
 BleKeyboardLinkState g_hid_state{};
-bool g_last_hid_ready = false;
+std::atomic<bool> g_hid_ready{false};
+std::atomic<bool> g_hid_gap_connected{false};
+std::atomic<bool> g_last_hid_ready{false};
 uint16_t g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-uint64_t g_hid_state_changed_ms = 0;
+std::atomic<uint64_t> g_hid_state_changed_ms{0};
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
 uint32_t g_pending_passkey_value = 0;
 uint8_t g_pending_passkey_count = 0;
@@ -334,15 +337,16 @@ uint64_t now_ms() {
 }
 
 void mark_hid_state_changed() {
-  g_hid_state_changed_ms = now_ms();
+  g_hid_state_changed_ms.store(now_ms());
 }
 
 void publish_hid_ready_if_changed(const char* reason) {
   const bool ready = ble_keyboard_ready_from_state(g_hid_state);
-  if (ready == g_last_hid_ready) {
+  g_hid_gap_connected.store(g_hid_state.gap_connected);
+  g_hid_ready.store(ready);
+  if (ready == g_last_hid_ready.exchange(ready)) {
     return;
   }
-  g_last_hid_ready = ready;
   ESP_LOGI(kTag,
            "HID keyboard ready=%d reason=%s gap=%d enc=%d auth=%d hidd=%d sub=%d",
            ready ? 1 : 0,
@@ -515,15 +519,19 @@ esp_err_t start_hid_advertising(const char* action);
 void ble_reconnect_watchdog_task(void*) {
   while (true) {
     const bool advertising_active = ble_gap_adv_active();
-    if (ble_should_reset_stale_link(g_hid_state, now_ms(),
-                                    g_hid_state_changed_ms)) {
+    const bool connected = g_hid_gap_connected.load();
+    const bool ready = g_hid_ready.load();
+    const uint64_t current_ms = now_ms();
+    const uint64_t changed_ms = g_hid_state_changed_ms.load();
+    if (connected && !ready &&
+        current_ms - changed_ms >= ble_stale_link_timeout_ms() &&
+        !g_hid_ready.load()) {
       ESP_LOGW(kTag, "terminating stale HID link for reconnect");
       if (g_hid_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gap_terminate(g_hid_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
       }
       reset_hid_link_state("stale-link");
-    } else if (ble_should_start_advertising(g_hid_state.gap_connected,
-                                            advertising_active)) {
+    } else if (ble_should_start_advertising(connected, advertising_active)) {
       start_hid_advertising("watchdog");
     }
     vTaskDelay(pdMS_TO_TICKS(ble_advertising_watchdog_interval_ms()));
@@ -564,11 +572,16 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
     case BLE_GAP_EVENT_ENC_CHANGE:
       ESP_LOGI(kTag, "HID GAP encryption changed; status=%d",
                event->enc_change.status);
-      if (event->enc_change.status != 0) {
+      if (ble_should_terminate_after_encryption_change(
+              event->enc_change.status)) {
         g_hid_state.encrypted = false;
         g_hid_state.authenticated = false;
-        mark_hid_state_changed();
         publish_hid_ready_if_changed("enc-failed");
+        rc = ble_gap_terminate(event->enc_change.conn_handle,
+                               BLE_ERR_REM_USER_CONN_TERM);
+        ESP_LOGW(kTag,
+                 "terminating HID link after encryption failure: rc=%d",
+                 rc);
         return 0;
       }
       rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
@@ -922,7 +935,7 @@ bool ble_pairing_input_digit(uint8_t digit) {
 }
 
 bool ble_keyboard_ready() {
-  return ble_keyboard_ready_from_state(g_hid_state);
+  return g_hid_ready.load();
 }
 
 esp_err_t notify_current_companion(std::span<const uint8_t> frame) {

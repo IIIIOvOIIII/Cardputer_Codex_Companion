@@ -33,6 +33,27 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
         self.approvals = approvals
         self.inputs = inputs
     }
+
+    public func hasSameContent(as other: CompanionSnapshot) -> Bool {
+        sessionID == other.sessionID &&
+            title == other.title &&
+            cwd == other.cwd &&
+            state == other.state &&
+            approvals == other.approvals &&
+            inputs == other.inputs
+    }
+
+    public func withSequence(_ value: UInt64) -> CompanionSnapshot {
+        CompanionSnapshot(
+            sequence: value,
+            sessionID: sessionID,
+            title: title,
+            cwd: cwd,
+            state: state,
+            approvals: approvals,
+            inputs: inputs
+        )
+    }
 }
 
 public enum RemoteAction: String, Codable, Sendable {
@@ -49,4 +70,10 @@ public enum RemoteAction: String, Codable, Sendable {
 public struct RemoteActionEnvelope: Codable, Sendable {
     public let sequence: UInt64
     public let action: RemoteAction
+    public let needsSnapshot: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sequence, action
+        case needsSnapshot = "needs_snapshot"
+    }
 }

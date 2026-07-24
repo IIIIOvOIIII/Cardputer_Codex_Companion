@@ -44,25 +44,30 @@ struct CardputerCompanionMain {
             baseURL: deviceURL,
             pairingCode: pairingCode
         )
-        var pendingSnapshot: CompanionSnapshot?
+        var lastPostedSnapshot: CompanionSnapshot?
+        var wireSequence: UInt64 = 0
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
         while !Task.isCancelled {
             do {
                 let action = try await bridge.pollAction()
-                try adapter.perform(action)
-                if pendingSnapshot == nil {
-                    pendingSnapshot = try adapter.snapshot()
+                if action.needsSnapshot {
+                    lastPostedSnapshot = nil
                 }
-                if let snapshot = pendingSnapshot {
+                try adapter.perform(action.action)
+                let currentSnapshot = try adapter.snapshot()
+                if lastPostedSnapshot == nil ||
+                    !currentSnapshot.hasSameContent(as: lastPostedSnapshot!) {
+                    wireSequence += 1
+                    let snapshot = currentSnapshot.withSequence(wireSequence)
                     try await bridge.post(snapshot)
-                    pendingSnapshot = nil
+                    lastPostedSnapshot = snapshot
                 }
             } catch {
                 FileHandle.standardError.write(
                     Data("sync warning: \(error)\n".utf8)
                 )
             }
-            try await Task.sleep(for: .seconds(1))
+            try await Task.sleep(for: .seconds(2))
         }
         withExtendedLifetime(receiver) {}
     }

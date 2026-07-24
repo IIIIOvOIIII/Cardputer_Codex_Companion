@@ -216,3 +216,10 @@
 - Expected result: 默认 Profile 低于 4,000-byte NVS 字符串上限；旧 passthrough 对象仍可读取；持久化失败不替换内存 Profile；Web 弹窗直接发布并内联显示错误；完整发布门禁通过。
 - Result: Achieved and ready for app-only flash — Task 1 RED 确认缺失稀疏/原子策略，GREEN 后 host policy 与稀疏回归 2/2；Task 2 RED 确认弹窗仍仅本地应用，GREEN 后 Web tests 6/6 与 JavaScript 语法检查通过；版本 RED/GREEN 确认 1.0.22 常量。完整发布门禁通过：Python 99/99、普通 host 21/21、ASan/UBSan 21/21、Web asset、ESP-IDF 5.5.4 target build、产品分区、Swift release/doctor、generic/private packaging 与 secret exclusion 全部通过；目标 DIRAM headroom 141,073 bytes。应用镜像 `firmware/build/cardputer_codex_companion.bin` 为 1,487,072 bytes，SHA-256 `105e742b203a94c81345cda2e21c485443f20f6f6ccaee46ff8acfc8617e5947`；private full image 为 1,618,144 bytes，SHA-256 `6982c14b8e7ca9929e4d01bf68f8bc4dbab97f7d0605d6add05874efb4152d85`。
 - Next step: 将应用镜像刷入 `0x20000`，保留当前 NVS/PIN/Wi-Fi/bonds，然后用 Chrome、认证 API、串口和实体 F 键验证 UTF-8 映射发布及重启持久化。
+
+## 2026-07-25 00:57 HKT
+
+- Current work: 在实机上完成 Web 中文字符串映射、Mac Companion 同步、TLS 稳定性与 Cardputer 重启后 BLE 恢复的根因排查，并形成 1.0.25 发布候选。
+- Expected result: Profile PUT 不再因 HTTPS task 栈溢出而挂起或重启；中文 UTF-8 映射可写入、读回并跨重启持久化；Mac agent 不再使用不安全的长连接流；Cardputer 重启后 BLE、Wi-Fi、Mac 状态自动恢复。
+- Result: Achieved — `Profile` 解析和加载改为 heap 分配且原地重置，消除大对象及 `safe_profile()` 临时值占用 HTTPS task 栈；实机 PUT 返回 200，F 键索引 33 的 `字符串调试测试` 从 revision 3 更新至 revision 4，并在两次重启后原样读回。原异步 NDJSON 事件流在 ESP HTTPS server 上复现 TLS allocator assert/StoreProhibited，已改为 Mac 每 2 秒短轮询 action、仅内容变化或设备请求时 POST snapshot；120 秒串口观察无 TLS、heap、panic 或重启。Companion/BLE 跨任务状态改为原子快照，GAP connect 保留先到达的加密/HIDD/subscription 事件；实机发现一次 `ENC_CHANGE status=13` 后旧 watchdog 最终恢复，但等待过长，最终策略改为明确加密失败立即 terminate 并重新广播，保留 15 秒 stale fallback。1.0.25 已 app-only 刷入并 hash verified；重启后状态 API 返回 `BLE=OK`、`Wi-Fi=OK`、`companion=OK`。
+- Next step: 提交当前分支，合并到 `main`，在合并结果上重跑发布门禁并交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`。

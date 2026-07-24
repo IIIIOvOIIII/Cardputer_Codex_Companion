@@ -54,15 +54,46 @@ def test_launch_agent_includes_codex_cli_search_path():
     assert "/usr/local/bin" in script
 
 
-def test_lan_bridge_uses_curl_config_stdin_for_launchd_local_network():
+def test_lan_bridge_uses_single_action_poll_for_launchd_local_network():
     bridge = (ROOT / "companion/Sources/cardputer-companion/LANBridge.swift").read_text()
     assert '"/usr/bin/curl"' in bridge
     assert '"--config"' in bridge
     assert "LocalTLSDelegate" not in bridge
     assert "URLSession" not in bridge
+    assert 'path: "api/v1/companion/action"' in bridge
+    assert "actionProcess" not in bridge
+    assert "api/v1/companion/events" not in bridge
+
+
+def test_companion_only_posts_changed_snapshots():
+    main = (
+        ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
+    ).read_text()
+    assert "lastPostedSnapshot" in main
+    assert "hasSameContent" in main
+    assert "action.needsSnapshot" in main
+    assert "Task.sleep(for: .seconds(2))" in main
 
 
 def test_cardputer_display_uses_larger_body_text():
     display = (ROOT / "firmware/main/product/display.cpp").read_text()
     assert "kDisplayBodyTextSize = 2" in display
     assert "setTextSize(kDisplayBodyTextSize)" in display
+
+
+def test_companion_state_is_atomic_across_http_and_ui_tasks():
+    controller = (
+        ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text()
+    assert (
+        "std::atomic<ServiceState> g_companion_state{ServiceState::offline};"
+        in controller
+    )
+
+
+def test_ble_watchdog_and_keyboard_use_atomic_link_snapshot():
+    ble = (ROOT / "firmware/main/probe/ble_services.cpp").read_text()
+    assert "std::atomic<bool> g_hid_ready" in ble
+    assert "std::atomic<bool> g_hid_gap_connected" in ble
+    assert "std::atomic<uint64_t> g_hid_state_changed_ms" in ble
+    assert "return g_hid_ready.load();" in ble

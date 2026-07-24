@@ -51,6 +51,10 @@ constexpr ProductWebProfileActivation product_web_profile_activation(
              : ProductWebProfileActivation::keep_active;
 }
 
+constexpr bool product_web_companion_needs_snapshot(ServiceState state) {
+  return state != ServiceState::ok;
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;
@@ -72,6 +76,7 @@ inline constexpr std::array<ProductWebRoute, 8> kProductWebRoutes{{
 #include "esp_err.h"
 
 using ProductCompanionSnapshotHandler = void (*)(std::string_view json);
+using ProductCompanionHeartbeatHandler = void (*)();
 
 esp_err_t product_web_start();
 const char* product_web_pairing_code();
@@ -79,6 +84,8 @@ void product_web_set_status(ServiceState ble, ServiceState wifi,
                             ServiceState companion);
 void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler);
+void product_web_set_companion_heartbeat_handler(
+    ProductCompanionHeartbeatHandler handler);
 bool product_web_action(uint8_t layer, uint8_t physical_key, KeyAction* action);
 bool product_web_profile_name(char* output, std::size_t output_size);
 void product_web_queue_codex_action(CodexAction action);

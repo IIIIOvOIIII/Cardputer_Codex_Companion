@@ -10,7 +10,6 @@ enum LANBridgeError: Error {
 final class LANBridge {
     private let baseURL: URL
     private let pairingCode: String
-    private var lastActionSequence: UInt64 = 0
 
     init(baseURL: URL, pairingCode: String) {
         self.baseURL = baseURL
@@ -29,18 +28,15 @@ final class LANBridge {
         )
     }
 
-    func pollAction() async throws -> RemoteAction {
+    func pollAction() async throws -> RemoteActionEnvelope {
         let data = try runCurl(
             method: "GET",
             path: "api/v1/companion/action"
         )
-        let envelope = try JSONDecoder().decode(
+        return try JSONDecoder().decode(
             RemoteActionEnvelope.self,
             from: data
         )
-        guard envelope.sequence > lastActionSequence else { return .none }
-        lastActionSequence = envelope.sequence
-        return envelope.action
     }
 
     private func runCurl(

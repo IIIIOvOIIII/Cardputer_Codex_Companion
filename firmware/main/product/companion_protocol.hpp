@@ -28,6 +28,7 @@ enum class CompanionMessageResult : uint8_t {
 class CompanionProtocol {
  public:
   CompanionMessageResult apply(std::string_view json, uint64_t now_ms);
+  void heartbeat(uint64_t now_ms);
   [[nodiscard]] const CompanionSnapshot& snapshot() const { return snapshot_; }
   [[nodiscard]] bool stale(uint64_t now_ms) const;
 

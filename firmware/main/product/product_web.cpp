@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "cJSON.h"
@@ -36,6 +37,7 @@ std::atomic<ServiceState> g_companion{ServiceState::offline};
 std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
 std::atomic<uint32_t> g_action_sequence{0};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
+ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
 
 class ProfileLock {
  public:
@@ -258,7 +260,11 @@ bool parse_profile(const cJSON* root, Profile& output) {
       cJSON_GetArraySize(bindings) != kProfileBindingCount) {
     return false;
   }
-  output = safe_profile();
+  output.name.clear();
+  output.revision = 1;
+  for (KeyBinding& binding : output.bindings) {
+    binding.action = KeyAction{};
+  }
   output.name = name->valuestring;
   output.revision = static_cast<uint32_t>(revision->valuedouble);
   for (int index = 0; index < cJSON_GetArraySize(bindings); ++index) {
@@ -327,8 +333,10 @@ void load_profile() {
   std::string json(size, '\0');
   if (nvs_get_str(handle, kProfileNvsKey, json.data(), &size) == ESP_OK) {
     cJSON* root = cJSON_Parse(json.c_str());
-    Profile loaded;
-    if (root != nullptr && parse_profile(root, loaded)) g_profile = loaded;
+    auto loaded = std::make_unique<Profile>();
+    if (root != nullptr && parse_profile(root, *loaded)) {
+      g_profile = std::move(*loaded);
+    }
     cJSON_Delete(root);
   }
   nvs_close(handle);
@@ -435,8 +443,8 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   const std::string body = read_body(request);
   cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
-  Profile candidate;
-  if (root == nullptr || !parse_profile(root, candidate)) {
+  auto candidate = std::make_unique<Profile>();
+  if (root == nullptr || !parse_profile(root, *candidate)) {
     cJSON_Delete(root);
     return json_response(request, "{\"error\":\"invalid_profile\"}",
                          "400 Bad Request");
@@ -444,12 +452,12 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
   cJSON_Delete(root);
   ProfileLock lock;
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  if (candidate.revision != g_profile.revision) {
+  if (candidate->revision != g_profile.revision) {
     return json_response(request, "{\"error\":\"revision_conflict\"}",
                          "409 Conflict");
   }
-  candidate.revision += 1;
-  cJSON* encoded = profile_json(candidate);
+  candidate->revision += 1;
+  cJSON* encoded = profile_json(*candidate);
   char* json = cJSON_PrintUnformatted(encoded);
   if (json == nullptr) {
     cJSON_Delete(encoded);
@@ -465,7 +473,7 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
         "{\"error\":\"profile_persist_failed\"}",
         "500 Internal Server Error");
   }
-  g_profile = std::move(candidate);
+  g_profile = std::move(*candidate);
   const esp_err_t result = json_response(request, json);
   cJSON_free(json);
   cJSON_Delete(encoded);
@@ -526,15 +534,20 @@ esp_err_t companion_status_handler(httpd_req_t* request) {
 
 esp_err_t companion_action_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  const bool needs_snapshot =
+      product_web_companion_needs_snapshot(g_companion.load());
+  if (g_heartbeat_handler != nullptr) g_heartbeat_handler();
   const CodexAction action =
       g_pending_codex_action.exchange(CodexAction::none);
   const uint32_t sequence = g_action_sequence.load();
   const std::string_view name = codex_action_name(action);
-  char json[96]{};
+  char json[128]{};
   std::snprintf(json, sizeof(json),
-                "{\"sequence\":%lu,\"action\":\"%.*s\"}",
+                "{\"sequence\":%lu,\"action\":\"%.*s\","
+                "\"needs_snapshot\":%s}",
                 static_cast<unsigned long>(sequence),
-                static_cast<int>(name.size()), name.data());
+                static_cast<int>(name.size()), name.data(),
+                needs_snapshot ? "true" : "false");
   return json_response(request, json);
 }
 }  // namespace
@@ -595,6 +608,11 @@ void product_web_set_status(ServiceState ble, ServiceState wifi,
 void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler) {
   g_snapshot_handler = handler;
+}
+
+void product_web_set_companion_heartbeat_handler(
+    ProductCompanionHeartbeatHandler handler) {
+  g_heartbeat_handler = handler;
 }
 
 bool product_web_action(uint8_t layer, uint8_t physical_key,
