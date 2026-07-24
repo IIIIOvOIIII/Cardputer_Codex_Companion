@@ -40,9 +40,11 @@ idf_component_register(
     SRCS
         "app_main.cpp"
         "probe/ble_services.cpp"
+        "probe/bounded_https_server.cpp"
         "probe/hardware_probe.cpp"
         "probe/hid_engine.cpp"
         "probe/keyboard_probe.cpp"
+        "probe/pre_tls_limiter.cpp"
         "probe/protocol_codec.cpp"
     INCLUDE_DIRS
         "."
@@ -50,9 +52,13 @@ idf_component_register(
         "${PROTOCOL_OUTPUT_DIR}"
     PRIV_REQUIRES
         bt
+        esp-tls
         esp_hid
         esp_hw_support
+        esp_http_server
         esp_psram
+        esp_timer
+        lwip
         mbedtls
         nvs_flash
         spi_flash

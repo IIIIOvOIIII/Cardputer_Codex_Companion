@@ -118,3 +118,15 @@ target_compile_options(
   test_gatt_sender PRIVATE -Wno-deprecated-declarations)
 add_dependencies(test_gatt_sender generate_protocol_vectors)
 add_test(NAME gatt_sender COMMAND test_gatt_sender)
+
+add_executable(test_pre_tls_limiter
+  test_pre_tls_limiter.cpp
+  ../../main/probe/pre_tls_limiter.cpp
+)
+
+target_include_directories(test_pre_tls_limiter
+  PRIVATE
+    ../../main
+)
+
+add_test(NAME pre_tls_limiter COMMAND test_pre_tls_limiter)
