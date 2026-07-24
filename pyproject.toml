@@ -1,0 +1,18 @@
+[project]
+name = "cardputer-codex-phase0-tools"
+version = "0.0.1"
+requires-python = "==3.11.*"
+dependencies = [
+  "brotli==1.1.0",
+  "cryptography==45.0.6",
+  "fonttools[woff]==4.59.0",
+  "jsonschema[format-nongpl]==4.26.0",
+  "pillow==11.3.0",
+  "pyserial==3.5",
+]
+
+[dependency-groups]
+dev = [
+  "check-jsonschema==0.37.4",
+  "pytest==8.4.1",
+]

@@ -10,3 +10,9 @@ __pycache__/
 include/secrets.h
 build/
 dist/
+.tools/
+companion/.build/
+.swiftpm/
+web-probe/node_modules/
+*.sqlite
+*.app/
