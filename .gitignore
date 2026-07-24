@@ -16,3 +16,6 @@ companion/.build/
 web-probe/node_modules/
 *.sqlite
 *.app/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old

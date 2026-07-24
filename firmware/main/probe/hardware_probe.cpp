@@ -5,6 +5,7 @@
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_psram.h"
+#include "sdkconfig.h"
 
 namespace {
 const char* chip_model_name(esp_chip_model_t model) {
@@ -45,7 +46,11 @@ HardwareRuntime probe_hardware() {
     flash_bytes = 0;
   }
 
+#if CONFIG_SPIRAM
   const size_t psram_bytes = esp_psram_get_size();
+#else
+  const size_t psram_bytes = 0;
+#endif
   return {
     chip_model_name(chip_info.model),
     chip_info.revision,
