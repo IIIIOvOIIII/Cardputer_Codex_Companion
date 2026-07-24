@@ -41,3 +41,10 @@
 - Expected result: ContractTests 3/3、全部 surface tests、Swift build 与 `cardputer-phase0-probe --version` 均通过后进入独立任务审查。
 - Result: Partial — 实现提交 `15c8196` 已创建，全部生产 library/executable targets 构建成功，CLI 严格输出 `cardputer-phase0-probe 0.1.0`；但当前主机只安装 CommandLineTools，没有 `Xcode.app`，`swift test` 与直接 `import XCTest` 均以 `no such module 'XCTest'` 失败。该任务未标记完成、未进入审查，且不得用伪造 XCTest 或改写测试框架制造绿灯。
 - Next step: 利用 Foundation 后可并行的依赖边界继续 firmware Tasks 1–7；完整 Xcode/XCTest 可用后回到 macOS Task 1 完成测试、清理误纳入 Git 的 SDD 报告并执行双重审查。
+
+## 2026-07-24 10:29 HKT
+
+- Current work: 完成 Firmware Task 1 的 ESP-IDF/组件精确锁定、8MiB 无 PSRAM 基线、运行时硬件探针、严格硬件清单捕获与独立复审。
+- Expected result: 仅接受唯一明确的 `hardware_runtime` 事件；USB serial 只以 SHA-256 落盘；键盘矩阵物理验证必须由操作员显式确认；固件在锁定的 ESP-IDF 5.5.4 与组件版本下真实编译通过。
+- Result: Achieved — 实现提交 `82433ec` 与硬化提交 `ade5f22` 已完成；9 项主机测试、`set-target`、`reconfigure`、依赖锁对账和完整 `idf build` 通过。构建实测发现无 PSRAM 基线直接链接 `esp_psram_get_size()` 会失败，现以 `CONFIG_SPIRAM` 条件编译保留规定 API，并在无 PSRAM 时明确返回 0。最终复审为 Spec compliant、Task quality Approved，无 Critical/Important/Minor 遗留；未生成或伪造任何实机硬件清单。
+- Next step: 执行 Firmware Task 2，建立单次运行服务状态、不可混合的 evidence identity 与 child report 禁止裁决字段规则。
