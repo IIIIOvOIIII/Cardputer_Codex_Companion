@@ -69,3 +69,10 @@
 - Expected result: 16 个固定 source slots、每源 3 次/分钟与全局 6 次/分钟限流均在 `esp_tls_init()` 前执行；运行时最多 4 个 established 加 1 个 pending；TLS、transport context、socket 和计数在所有失败/关闭路径只释放一次。
 - Result: Achieved — 实现提交 `00075e7` 与空白修复 `09d67e6` 已完成；主机 tests 7/7、完整 ESP-IDF 5.5.4 build、动态分配禁用扫描与 `httpd_ssl_start()` 禁用扫描通过。规格审查判定 Spec compliant；质量审查依据锁定 IDF 的同步 `open_fn` 失败清理链判定 Approved，无 Critical/Important/Minor 遗留。真实并发 TLS 占用仍按计划留给 Task 7 HIL。
 - Next step: 执行 Firmware Task 5，建立真实 Web 配对、物理确认、管理员 session、Host/Origin/CSRF 校验和请求预算状态机。
+
+## 2026-07-24 12:16 HKT
+
+- Current work: 完成 Firmware Task 5 的 Web 配对、物理确认、固定管理员 session、Host/Origin/CSRF、限流、请求预算与六条真实 HTTPS handler。
+- Expected result: 五分钟八位码、第五次错误后十分钟退避、最多五会话、30 分钟 idle、仅摘要凭据状态、固定容量限流、128KiB/depth-eight 流式导入与 16KiB/1009 WebSocket 边界均可测试，且物理确认等待不得阻塞 ESP HTTPD 单任务循环。
+- Result: Achieved — 实现提交 `dd974e3`，审查修复 `400fe49`、`df5827a`、`d6eecb7` 已完成；配对响应使用官方 async request API 与单一静态 worker，析构可取消、完成并停止 worker。普通 host tests 9/9、ASan/UBSan 9/9、完整 ESP-IDF 5.5.4 build 通过；目标 ELF 含六个非零 handler、两项 async API 和 exact 六路由，镜像 `0xa8740`，最小 app 分区余量 34%。最终规格审查 Spec compliant、质量审查 Approved，无遗留 finding。真实浏览器、物理确认、连接中断和攻击矩阵仍按计划留给 HIL。
+- Next step: 执行 Firmware Task 6，实现带 SPKI pinning 与 TLS exporter 绑定的外部 WSS transport。
