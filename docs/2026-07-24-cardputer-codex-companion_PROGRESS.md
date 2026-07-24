@@ -95,5 +95,5 @@
 
 - Current work: 完成 Firmware Task 8 的并发报告 schema/validator、严格 HIL 预检与破坏性动作屏障，并在已提交 runner 的干净树上执行正式预检。
 - Expected result: 条件齐备时执行一次独立 30 分钟实机 HIL；条件缺失时仅生成 schema-valid、`capture_complete=false`、无裁决字段的 blocker 报告，且不读取或刷写任何非目标串口。
-- Result: Partial — validator 与 runner 提交 `5aea871`、`4158f4b` 已完成，组合测试 37/37 通过。实际预检只发现蓝牙、DJI 麦克风、打印机和调试串口，没有唯一 ESP32-S3；同时缺少实机 hardware manifest、macOS concurrency agent、GATT secret 和 17 个已分配 LAN 地址。runner 非零退出并生成六项明确 blocker 的有效报告，输出目录没有 flash backup 或其他运行证据，未发生读写/刷机。Task 8 的 `capture_complete=true` 退出条件因此未达成。
+- Result: Partial — validator、初版 runner 与审查硬化提交 `5aea871`、`4158f4b`、`2415e96` 已完成，组合测试 39/39 通过。双审指出完整 1800 秒场景、真实 Web pairing 与证据聚合尚未实现；为避免未来误用，已删除不可达的刷写/随机 `boot_id` 路径，补齐 ESP-IDF 双锁与 checkout commit 检查，并将当前 runner 明确收敛为非破坏性预检。复跑只发现蓝牙、DJI 麦克风、打印机和调试串口，没有唯一 ESP32-S3；同时缺少实机 hardware manifest、macOS concurrency agent、GATT secret 和 17 个已分配 LAN 地址。runner 非零退出并生成六项明确 blocker 的有效报告，输出目录没有 flash backup 或其他运行证据，未发生读写/刷机。Task 8 的 `capture_complete=true` 退出条件因此未达成。
 - Next step: 对 Task 8 harness 与整个 Firmware Tasks 1–8 变更做独立规格/质量复审；修复发现后执行全部 host/sanitizer/Python 回归和 ESP-IDF 干净构建，交付可刷写固件。实机 HIL 必须在连接唯一 Cardputer 并补齐 Companion 与 LAN bench 后重新运行。

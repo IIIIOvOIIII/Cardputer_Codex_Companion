@@ -1,11 +1,11 @@
 # Phase 0 Firmware Concurrency HIL Evidence
 
 - Test date: 2026-07-24 15:04 HKT
-- Runner commit: `4158f4b528a6586eb01acfbcc44dd58947ee6663`
+- Runner commit: `2415e96cce007eb293229e283ddb05cba696a2f5`
 - Firmware image: `firmware/build/cardputer_codex_phase0.bin`
 - Firmware image SHA-256: `62f7bf560d249ac4f86d2d3b1e81bc498c886f4dfac61d06c10e998e80657df9`
-- Raw report: `build/phase0/firmware-concurrency/report.json`
-- Raw report SHA-256: `a8d19d3bf332cfea7487abe8c9918ea447232f0193d826c347fe81c506ef660d`
+- Raw report: `build/phase0/firmware-concurrency-preflight-2415e96/report.json`
+- Raw report SHA-256: `4eb9c223af5b67bb948966e8187778d275dc3777afd0ec9789d2df4997e4d616`
 - Capture complete: `false`
 - Measurement window: not started
 - Flash read/write performed: no
@@ -16,6 +16,11 @@ The committed runner was invoked from a clean Git tree with the fixed
 `1800`-second duration. It emitted a schema-valid, verdict-free incomplete
 report and exited non-zero. The report was then accepted by
 `tools/phase0/validate_concurrency_report.py` as an incomplete capture.
+
+The reviewed runner is deliberately preflight-only. It cannot prompt for
+device identity or pairing data, back up flash, flash firmware, or invent a
+runtime `boot_id` until the mDNS/TLS Web pairing flow and full live evidence
+aggregator are implemented and reviewed.
 
 The only files under the output directory are the report itself. No flash
 backup or raw runtime evidence exists because preflight stopped before any
