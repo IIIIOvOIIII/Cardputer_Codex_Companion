@@ -13,7 +13,7 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-read -r esp_idf_tag esp_idf_commit node_version node_archive node_sha node_python < <( \
+read -r esp_idf_tag esp_idf_commit node_version node_archive node_sha node_python < <(
   python3 - "$lock_path" <<'PY'
 import json
 import sys
@@ -38,6 +38,8 @@ espressif_dir="$repo_root/.tools/espressif"
 tools_dir="$repo_root/.tools"
 node_archive_path="$tools_dir/$node_archive"
 node_unpack_dir="${node_archive%.tar.gz}"
+python_dir="$tools_dir/uv-python"
+python_path="$python_dir/bin/python3"
 
 mkdir -p "$tools_dir"
 
@@ -55,13 +57,22 @@ if [ "$actual_head" != "$esp_idf_commit" ]; then
   exit 1
 fi
 
-python_path="$tools_dir/uv-python/bin/python3"
 if [ ! -x "$python_path" ]; then
-  uv venv "$tools_dir/uv-python" --python "$node_python"
+  uv venv "$python_dir" --python "$node_python"
+fi
+
+if ! python_version="$("$python_path" --version 2>/dev/null | sed 's/^Python //')"; then
+  echo "uv-python path invalid: $python_path" >&2
+  exit 1
+fi
+if [ "$python_version" != "$node_python" ]; then
+  echo "uv-python version mismatch: expected $node_python, got ${python_version:-unavailable} at $python_path" >&2
+  exit 1
 fi
 
 export IDF_TOOLS_PATH="$espressif_dir"
 export PYTHON="$python_path"
+export PATH="$python_dir/bin:$PATH"
 "$esp_idf_dir/install.sh" esp32s3
 
 if [ -d "$tools_dir/$node_unpack_dir" ]; then
