@@ -27,3 +27,10 @@
 - Expected result: ESP-IDF、Node、Python 与 Python 依赖精确锁定；ESP-IDF 安装强制使用 `.tools/uv-python` 中的 Python 3.11.11；缺失 HIL 条件如实保持 `BLOCKED`；任务通过 RED/GREEN、bootstrap 和双重审查。
 - Result: Achieved — 实现提交 `2918d35` 与修复提交 `a2337bb` 已完成；动态测试证明错误 Python 会非破坏性失败且安装器解析仓库内解释器，4/4 单测、`uv lock`、完整 bootstrap 与工具链清单验证通过。最终审查结论为规格合规、Task quality Approved，且无 Critical/Important/Minor 遗留。当前 HIL 应用前置条件仍为 `BLOCKED`，未被误报为硬件 gate 结论。
 - Next step: 执行 Foundation Task 2，固定 pairing/GATT/WSS 协议编码和确定性跨语言安全向量。
+
+## 2026-07-24 10:09 HKT
+
+- Current work: 完成 Foundation Task 2 的 pairing、GATT 与 WSS 唯一字节协议、确定性安全向量及跨计划接口审查。
+- Expected result: Python 生成器、规范文档和三份 fixture 对同一协议逐字节一致；覆盖 32-byte nonce、transcript-hash HKDF salt、完整 GATT 分片/HMAC/replay、五字段 WSS exporter 绑定、固定宽度 P-256 签名、SPKI/role 拒绝和 post-SAS 双通道绑定。
+- Result: Achieved — 协议提交 `a67873c` 与负向修复提交 `781b405` 已完成；11 项测试、确定性重生成与 OpenSSL transcript SHA-256 独立对账通过。最终审查为 Spec compliant、Task quality Approved，且无 Critical/Important/Minor 遗留；fixture 私钥材料明确标记为仅限测试。
+- Next step: 按依赖顺序执行 macOS Tasks 1–6，先建立 SwiftPM target/稳定契约，再实现 Unicode、TCC、配对、BLE/GATT 和签名应用骨架；HIL live run 继续后置。
