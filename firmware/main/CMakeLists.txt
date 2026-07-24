@@ -40,6 +40,7 @@ idf_component_register(
     SRCS
         "app_main.cpp"
         "probe/ble_services.cpp"
+        "probe/pinned_wss_transport.cpp"
         "probe/bounded_https_server.cpp"
         "probe/hardware_probe.cpp"
         "probe/hid_engine.cpp"

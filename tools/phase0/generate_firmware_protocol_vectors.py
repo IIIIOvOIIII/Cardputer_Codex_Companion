@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
 from generate_security_vectors import (
     GATT_COUNTER_WINDOW,
     PAIRING_MAGIC,
@@ -100,6 +103,17 @@ def string_expr(value: str) -> str:
     return f'"{escaped}"'
 
 
+def public_spki_hex_from_sec1(value: str) -> str:
+    public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+        ec.SECP256R1(),
+        hex_bytes(value),
+    )
+    return public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).hex()
+
+
 def source_sha256(*paths: Path) -> str:
     digest = hashlib.sha256()
     for path in paths:
@@ -179,6 +193,7 @@ def build_and_validate_inputs(
             "wss_challenge_hex",
             "exporter_label",
             "signature_hex",
+            "signer_public_sec1_hex",
             "peer_spki_sha256_hex",
             "peer_spki_hex",
             "canonical_message_hex",
@@ -229,6 +244,11 @@ def build_and_validate_inputs(
         raise ValueError("wss fixture mismatch: canonical_message")
     if computed["wss-auth-v1"]["signature_hex"] != wss["signature_hex"]:
         raise ValueError("wss fixture mismatch: signature")
+    if (
+        computed["wss-auth-v1"]["signer_public_sec1_hex"]
+        != wss["signer_public_sec1_hex"]
+    ):
+        raise ValueError("wss fixture mismatch: signer_public_sec1")
     if computed["wss-auth-v1"]["exporter_label"] != wss["exporter_label"]:
         raise ValueError("wss fixture mismatch: exporter_label")
 
@@ -399,7 +419,7 @@ def generate_cpp(protocol_root: Path, output: Path, *, check: bool = False) -> N
             "};",
             f"const ByteVector canonical_message = {byte_vector_expr(wss['canonical_message_hex'])};",
             f"const SignatureBytes signature = {byte_array_expr(wss['signature_hex'], 64)};",
-            f"const PublicKeyBytes device_public_key = {byte_vector_expr(wss['peer_spki_hex'])};",
+            f"const PublicKeyBytes device_public_key = {byte_vector_expr(public_spki_hex_from_sec1(wss['signer_public_sec1_hex']))};",
             f"constexpr std::array<uint8_t, 32> spki_sha256 = {byte_array_expr(wss['peer_spki_sha256_hex'], 32)};",
             f"const std::string_view exporter_label = {string_expr(wss['exporter_label'])};",
             f"constexpr size_t exporter_bytes = {len(hex_bytes(wss['tls_exporter_hex']))};",

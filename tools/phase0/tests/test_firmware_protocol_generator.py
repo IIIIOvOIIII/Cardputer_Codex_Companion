@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -52,6 +55,31 @@ def test_generation_is_deterministic_and_checkable(tmp_path: Path) -> None:
     assert run_generator(protocol_root, second).returncode == 0
     assert first.read_bytes() == second.read_bytes()
     assert run_generator(protocol_root, first, check=True).returncode == 0
+
+
+def test_wss_device_public_key_is_the_signer_not_the_peer(tmp_path: Path) -> None:
+    protocol_root = REPO_ROOT / "protocol/phase0"
+    output = tmp_path / "vectors.hpp"
+    fixture = json.loads(
+        (protocol_root / "fixtures/wss-auth-v1.json").read_text(encoding="utf-8")
+    )
+    signer_public = ec.EllipticCurvePublicKey.from_encoded_point(
+        ec.SECP256R1(),
+        bytes.fromhex(fixture["signer_public_sec1_hex"]),
+    )
+    signer_spki = signer_public.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    expected = ", ".join(f"0x{byte:02x}" for byte in signer_spki)
+    peer = ", ".join(
+        f"0x{byte:02x}" for byte in bytes.fromhex(fixture["peer_spki_hex"])
+    )
+
+    assert run_generator(protocol_root, output).returncode == 0
+    generated = output.read_text(encoding="utf-8")
+    assert f"const PublicKeyBytes device_public_key = {{{expected}}};" in generated
+    assert f"const PublicKeyBytes device_public_key = {{{peer}}};" not in generated
 
 
 def test_check_rejects_stale_output_without_rewriting(tmp_path: Path) -> None:

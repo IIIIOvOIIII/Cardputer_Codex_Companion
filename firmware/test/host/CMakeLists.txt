@@ -155,3 +155,19 @@ target_include_directories(test_web_async_dispatch
 )
 
 add_test(NAME web_async_dispatch COMMAND test_web_async_dispatch)
+
+add_executable(test_wss_contract
+  test_wss_contract.cpp
+  ../../main/probe/protocol_codec.cpp
+  ../../main/probe/pinned_wss_transport.cpp
+)
+
+target_include_directories(test_wss_contract
+  PRIVATE
+    ../../main
+    ${PROTOCOL_VECTOR_OUTPUT_DIR}
+)
+
+target_link_libraries(test_wss_contract PRIVATE OpenSSL::Crypto)
+add_dependencies(test_wss_contract generate_protocol_vectors)
+add_test(NAME wss_contract COMMAND test_wss_contract)
