@@ -76,3 +76,10 @@
 - Expected result: 五分钟八位码、第五次错误后十分钟退避、最多五会话、30 分钟 idle、仅摘要凭据状态、固定容量限流、128KiB/depth-eight 流式导入与 16KiB/1009 WebSocket 边界均可测试，且物理确认等待不得阻塞 ESP HTTPD 单任务循环。
 - Result: Achieved — 实现提交 `dd974e3`，审查修复 `400fe49`、`df5827a`、`d6eecb7` 已完成；配对响应使用官方 async request API 与单一静态 worker，析构可取消、完成并停止 worker。普通 host tests 9/9、ASan/UBSan 9/9、完整 ESP-IDF 5.5.4 build 通过；目标 ELF 含六个非零 handler、两项 async API 和 exact 六路由，镜像 `0xa8740`，最小 app 分区余量 34%。最终规格审查 Spec compliant、质量审查 Approved，无遗留 finding。真实浏览器、物理确认、连接中断和攻击矩阵仍按计划留给 HIL。
 - Next step: 执行 Firmware Task 6，实现带 SPKI pinning 与 TLS exporter 绑定的外部 WSS transport。
+
+## 2026-07-24 13:57 HKT
+
+- Current work: 完成 Firmware Task 6 的外部 WSS transport、Companion SPKI pin、TLS exporter channel binding、设备签名向量验签和连接代际认证门控。
+- Expected result: 仅使用 ESP-IDF 5.5.4 公共 API 建立自有 ESP-TLS 并包装为 websocket `ext_transport`；hostname 与 SPKI 双重验证后才保留 exporter；旧连接 `auth_ok` 不得认证新连接；foundation fixture 不被固件侧重定义。
+- Result: Achieved — 实现提交 `e5fbb12` 与审查接入修复 `da62e8c` 已完成；同时修复了固件向量生成器误将 Companion peer SPKI 当作设备 signer 公钥的根因。生成器 tests 9/9、普通 host tests 10/10、ASan/UBSan 10/10、公开 API/硬编码 label 扫描与完整 ESP-IDF build 均通过；最终镜像 `0xa9290`，最小 app 分区余量 34%。规格复审 Spec compliant，质量复审 Approved；真实 app-level Companion 配置与 auth wire handler 接入保留为跨任务 warning，未通过硬编码伪配置制造运行假象。
+- Next step: 执行 Firmware Task 7，加入固定内存 HID 延迟直方图、堆/栈/分配失败、固定队列和 transient burst JSONL 测量。
