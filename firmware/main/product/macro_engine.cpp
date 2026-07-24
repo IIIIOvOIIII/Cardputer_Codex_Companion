@@ -58,13 +58,12 @@ MacroResult MacroEngine::execute(const KeyAction& action) {
                         action.usage_count, action.text, action.device,
                         action.codex);
   }
-  if (action.sequence_count > kMaxSequenceSteps) {
+  if (action.sequence.size() > kMaxSequenceSteps) {
     release_all();
     return MacroResult::invalid;
   }
   uint32_t total_delay = 0;
-  for (uint8_t index = 0; index < action.sequence_count; ++index) {
-    const SequenceStep& step = action.sequence[index];
+  for (const SequenceStep& step : action.sequence) {
     if (step.kind == ActionKind::input_sequence ||
         step.delay_ms > kMaxSequenceDelayMs - total_delay) {
       release_all();

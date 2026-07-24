@@ -18,6 +18,18 @@ The private image includes a dedicated NVS image at `0x12000`; the firmware
 application begins at `0x20000`. Both full images begin with the bootloader at
 `0x0`.
 
+## Runtime memory gate
+
+Firmware 1.0.1 replaces the eager per-key allocation of sixteen sequence steps
+with sparse sequence storage. The previous layout reserved 152,348 bytes for
+the active Profile and left only 8,909 bytes of target DIRAM, causing NimBLE and
+Wi-Fi initialization failures followed by an allocation panic and reboot.
+
+The host test now limits `sizeof(Profile)` to 24 KiB. The release check also
+parses the ESP-IDF target size report and refuses packaging unless at least
+96 KiB of DIRAM remains for display, BLE, Wi-Fi, HTTPS and runtime allocations.
+The fixed target image leaves 149,581 bytes before those runtime allocations.
+
 ## Product transport boundary
 
 The delivered LAN status/control path uses device-hosted HTTPS plus the

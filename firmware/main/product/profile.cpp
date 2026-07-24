@@ -58,12 +58,11 @@ ProfileError validate_profile(const Profile& profile) {
         leaf != ProfileError::none) {
       return leaf;
     }
-    if (action.sequence_count > kMaxSequenceSteps) {
+    if (action.sequence.size() > kMaxSequenceSteps) {
       return ProfileError::too_many_steps;
     }
     uint32_t delay = 0;
-    for (uint8_t index = 0; index < action.sequence_count; ++index) {
-      const SequenceStep& step = action.sequence[index];
+    for (const SequenceStep& step : action.sequence) {
       if (step.kind == ActionKind::input_sequence) {
         return ProfileError::nested_sequence;
       }
@@ -94,15 +93,14 @@ uint32_t profile_crc32(const Profile& profile) {
     const KeyAction& action = binding.action;
     const std::array<uint8_t, 5> header{
         static_cast<uint8_t>(action.kind), action.modifiers,
-        action.usage_count, action.sequence_count,
+        action.usage_count, static_cast<uint8_t>(action.sequence.size()),
         static_cast<uint8_t>(static_cast<uint8_t>(action.device) ^
                              static_cast<uint8_t>(action.codex)),
     };
     crc = crc32_update(crc, header);
     crc = crc32_update(crc, action.usages);
     crc = crc_string(crc, action.text);
-    for (uint8_t index = 0; index < action.sequence_count; ++index) {
-      const SequenceStep& step = action.sequence[index];
+    for (const SequenceStep& step : action.sequence) {
       const std::array<uint8_t, 3> step_header{
           static_cast<uint8_t>(step.kind), step.modifiers, step.usage_count};
       crc = crc32_update(crc, step_header);

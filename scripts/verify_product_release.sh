@@ -24,6 +24,16 @@ python3 scripts/build_web_assets.py --check
   ../scripts/phase0/idf.sh build
 )
 python3 tools/product/verify_partition_layout.py
+idf_python="$(
+  find "${repo_root}/.tools/espressif/python_env" \
+    -path '*/bin/python' -print | sort | tail -n 1
+)"
+test -x "${idf_python}"
+"${idf_python}" -m esp_idf_size --format json \
+  firmware/build/cardputer_codex_companion.map \
+  > build/product-firmware-size.json
+python3 tools/product/verify_firmware_memory.py \
+  build/product-firmware-size.json
 
 swift build --package-path companion -c release
 companion/.build/release/cardputer-companion --version

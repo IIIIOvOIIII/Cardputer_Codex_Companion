@@ -48,5 +48,17 @@ int main() {
   text.text.assign(1025, 'x');
   assert(engine.execute(text) == MacroResult::invalid);
   assert(sink.reports.back() == HidReport{});
+
+  KeyAction sequence;
+  sequence.kind = ActionKind::input_sequence;
+  sequence.sequence.resize(2);
+  sequence.sequence[0].kind = ActionKind::hid_chord;
+  sequence.sequence[0].usages[0] = 0x07;
+  sequence.sequence[0].usage_count = 1;
+  sequence.sequence[1].kind = ActionKind::text_utf8;
+  sequence.sequence[1].text = "继续";
+  assert(engine.execute(sequence) == MacroResult::ok);
+  assert(sink.last_text == "继续");
+  assert(sink.reports.back() == HidReport{});
   return 0;
 }

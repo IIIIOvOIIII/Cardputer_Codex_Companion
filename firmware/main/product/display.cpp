@@ -37,7 +37,7 @@ esp_err_t display_start(UiModel* model) {
 }
 
 void display_render_boot(const UiModel& model) {
-  begin_page("CARDPUTER CODEX 1.0");
+  begin_page(kProductBootTitle.data());
   constexpr std::array stages{
       BootStage::display, BootStage::config, BootStage::keyboard,
       BootStage::ble, BootStage::wifi, BootStage::web,

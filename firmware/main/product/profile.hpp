@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "product/product_types.hpp"
 
@@ -59,8 +60,7 @@ struct KeyAction {
   std::array<uint8_t, 6> usages{};
   uint8_t usage_count = 0;
   std::string text;
-  std::array<SequenceStep, kMaxSequenceSteps> sequence{};
-  uint8_t sequence_count = 0;
+  std::vector<SequenceStep> sequence;
   DeviceAction device = DeviceAction::none;
   CodexAction codex = CodexAction::none;
 };

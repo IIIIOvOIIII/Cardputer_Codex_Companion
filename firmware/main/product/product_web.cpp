@@ -140,8 +140,8 @@ std::string read_body(httpd_req_t* request) {
 cJSON* action_json(ActionKind kind, uint8_t modifiers,
                    const std::array<uint8_t, 6>& usage_values,
                    uint8_t usage_count, std::string_view text,
-                   const std::array<SequenceStep, kMaxSequenceSteps>* sequence,
-                   uint8_t sequence_count, DeviceAction device,
+                   const std::vector<SequenceStep>* sequence,
+                   DeviceAction device,
                    CodexAction codex) {
     cJSON* item = cJSON_CreateObject();
     cJSON_AddStringToObject(item, "kind", action_name(kind));
@@ -167,11 +167,10 @@ cJSON* action_json(ActionKind kind, uint8_t modifiers,
     }
     if (kind == ActionKind::input_sequence && sequence != nullptr) {
       cJSON* steps = cJSON_AddArrayToObject(item, "sequence");
-      for (uint8_t index = 0; index < sequence_count; ++index) {
-        const SequenceStep& step = (*sequence)[index];
+      for (const SequenceStep& step : *sequence) {
         cJSON_AddItemToArray(
             steps, action_json(step.kind, step.modifiers, step.usages,
-                               step.usage_count, step.text, nullptr, 0,
+                               step.usage_count, step.text, nullptr,
                                DeviceAction::none, CodexAction::none));
         cJSON* encoded_step =
             cJSON_GetArrayItem(steps, cJSON_GetArraySize(steps) - 1);
@@ -193,7 +192,7 @@ cJSON* profile_json(const Profile& profile) {
     cJSON_AddItemToArray(
         bindings, action_json(action.kind, action.modifiers, action.usages,
                               action.usage_count, action.text,
-                              &action.sequence, action.sequence_count,
+                              &action.sequence,
                               action.device, action.codex));
   }
   return root;
@@ -268,9 +267,10 @@ bool parse_profile(const cJSON* root, Profile& output) {
           cJSON_GetArraySize(steps) > static_cast<int>(kMaxSequenceSteps)) {
         return false;
       }
-      action.sequence_count = static_cast<uint8_t>(cJSON_GetArraySize(steps));
-      for (uint8_t step_index = 0; step_index < action.sequence_count;
-           ++step_index) {
+      const uint8_t sequence_count =
+          static_cast<uint8_t>(cJSON_GetArraySize(steps));
+      action.sequence.resize(sequence_count);
+      for (uint8_t step_index = 0; step_index < sequence_count; ++step_index) {
         const cJSON* step_json = cJSON_GetArrayItem(steps, step_index);
         SequenceStep& step = action.sequence[step_index];
         if (!parse_leaf(step_json, step.kind, step.modifiers, step.usages,
@@ -332,9 +332,11 @@ esp_err_t status_handler(httpd_req_t* request) {
   const ServiceState companion = g_companion.load();
   std::snprintf(json, sizeof(json),
                 "{\"product\":\"Cardputer Codex Companion\","
-                "\"version\":\"1.0.0\",\"ble\":\"%.*s\","
+                "\"version\":\"%.*s\",\"ble\":\"%.*s\","
                 "\"wifi\":\"%.*s\",\"companion\":\"%.*s\","
                 "\"ip\":\"%s\"}",
+                static_cast<int>(kProductVersion.size()),
+                kProductVersion.data(),
                 static_cast<int>(to_string(ble).size()), to_string(ble).data(),
                 static_cast<int>(to_string(wifi).size()), to_string(wifi).data(),
                 static_cast<int>(to_string(companion).size()),

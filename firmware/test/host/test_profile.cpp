@@ -20,6 +20,9 @@ struct MemoryProfileBackend final : ProfileStoreBackend {
 };
 
 int main() {
+  static_assert(sizeof(Profile) <= 24 * 1024,
+                "Profile must leave enough internal RAM for BLE, Wi-Fi, and TLS");
+
   Profile safe = safe_profile();
   assert(safe.name == "SAFE");
   assert(safe.revision == 1);
@@ -32,13 +35,19 @@ int main() {
 
   Profile sequence_a = safe;
   sequence_a.bindings[0].action.kind = ActionKind::input_sequence;
-  sequence_a.bindings[0].action.sequence_count = 1;
+  sequence_a.bindings[0].action.sequence.resize(1);
   sequence_a.bindings[0].action.sequence[0].kind = ActionKind::hid_chord;
   sequence_a.bindings[0].action.sequence[0].usage_count = 1;
   sequence_a.bindings[0].action.sequence[0].usages[0] = 0x06;
   Profile sequence_b = sequence_a;
   sequence_b.bindings[0].action.sequence[0].usages[0] = 0x07;
   assert(profile_crc32(sequence_a) != profile_crc32(sequence_b));
+
+  Profile oversized_sequence = safe;
+  oversized_sequence.bindings[0].action.kind = ActionKind::input_sequence;
+  oversized_sequence.bindings[0].action.sequence.resize(
+      kMaxSequenceSteps + 1);
+  assert(validate_profile(oversized_sequence) == ProfileError::too_many_steps);
 
   MemoryProfileBackend backend;
   ProfileStore store(backend);

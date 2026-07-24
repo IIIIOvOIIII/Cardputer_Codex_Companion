@@ -132,3 +132,10 @@
 - Expected result: 任意本地残留配置下，发布入口都必须重建 ESP32-S3 产品配置；构建后的二进制分区表必须逐项匹配产品 CSV，否则禁止打包交付。
 - Result: Achieved — 新增分区布局单元测试和二进制校验器；默认 `nvs/phy_init/factory` 布局回归测试确认失败关闭，发布脚本改为每次执行 `set-target esp32s3` 并在打包前核验七个产品分区。合并后主分支完整门禁通过：Python 80/80、firmware host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、精确产品分区校验、Swift release/doctor、通用/私有镜像打包与 secret exclusion 全部通过。最终应用镜像 1,467,152 bytes、SHA-256 `5cdb714a8354ac4ce12d2d63a0eac19d3c99eeab9f1a586515dcf2ec1f82c7c5`；私有完整镜像 1,598,224 bytes、SHA-256 `9181bfae366128c2f4417884c2e3cf4e9e3d692ed1898c4f566c1d92eccf1f35`。
 - Next step: 提交发布复现修复并交付主目录私有完整镜像；由于没有唯一 Cardputer 串口，刷机和 30 分钟实机 HIL 继续明确留待真机。
+
+## 2026-07-24 17:23 HKT
+
+- Current work: 根据实机反复重启照片定位启动期 BLE `E001`、Wi-Fi `E257`，修复产品 Profile 的静态内存耗尽，并重新构建 1.0.1 私有完整镜像。
+- Expected result: 保持四层 56 键、最多 16 步组合键/字符串序列及中文 UTF-8 协议不变，同时为 BLE、Wi-Fi、HTTPS 和运行时分配恢复充足的 ESP32-S3 DIRAM；发布门禁能够阻止同类内存回归。
+- Result: Achieved for compiled-firmware delivery — 原实现为 224 个按键各自预留 16 个含 `std::string` 的序列步骤，活动 `Profile` 在目标 `.bss` 占 152,348 bytes，目标 DIRAM 只余 8,909 bytes；现改为按需序列向量，主机 `sizeof(Profile)` 受 24 KiB 回归门禁约束，目标发布门禁要求至少 96 KiB DIRAM，修复镜像实测余 149,581 bytes。Python 83/83、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 `fullclean` build、产品分区、Web 资源、镜像偏移与校验均通过。应用镜像 1,468,960 bytes、SHA-256 `364f41a77794e8bb7fd056742c83848a251d36f2207d5ee4a63ef1fbe6f351ff`；私有完整镜像 1,600,032 bytes、SHA-256 `89ccf191f116ff6bc90437eb4b61196797a40f5a49c155f3c4ff7898739fcb6d`。
+- Next step: 将 `dist/private/cardputer_codex_companion-private-full.bin` 从 `0x0` 刷入，确认启动标题为 `CARDPUTER CODEX 1.0.1` 并进行实机 BLE/Wi-Fi/Web/Companion 验收。当前主机仍未发现 Cardputer 串口，因此本次未代刷、未执行重启耐久测试。
