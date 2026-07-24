@@ -219,6 +219,7 @@ bool verify_wss_signature(const WssAuthInput& input,
 #include "mbedtls/pk.h"
 #include "mbedtls/x509_crt.h"
 #include "phase0_protocol_vectors.hpp"
+#include "probe/probe_controller.hpp"
 #include "sys/select.h"
 
 namespace {
@@ -266,6 +267,7 @@ int pinned_wss_connect(esp_transport_handle_t transport, const char*, int, int t
   }
 
   clear_internal_context(*context);
+  begin_pinned_wss_connection_generation(public_context);
   public_context.last_error = PinnedWssTransportError::ok;
 
   context->tls = esp_tls_init();
@@ -479,7 +481,12 @@ void clear_pinned_wss_context(PinnedWssTransportContext& context) {
 uint64_t begin_pinned_wss_connection_generation(
     PinnedWssTransportContext& context) {
   ++context.connection_generation;
-  clear_pinned_wss_context(context);
+  context.has_exporter = false;
+  context.exporter.fill(0);
+  if (context.probe_controller != nullptr) {
+    context.probe_controller->begin_wss_connection(
+        context.connection_generation);
+  }
   return context.connection_generation;
 }
 
@@ -534,7 +541,7 @@ esp_transport_handle_t create_pinned_wss_transport(
 
   esp_transport_handle_t websocket = esp_transport_ws_init(base);
   if (websocket == nullptr) {
-    esp_transport_destroy(base);
+    destroy_pinned_wss_transport(context);
     context.last_error = PinnedWssTransportError::missing_context;
     return nullptr;
   }
@@ -580,6 +587,52 @@ void destroy_pinned_wss_transport(PinnedWssTransportContext& context) {
   context.tls = nullptr;
   context.has_exporter = false;
   context.exporter.fill(0);
+}
+
+esp_websocket_client_handle_t create_pinned_wss_client(
+    PinnedWssTransportContext& context) {
+  if (context.companion_uri == nullptr ||
+      context.companion_uri[0] == '\0') {
+    context.last_error = PinnedWssTransportError::missing_context;
+    return nullptr;
+  }
+
+  destroy_pinned_wss_client(context);
+  esp_transport_handle_t websocket = create_pinned_wss_transport(context);
+  if (websocket == nullptr) {
+    return nullptr;
+  }
+
+  esp_websocket_client_config_t client_config{};
+  client_config.uri = context.companion_uri;
+  client_config.disable_auto_reconnect = true;
+  client_config.buffer_size = 4096;
+  client_config.ext_transport = websocket;
+  context.websocket_client = esp_websocket_client_init(&client_config);
+  if (context.websocket_client == nullptr) {
+    destroy_pinned_wss_transport(context);
+    context.last_error = PinnedWssTransportError::missing_context;
+  }
+  return context.websocket_client;
+}
+
+void destroy_pinned_wss_client(PinnedWssTransportContext& context) {
+  if (context.websocket_client != nullptr) {
+    esp_websocket_client_destroy(context.websocket_client);
+    context.websocket_client = nullptr;
+  }
+  destroy_pinned_wss_transport(context);
+}
+
+bool accept_pinned_wss_auth_ok(PinnedWssTransportContext& context,
+                               uint64_t connection_generation) {
+  if (!context.has_exporter ||
+      context.probe_controller == nullptr ||
+      connection_generation != context.connection_generation) {
+    return false;
+  }
+  return context.probe_controller->accept_wss_auth_ok(
+      connection_generation);
 }
 
 #endif

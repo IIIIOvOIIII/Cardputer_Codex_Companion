@@ -28,6 +28,9 @@ bool verify_wss_signature(
 #include "esp_tls.h"
 #include "esp_err.h"
 #include "esp_transport.h"
+#include "esp_websocket_client.h"
+
+class ProbeController;
 
 enum class PinnedWssTransportError {
   ok = 0,
@@ -52,6 +55,8 @@ struct PinnedWssTransportContext {
   esp_tls_t* tls = nullptr;
   esp_transport_handle_t base_transport = nullptr;
   esp_transport_handle_t websocket_transport = nullptr;
+  esp_websocket_client_handle_t websocket_client = nullptr;
+  ProbeController* probe_controller = nullptr;
   bool has_exporter = false;
   uint64_t connection_generation = 0;
   PinnedWssTransportError last_error = PinnedWssTransportError::ok;
@@ -63,5 +68,10 @@ uint64_t begin_pinned_wss_connection_generation(
 esp_transport_handle_t create_pinned_wss_transport(
     PinnedWssTransportContext& context);
 void destroy_pinned_wss_transport(PinnedWssTransportContext& context);
+esp_websocket_client_handle_t create_pinned_wss_client(
+    PinnedWssTransportContext& context);
+void destroy_pinned_wss_client(PinnedWssTransportContext& context);
+bool accept_pinned_wss_auth_ok(PinnedWssTransportContext& context,
+                               uint64_t connection_generation);
 
 #endif
