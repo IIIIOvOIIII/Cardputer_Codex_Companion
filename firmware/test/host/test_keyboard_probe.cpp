@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <string>
 #include <vector>
 
 #include "probe/keyboard_probe.hpp"
@@ -12,9 +13,35 @@ struct RecordingSink final : KeyboardReportSink {
   std::vector<HidReport> reports;
 };
 
+struct RecordingPhysicalPairingSink final : WebPairingPhysicalSink {
+  void open_pairing_window(std::string_view eight_digit_code,
+                           uint64_t now_ms) override {
+    code.assign(eight_digit_code);
+    opened_at_ms = now_ms;
+  }
+
+  void confirm_pairing(bool accepted, uint64_t now_ms) override {
+    confirmation = accepted;
+    confirmed_at_ms = now_ms;
+  }
+
+  std::string code;
+  uint64_t opened_at_ms = 0;
+  uint64_t confirmed_at_ms = 0;
+  bool confirmation = false;
+};
+
 int main() {
   RecordingSink sink;
   KeyboardProbe probe(sink);
+  RecordingPhysicalPairingSink pairing;
+  probe.set_web_pairing_physical_sink(&pairing);
+  probe.on_physical_web_pairing_window("12345678", 1000);
+  probe.on_physical_web_pairing_confirmation(true, 2000);
+  assert(pairing.code == "12345678");
+  assert(pairing.opened_at_ms == 1000);
+  assert(pairing.confirmation);
+  assert(pairing.confirmed_at_ms == 2000);
 
   probe.enqueue_stable_key_event(StableKeyEvent{.physical_key = 0x06, .pressed = true});
   assert(sink.reports.size() == 2);

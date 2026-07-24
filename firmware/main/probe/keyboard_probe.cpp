@@ -113,3 +113,22 @@ void KeyboardProbe::on_scanner_fault() {
 void KeyboardProbe::on_controlled_reboot() {
   release_state();
 }
+
+void KeyboardProbe::set_web_pairing_physical_sink(
+    WebPairingPhysicalSink* sink) {
+  web_pairing_sink_ = sink;
+}
+
+void KeyboardProbe::on_physical_web_pairing_window(
+    std::string_view eight_digit_code, uint64_t now_ms) {
+  if (web_pairing_sink_ != nullptr) {
+    web_pairing_sink_->open_pairing_window(eight_digit_code, now_ms);
+  }
+}
+
+void KeyboardProbe::on_physical_web_pairing_confirmation(bool accepted,
+                                                          uint64_t now_ms) {
+  if (web_pairing_sink_ != nullptr) {
+    web_pairing_sink_->confirm_pairing(accepted, now_ms);
+  }
+}

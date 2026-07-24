@@ -46,6 +46,8 @@ idf_component_register(
         "probe/keyboard_probe.cpp"
         "probe/pre_tls_limiter.cpp"
         "probe/protocol_codec.cpp"
+        "probe/web_guard.cpp"
+        "probe/web_handlers.cpp"
     INCLUDE_DIRS
         "."
         "probe"
@@ -58,10 +60,13 @@ idf_component_register(
         esp_http_server
         esp_psram
         esp_timer
+        freertos
+        json
         lwip
         mbedtls
         nvs_flash
         spi_flash
+    WHOLE_ARCHIVE
 )
 
 set(HID_EXAMPLE_DIR

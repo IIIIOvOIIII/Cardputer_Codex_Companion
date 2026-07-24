@@ -7,9 +7,12 @@
 #include "esp_http_server.h"
 #include "probe/pre_tls_limiter.hpp"
 
+class WebHandlerContext;
+
 struct BoundedHttpsServerConfig {
   std::span<const uint8_t> server_certificate;
   std::span<const uint8_t> server_private_key;
+  WebHandlerContext* web_handlers = nullptr;
   uint16_t port = 443;
   uint32_t handshake_timeout_ms = 10000;
 };

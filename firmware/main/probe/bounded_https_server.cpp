@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "esp_tls.h"
 #include "lwip/sockets.h"
+#include "probe/web_handlers.hpp"
 #include "unistd.h"
 
 namespace {
@@ -156,6 +157,7 @@ esp_err_t start_bounded_https_server(const BoundedHttpsServerConfig& config,
     return ESP_ERR_INVALID_STATE;
   }
   if (config.server_certificate.empty() || config.server_private_key.empty() ||
+      config.web_handlers == nullptr ||
       config.server_certificate.size() > UINT_MAX ||
       config.server_private_key.size() > UINT_MAX) {
     return ESP_ERR_INVALID_ARG;
@@ -184,6 +186,13 @@ esp_err_t start_bounded_https_server(const BoundedHttpsServerConfig& config,
   if (result != ESP_OK) {
     state.server = nullptr;
     return result;
+  }
+  const esp_err_t registration =
+      register_probe_web_handlers(state.server, config.web_handlers);
+  if (registration != ESP_OK) {
+    httpd_stop(state.server);
+    state.server = nullptr;
+    return registration;
   }
 
   state.started = true;

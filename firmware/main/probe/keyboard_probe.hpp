@@ -2,9 +2,11 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "probe/hid_engine.hpp"
+#include "probe/web_guard.hpp"
 
 #ifdef ESP_PLATFORM
 #include "esp_hidd.h"
@@ -47,6 +49,10 @@ class KeyboardProbe {
   void on_ble_disconnected();
   void on_scanner_fault();
   void on_controlled_reboot();
+  void set_web_pairing_physical_sink(WebPairingPhysicalSink* sink);
+  void on_physical_web_pairing_window(std::string_view eight_digit_code,
+                                      uint64_t now_ms);
+  void on_physical_web_pairing_confirmation(bool accepted, uint64_t now_ms);
 
  private:
   void send_report_for_usages(std::span<const uint8_t> usages);
@@ -59,4 +65,5 @@ class KeyboardProbe {
   EspHidReportSink esp_report_sink_;
 #endif
   KeyboardReportSink* report_sink_;
+  WebPairingPhysicalSink* web_pairing_sink_ = nullptr;
 };

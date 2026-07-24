@@ -1,6 +1,7 @@
 #include "probe/ble_services.hpp"
 #include "probe/hardware_probe.hpp"
 #include "probe/keyboard_probe.hpp"
+#include "probe/web_handlers.hpp"
 
 #include <cinttypes>
 #include <cstdio>
@@ -27,6 +28,9 @@ extern "C" void ble_hid_task_start_up() {
 
 extern "C" void app_main() {
   ESP_LOGI(kTag, "PHASE 0 / NOT FOR RELEASE");
+  const std::span<const httpd_uri_t> web_routes = probe_web_handler_routes();
+  ESP_LOGI(kTag, "web management probe routes linked: %u",
+           static_cast<unsigned>(web_routes.size()));
 
   const HardwareRuntime runtime = probe_hardware();
   std::printf(

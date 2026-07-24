@@ -130,3 +130,16 @@ target_include_directories(test_pre_tls_limiter
 )
 
 add_test(NAME pre_tls_limiter COMMAND test_pre_tls_limiter)
+
+add_executable(test_web_guard
+  test_web_guard.cpp
+  ../../main/probe/web_guard.cpp
+)
+
+target_include_directories(test_web_guard
+  PRIVATE
+    ../../main
+)
+
+target_link_libraries(test_web_guard PRIVATE OpenSSL::Crypto)
+add_test(NAME web_guard COMMAND test_web_guard)
