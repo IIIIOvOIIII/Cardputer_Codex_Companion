@@ -21,6 +21,8 @@ struct HidResult {
 
 std::span<const uint8_t> keyboard_report_map();
 bool report_map_has_feature_report(std::span<const uint8_t> report_map);
+uint8_t keyboard_report_map_key_array_slots();
+bool keyboard_report_map_uses_bruce_reserved_items();
 
 class HidEngine {
  public:

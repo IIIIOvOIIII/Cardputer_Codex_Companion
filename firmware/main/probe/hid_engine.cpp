@@ -1,5 +1,6 @@
 #include "probe/hid_engine.hpp"
 
+#include <algorithm>
 #include <array>
 
 namespace {
@@ -28,7 +29,7 @@ constexpr auto kKeyboardReportMap = std::to_array<uint8_t>({
     0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0x95, 0x01,        //   Report Count (1)
     0x75, 0x08,        //   Report Size (8)
-    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,No Null Position)
+    0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0x95, 0x05,        //   Report Count (5)
     0x75, 0x01,        //   Report Size (1)
     0x05, 0x08,        //   Usage Page (LEDs)
@@ -37,8 +38,8 @@ constexpr auto kKeyboardReportMap = std::to_array<uint8_t>({
     0x91, 0x02,        //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
     0x95, 0x01,        //   Report Count (1)
     0x75, 0x03,        //   Report Size (3)
-    0x91, 0x03,        //   Output (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
-    0x95, 0x05,        //   Report Count (5)
+    0x91, 0x01,        //   Output (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x95, 0x06,        //   Report Count (6)
     0x75, 0x08,        //   Report Size (8)
     0x15, 0x00,        //   Logical Minimum (0)
     0x25, 0x65,        //   Logical Maximum (101)
@@ -86,6 +87,40 @@ bool contains_feature_report(std::span<const uint8_t> report_map) {
   }
   return false;
 }
+
+uint8_t key_array_slots(std::span<const uint8_t> report_map) {
+  constexpr std::array<uint8_t, 14> kKeyArraySuffix{
+      0x75, 0x08,
+      0x15, 0x00,
+      0x25, 0x65,
+      0x05, 0x07,
+      0x19, 0x00,
+      0x29, 0x65,
+      0x81, 0x00,
+  };
+  if (report_map.size() < kKeyArraySuffix.size() + 2) {
+    return 0;
+  }
+  for (size_t offset = 0;
+       offset + 2 + kKeyArraySuffix.size() <= report_map.size();
+       ++offset) {
+    if (report_map[offset] != 0x95) {
+      continue;
+    }
+    if (std::equal(kKeyArraySuffix.begin(), kKeyArraySuffix.end(),
+                   report_map.begin() +
+                       static_cast<std::ptrdiff_t>(offset + 2))) {
+      return report_map[offset + 1];
+    }
+  }
+  return 0;
+}
+
+bool contains_sequence(std::span<const uint8_t> haystack,
+                       std::span<const uint8_t> needle) {
+  return std::search(haystack.begin(), haystack.end(),
+                     needle.begin(), needle.end()) != haystack.end();
+}
 }  // namespace
 
 std::span<const uint8_t> keyboard_report_map() {
@@ -94,6 +129,20 @@ std::span<const uint8_t> keyboard_report_map() {
 
 bool report_map_has_feature_report(std::span<const uint8_t> report_map) {
   return contains_feature_report(report_map);
+}
+
+uint8_t keyboard_report_map_key_array_slots() {
+  return key_array_slots(keyboard_report_map());
+}
+
+bool keyboard_report_map_uses_bruce_reserved_items() {
+  constexpr std::array<uint8_t, 6> kReservedInput{
+      0x95, 0x01, 0x75, 0x08, 0x81, 0x01};
+  constexpr std::array<uint8_t, 6> kLedPaddingOutput{
+      0x95, 0x01, 0x75, 0x03, 0x91, 0x01};
+  const auto report_map = keyboard_report_map();
+  return contains_sequence(report_map, kReservedInput) &&
+         contains_sequence(report_map, kLedPaddingOutput);
 }
 
 HidResult HidEngine::make_report(uint8_t modifiers,

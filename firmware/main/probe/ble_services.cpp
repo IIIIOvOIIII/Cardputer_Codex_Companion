@@ -12,13 +12,15 @@ constexpr std::size_t kBleHidFixedAdvertisingBytes =
     3 + 4 + 3 + 4;  // flags + appearance + tx power + HID UUID16
 constexpr int32_t kBleHidAdvertisingDurationMs =
     std::numeric_limits<int32_t>::max();
-constexpr uint8_t kBlePairingIoCapability = 3;
-constexpr bool kBlePairingRequiresMitm = false;
+constexpr uint8_t kBlePairingIoCapability = 2;
+constexpr bool kBlePairingRequiresMitm = true;
 constexpr uint32_t kBlePairingPasskey = 123456;
 constexpr uint8_t kBlePairingPasskeyDigits = 6;
 constexpr bool kBlePairingInitiatesSecurityOnConnect = true;
 constexpr bool kBleKeyboardReadyRequiresSuccessfulEncryption = true;
-constexpr uint8_t kBleBondStoreSchemaVersion = 5;
+constexpr bool kBleKeyboardReadyRequiresAuthenticatedLink = true;
+constexpr bool kBleKeyboardReadyRequiresInputReportSubscription = true;
+constexpr uint8_t kBleBondStoreSchemaVersion = 6;
 
 constexpr std::size_t legacy_advertising_payload_bytes(
     std::string_view name) {
@@ -83,7 +85,7 @@ uint32_t ble_pairing_passkey() {
 }
 
 bool ble_pairing_requires_keyboard_input() {
-  return false;
+  return true;
 }
 
 bool ble_pairing_initiates_security_on_connect() {
@@ -92,6 +94,36 @@ bool ble_pairing_initiates_security_on_connect() {
 
 bool ble_keyboard_ready_requires_successful_encryption() {
   return kBleKeyboardReadyRequiresSuccessfulEncryption;
+}
+
+bool ble_keyboard_ready_requires_authenticated_link() {
+  return kBleKeyboardReadyRequiresAuthenticatedLink;
+}
+
+bool ble_keyboard_ready_requires_input_report_subscription() {
+  return kBleKeyboardReadyRequiresInputReportSubscription;
+}
+
+bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state) {
+  return state.gap_connected &&
+         (!ble_keyboard_ready_requires_successful_encryption() ||
+          state.encrypted) &&
+         (!ble_keyboard_ready_requires_authenticated_link() ||
+          state.authenticated) &&
+         state.hidd_connected &&
+         (!ble_keyboard_ready_requires_input_report_subscription() ||
+          state.input_report_subscribed);
+}
+
+BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
+    const BleKeyboardLinkState& current) {
+  return {
+      .gap_connected = true,
+      .encrypted = false,
+      .authenticated = false,
+      .hidd_connected = current.hidd_connected,
+      .input_report_subscribed = false,
+  };
 }
 
 std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage) {
@@ -240,7 +272,8 @@ BleDisconnectHandler g_disconnect_handler = nullptr;
 CompanionControlHandler g_control_handler = nullptr;
 BleConnectionHandler g_connection_handler = nullptr;
 bool g_product_companion_mode = false;
-bool g_hid_connected = false;
+BleKeyboardLinkState g_hid_state{};
+bool g_last_hid_ready = false;
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
 uint32_t g_pending_passkey_value = 0;
 uint8_t g_pending_passkey_count = 0;
@@ -275,6 +308,31 @@ bool is_current_companion(uint16_t conn_handle) {
          conn_handle == g_bound_conn &&
          (g_product_companion_mode ||
           companion_binding_proof_is_complete(g_binding));
+}
+
+void publish_hid_ready_if_changed(const char* reason) {
+  const bool ready = ble_keyboard_ready_from_state(g_hid_state);
+  if (ready == g_last_hid_ready) {
+    return;
+  }
+  g_last_hid_ready = ready;
+  ESP_LOGI(kTag,
+           "HID keyboard ready=%d reason=%s gap=%d enc=%d auth=%d hidd=%d sub=%d",
+           ready ? 1 : 0,
+           reason == nullptr ? "unknown" : reason,
+           g_hid_state.gap_connected ? 1 : 0,
+           g_hid_state.encrypted ? 1 : 0,
+           g_hid_state.authenticated ? 1 : 0,
+           g_hid_state.hidd_connected ? 1 : 0,
+           g_hid_state.input_report_subscribed ? 1 : 0);
+  if (g_connection_handler != nullptr) {
+    g_connection_handler(ready);
+  }
+}
+
+void reset_hid_link_state(const char* reason) {
+  g_hid_state = {};
+  publish_hid_ready_if_changed(reason);
 }
 
 esp_err_t migrate_ble_bond_store_if_needed() {
@@ -431,10 +489,12 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       ESP_LOGI(kTag, "HID GAP connection %s; status=%d",
                event->connect.status == 0 ? "established" : "failed",
                event->connect.status);
-      g_hid_connected = false;
       if (event->connect.status != 0) {
+        reset_hid_link_state("gap-connect-failed");
         return 0;
       }
+      g_hid_state = ble_keyboard_state_after_gap_connected(g_hid_state);
+      publish_hid_ready_if_changed("gap-connect");
       if (ble_pairing_initiates_security_on_connect()) {
         rc = ble_gap_security_initiate(event->connect.conn_handle);
         ESP_LOGI(kTag, "HID GAP security initiate: rc=%d", rc);
@@ -443,10 +503,10 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
     case BLE_GAP_EVENT_DISCONNECT:
       ESP_LOGI(kTag, "HID GAP disconnect; reason=%d",
                event->disconnect.reason);
-      g_hid_connected = false;
+      reset_hid_link_state("gap-disconnect");
       return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-      g_hid_connected = false;
+      reset_hid_link_state("adv-complete");
       ESP_LOGW(kTag, "HID advertising completed unexpectedly; reason=%d",
                event->adv_complete.reason);
       return 0;
@@ -454,22 +514,36 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       ESP_LOGI(kTag, "HID GAP encryption changed; status=%d",
                event->enc_change.status);
       if (event->enc_change.status != 0) {
-        g_hid_connected = false;
-        if (g_connection_handler != nullptr) {
-          g_connection_handler(false);
-        }
+        g_hid_state.encrypted = false;
+        g_hid_state.authenticated = false;
+        publish_hid_ready_if_changed("enc-failed");
         return 0;
       }
       rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
       if (rc == 0) {
-        g_hid_connected = true;
-        if (g_connection_handler != nullptr) {
-          g_connection_handler(true);
-        }
+        g_hid_state.encrypted = desc.sec_state.encrypted;
+        g_hid_state.authenticated = desc.sec_state.authenticated;
+        publish_hid_ready_if_changed("enc-change");
         ble_hid_task_start_up();
       } else {
         ESP_LOGW(kTag, "encrypted connection lookup failed: rc=%d", rc);
       }
+      return 0;
+    case BLE_GAP_EVENT_SUBSCRIBE:
+      ESP_LOGI(kTag,
+               "HID GAP subscribe conn=%u attr=%u notify %u->%u indicate %u->%u",
+               static_cast<unsigned>(event->subscribe.conn_handle),
+               static_cast<unsigned>(event->subscribe.attr_handle),
+               static_cast<unsigned>(event->subscribe.prev_notify),
+               static_cast<unsigned>(event->subscribe.cur_notify),
+               static_cast<unsigned>(event->subscribe.prev_indicate),
+               static_cast<unsigned>(event->subscribe.cur_indicate));
+      if (event->subscribe.attr_handle == g_notify_handle) {
+        ESP_LOGI(kTag, "Companion GATT notify subscription ignored for HID readiness");
+        return 0;
+      }
+      g_hid_state.input_report_subscribed = event->subscribe.cur_notify != 0;
+      publish_hid_ready_if_changed("hid-subscribe");
       return 0;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
       rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
@@ -551,27 +625,25 @@ void ble_hidd_event_callback(
   auto* param = static_cast<esp_hidd_event_data_t*>(event_data);
   if (event == ESP_HIDD_START_EVENT) {
     ESP_LOGI(kTag, "HIDD keyboard service started");
-    g_hid_connected = false;
+    reset_hid_link_state("hidd-start");
     start_hid_advertising("start");
     return;
   }
 
   if (event == ESP_HIDD_CONNECT_EVENT) {
     ESP_LOGI(kTag, "HIDD keyboard connected");
-    g_hid_connected = false;
+    g_hid_state.hidd_connected = true;
+    publish_hid_ready_if_changed("hidd-connect");
     return;
   }
 
   if (event == ESP_HIDD_DISCONNECT_EVENT) {
     ESP_LOGI(kTag, "HIDD keyboard disconnected; reason=%d",
              param == nullptr ? -1 : static_cast<int>(param->disconnect.reason));
-    g_hid_connected = false;
+    reset_hid_link_state("hidd-disconnect");
     clear_current_companion_binding();
     if (g_disconnect_handler != nullptr) {
       g_disconnect_handler();
-    }
-    if (g_connection_handler != nullptr) {
-      g_connection_handler(false);
     }
     start_hid_advertising("restart");
     return;
@@ -785,7 +857,7 @@ bool ble_pairing_input_digit(uint8_t digit) {
 }
 
 bool ble_keyboard_ready() {
-  return g_hid_connected;
+  return ble_keyboard_ready_from_state(g_hid_state);
 }
 
 esp_err_t notify_current_companion(std::span<const uint8_t> frame) {

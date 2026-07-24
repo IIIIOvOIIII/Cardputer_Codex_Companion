@@ -51,6 +51,14 @@ struct CompanionBindingProof {
   std::array<uint8_t, 16> connection_id{};
 };
 
+struct BleKeyboardLinkState {
+  bool gap_connected = false;
+  bool encrypted = false;
+  bool authenticated = false;
+  bool hidd_connected = false;
+  bool input_report_subscribed = false;
+};
+
 BleServiceManifest ble_service_manifest();
 CompanionGattUuids companion_gatt_uuids();
 bool companion_binding_proof_is_complete(const CompanionBindingProof& proof);
@@ -67,6 +75,11 @@ uint32_t ble_pairing_passkey();
 bool ble_pairing_requires_keyboard_input();
 bool ble_pairing_initiates_security_on_connect();
 bool ble_keyboard_ready_requires_successful_encryption();
+bool ble_keyboard_ready_requires_authenticated_link();
+bool ble_keyboard_ready_requires_input_report_subscription();
+bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state);
+BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
+    const BleKeyboardLinkState& current);
 std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage);
 bool ble_companion_link_allows(bool encrypted, bool authenticated, bool bonded);
 uint8_t ble_bond_store_schema_version();

@@ -10,6 +10,7 @@
 namespace {
 constexpr uint8_t kKeyboardReportMapIndex = 0;
 constexpr uint8_t kKeyboardReportId = 1;
+constexpr uint8_t kKeyboardReportSendAttempts = 5;
 constexpr char kTag[] = "keyboard-probe";
 }  // namespace
 
@@ -22,14 +23,22 @@ void EspHidReportSink::send_report(const HidReport& report) {
     return;
   }
 
-  const auto status = esp_hidd_dev_input_set(
-      hid_device_,
-      kKeyboardReportMapIndex,
-      kKeyboardReportId,
-      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&report)),
-      sizeof(report));
+  esp_err_t status = ESP_FAIL;
+  for (uint8_t attempt = 0; attempt < kKeyboardReportSendAttempts; ++attempt) {
+    status = esp_hidd_dev_input_set(
+        hid_device_,
+        kKeyboardReportMapIndex,
+        kKeyboardReportId,
+        const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&report)),
+        sizeof(report));
+    if (status == ESP_OK) {
+      break;
+    }
+    vTaskDelay(1);
+  }
   if (status != ESP_OK) {
-    ESP_LOGW(kTag, "failed to send keyboard report: %s (%d)",
+    ESP_LOGW(kTag, "failed to send keyboard report after %u attempts: %s (%d)",
+             static_cast<unsigned>(kKeyboardReportSendAttempts),
              esp_err_to_name(status), static_cast<int>(status));
   } else if (report.modifiers != 0 || report.keys[0] != 0 ||
              report.keys[1] != 0 || report.keys[2] != 0 ||

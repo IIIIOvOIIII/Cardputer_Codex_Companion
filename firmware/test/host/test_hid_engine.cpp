@@ -32,6 +32,9 @@ int main() {
   assert(!hid.report_map_has_feature_report());
   assert(!keyboard_report_map().empty());
   assert(keyboard_report_map().size() == 65);
+  assert(keyboard_report_map_key_array_slots() == HidReport{}.keys.size());
+  assert(keyboard_report_map_key_array_slots() == 6);
+  assert(keyboard_report_map_uses_bruce_reserved_items());
   assert(keyboard_report_map().front() == 0x05);
   assert(keyboard_report_map().back() == 0xC0);
   const std::array<uint8_t, 2> feature_item{0xB1, 0x01};

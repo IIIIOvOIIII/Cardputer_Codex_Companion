@@ -117,7 +117,9 @@ void release_and_set_mode(bool safe) {
 class ProductMacroSink final : public MacroSink {
  public:
   void send_hid(const HidReport& report) override {
-    if (g_keyboard.has_value()) g_keyboard->send_complete_report(report);
+    if (g_keyboard.has_value() && ble_keyboard_ready()) {
+      g_keyboard->send_complete_report(report);
+    }
   }
 
   bool send_text(uint32_t operation_id, std::string_view text) override {
