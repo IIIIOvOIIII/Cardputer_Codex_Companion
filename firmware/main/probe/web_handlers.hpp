@@ -30,6 +30,7 @@ struct PairingResolutionResult {
 
 class WebHandlerContext final : public WebPairingPhysicalSink {
  public:
+  // Owns a permanent worker and must live for the HTTPS server's lifetime.
   WebHandlerContext(std::string expected_host, RandomSource& random);
   WebHandlerContext(const WebHandlerContext&) = delete;
   WebHandlerContext& operator=(const WebHandlerContext&) = delete;

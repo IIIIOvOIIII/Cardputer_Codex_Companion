@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
+#include "probe/web_async_dispatch.hpp"
 #include "probe/web_route_manifest.hpp"
 
 namespace {
@@ -171,6 +172,39 @@ esp_err_t send_json(httpd_req_t* request, uint16_t status_code,
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
   return httpd_resp_send(request, body.data(), body.size());
 }
+
+class HttpdPairingAsyncBackend final : public PairingAsyncBackend {
+ public:
+  explicit HttpdPairingAsyncBackend(QueueHandle_t queue) : queue_(queue) {}
+
+  bool begin(void* request, void** async_request) override {
+    httpd_req_t* copy = nullptr;
+    if (httpd_req_async_handler_begin(static_cast<httpd_req_t*>(request),
+                                      &copy) != ESP_OK) {
+      return false;
+    }
+    *async_request = copy;
+    return true;
+  }
+
+  bool enqueue(void* async_request) override {
+    auto* request = static_cast<httpd_req_t*>(async_request);
+    return xQueueSend(queue_, &request, 0) == pdTRUE;
+  }
+
+  bool send_unavailable(void* async_request) override {
+    return send_json(static_cast<httpd_req_t*>(async_request), 503,
+                     "{\"error\":\"pairing_worker\"}") == ESP_OK;
+  }
+
+  void complete(void* async_request) override {
+    httpd_req_async_handler_complete(
+        static_cast<httpd_req_t*>(async_request));
+  }
+
+ private:
+  QueueHandle_t queue_;
+};
 
 esp_err_t send_reject(httpd_req_t* request, WebDecision decision) {
   std::array<char, 96> body{};
@@ -575,20 +609,17 @@ esp_err_t WebHandlerContext::defer_pairing_response(httpd_req_t* request) {
                            "{\"error\":\"pairing_worker\"}");
   }
 
-  httpd_req_t* async_request = nullptr;
-  const esp_err_t begin_result =
-      httpd_req_async_handler_begin(request, &async_request);
-  if (begin_result != ESP_OK) {
-    cancel_pairing_response();
-    return send_json(request, 503, "{\"error\":\"pairing_worker\"}");
+  HttpdPairingAsyncBackend backend(request_queue_);
+  const PairingDeferResult result = defer_pairing_request(request, backend);
+  if (result == PairingDeferResult::deferred) {
+    return ESP_OK;
   }
 
-  if (xQueueSend(request_queue_, &async_request, 0) != pdTRUE) {
-    send_json(async_request, 503, "{\"error\":\"pairing_worker\"}");
-    httpd_req_async_handler_complete(async_request);
-    cancel_pairing_response();
+  cancel_pairing_response();
+  if (result == PairingDeferResult::begin_failed) {
+    return send_json(request, 503, "{\"error\":\"pairing_worker\"}");
   }
-  return ESP_OK;
+  return result == PairingDeferResult::unavailable_sent ? ESP_OK : ESP_FAIL;
 }
 
 bool WebHandlerContext::has_admin_session() {

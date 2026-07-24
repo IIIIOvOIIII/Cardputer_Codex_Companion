@@ -143,3 +143,15 @@ target_include_directories(test_web_guard
 
 target_link_libraries(test_web_guard PRIVATE OpenSSL::Crypto)
 add_test(NAME web_guard COMMAND test_web_guard)
+
+add_executable(test_web_async_dispatch
+  test_web_async_dispatch.cpp
+  ../../main/probe/web_async_dispatch.cpp
+)
+
+target_include_directories(test_web_async_dispatch
+  PRIVATE
+    ../../main
+)
+
+add_test(NAME web_async_dispatch COMMAND test_web_async_dispatch)
