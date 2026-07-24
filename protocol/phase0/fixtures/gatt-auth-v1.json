@@ -1,0 +1,23 @@
+{
+  "canonical_frame_hex": "010000112233445566778899aabbccddeeffaabbccddeeff001122334455667788990000000000000000000000010000000feebc1cf97a2054effe143c3f22200c3aabd9b7904630b2ea6bb205d3eb460502000548656c6c6f",
+  "counter_window_size": 32,
+  "gatt_auth_hex": "9b73309f5c5ac9ab3656702b2c3624724e7e51eedca13711dc16f9fd1a52277a",
+  "gatt_connection_id_hex": "00112233445566778899aabbccddeeff",
+  "gatt_counter": 0,
+  "gatt_flags": 0,
+  "gatt_fragment_count": 1,
+  "gatt_fragment_hex": "48656c6c6f",
+  "gatt_fragment_index": 0,
+  "gatt_fragment_length": 5,
+  "gatt_full_message_sha256_hex": "eebc1cf97a2054effe143c3f22200c3aabd9b7904630b2ea6bb205d3eb460502",
+  "gatt_full_message_utf8_hex": "48616c6c6f20706f7274666f726365",
+  "gatt_full_message_utf8_length": 15,
+  "gatt_hmac_label": "cardputer-codex/gatt-auth/v1",
+  "gatt_operation_id_hex": "aabbccddeeff00112233445566778899",
+  "pairing_root_hex": "e225b6e453d06283c2f5a424a0b95c6c08da2a2aca15e12d7c4f4a2c6ca61c4d",
+  "tag_hex": "484c940fdfb196870467f171619281e4",
+  "test_only": true,
+  "warnings": [
+    "These are deterministic test-only fixtures and must not be used as production secrets."
+  ]
+}
