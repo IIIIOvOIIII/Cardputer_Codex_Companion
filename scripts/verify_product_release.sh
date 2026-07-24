@@ -20,9 +20,10 @@ python3 scripts/build_web_assets.py --check
 
 (
   cd firmware
-  ../scripts/phase0/idf.sh fullclean
+  ../scripts/phase0/idf.sh set-target esp32s3
   ../scripts/phase0/idf.sh build
 )
+python3 tools/product/verify_partition_layout.py
 
 swift build --package-path companion -c release
 companion/.build/release/cardputer-companion --version

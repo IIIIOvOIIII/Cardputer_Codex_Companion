@@ -125,3 +125,10 @@
 - Expected result: 从 `0x0` 可刷写的私有完整镜像包含 Vault 指定 Wi-Fi；固件具备可见启动/状态界面、56 键 BLE HID、四层自定义 chord/text/sequence、UTF-8/中文 Companion 链路和 Codex 活跃会话状态；所有可在无实机条件下完成的验证通过且不泄露凭据。
 - Result: Achieved for compiled product delivery — Python 78/78、firmware host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 `fullclean` target build、Swift release build、Companion doctor、Web 资源、通用/私有镜像组装、分区偏移和 secret exclusion 均通过。应用镜像 1,467,152 bytes、SHA-256 `ab81fdd63f97d489ca0f8c46402b1b7d251abc0a143ed6fd62414b47512358b4`；私有完整镜像 1,598,224 bytes、SHA-256 `bf4bc762e15195bd8684aed7d229b8185d561b41b3c4bc09b924680b1109dbeb`。产品 LAN 状态链路使用 HTTPS + 屏幕八位 PIN，中文使用已加密、已认证、已绑定的 BLE GATT；本次不宣称 Phase 0 完整 P-256/SAS/pinned-WSS 双通道绑定已产品化。
 - Next step: 用户将私有完整镜像写入 `0x0` 并启动 Companion。当前没有唯一 Cardputer 串口，因此未刷机，也未执行 30 分钟实机 HIL；LCD 方向、56 个实体键、真实 BLE/Wi-Fi/HTTPS/中文注入和持续并发仍需真机验收。
+
+## 2026-07-24 17:02 HKT
+
+- Current work: 在合并后的 `main` 上从头复验发布，定位并修复被忽略的旧 `firmware/sdkconfig` 令发布脚本沿用 Phase 0 默认分区表的问题。
+- Expected result: 任意本地残留配置下，发布入口都必须重建 ESP32-S3 产品配置；构建后的二进制分区表必须逐项匹配产品 CSV，否则禁止打包交付。
+- Result: Achieved — 新增分区布局单元测试和二进制校验器；默认 `nvs/phy_init/factory` 布局回归测试确认失败关闭，发布脚本改为每次执行 `set-target esp32s3` 并在打包前核验七个产品分区。合并后主分支完整门禁通过：Python 80/80、firmware host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、精确产品分区校验、Swift release/doctor、通用/私有镜像打包与 secret exclusion 全部通过。最终应用镜像 1,467,152 bytes、SHA-256 `5cdb714a8354ac4ce12d2d63a0eac19d3c99eeab9f1a586515dcf2ec1f82c7c5`；私有完整镜像 1,598,224 bytes、SHA-256 `9181bfae366128c2f4417884c2e3cf4e9e3d692ed1898c4f566c1d92eccf1f35`。
+- Next step: 提交发布复现修复并交付主目录私有完整镜像；由于没有唯一 Cardputer 串口，刷机和 30 分钟实机 HIL 继续明确留待真机。

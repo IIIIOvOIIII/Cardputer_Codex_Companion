@@ -8,6 +8,12 @@ build, the embedded Web asset, the Swift release executable, the app bundle,
 generic/private image assembly, partition offsets, and secret exclusion from
 Git-tracked files and the generic image.
 
+The target build runs `idf.py set-target esp32s3` on every release check so an
+ignored or stale local `sdkconfig` cannot select an old partition table. After
+the build, the generated binary partition table is decoded and compared
+field-for-field with `firmware/partitions_product.csv`, including partition
+names, order, types, offsets, sizes and flags.
+
 The private image includes a dedicated NVS image at `0x12000`; the firmware
 application begins at `0x20000`. Both full images begin with the bootloader at
 `0x0`.
