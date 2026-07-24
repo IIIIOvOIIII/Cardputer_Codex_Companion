@@ -46,10 +46,17 @@ int main() {
   assert(uuids.identity == identity);
 
   assert(ble_advertised_name() == "Cardputer Codex");
+  assert(ble_device_name() == ble_advertised_name());
   assert(ble_hid_legacy_advertising_payload_bytes(
              "Cardputer Companion") > 31);
   assert(ble_hid_legacy_advertising_payload_bytes(
              ble_advertised_name()) <= 31);
+  assert(ble_hid_advertising_duration_ms() == 2147483647);
+  assert(ble_advertising_watchdog_interval_ms() == 5000);
+  assert(ble_pairing_io_capability() == 0);
+  assert(ble_should_start_advertising(false, false));
+  assert(!ble_should_start_advertising(true, false));
+  assert(!ble_should_start_advertising(false, true));
 
   CompanionBindingProof proof{};
   proof.conn_handle = 7;

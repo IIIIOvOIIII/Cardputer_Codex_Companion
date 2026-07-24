@@ -8,6 +8,7 @@
 #include "product/product_types.hpp"
 
 inline constexpr uint32_t kKeyboardDebounceMs = 20;
+inline constexpr uint32_t kKeyboardScannerTaskStackBytes = 8192;
 
 struct MatrixKeyEvent {
   uint8_t physical_key = 0;

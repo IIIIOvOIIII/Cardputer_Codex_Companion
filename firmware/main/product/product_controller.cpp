@@ -284,6 +284,7 @@ void companion_snapshot(std::string_view json) {
 void ui_task(void*) {
   bool long_press_handled = false;
   TickType_t wake = xTaskGetTickCount();
+  uint32_t rendered_revision = UINT32_MAX;
   while (true) {
     M5.update();
     if (!long_press_handled && M5.BtnA.pressedFor(2000)) {
@@ -316,7 +317,11 @@ void ui_task(void*) {
                                      profile_name.size())) {
           g_ui.set_profile(profile_name.data());
         }
-        display_render_runtime(g_ui);
+        const uint32_t revision = g_ui.revision();
+        if (revision != rendered_revision) {
+          display_render_runtime(g_ui);
+          rendered_revision = revision;
+        }
       }
     }
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(200));

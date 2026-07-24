@@ -48,6 +48,14 @@ def test_product_release_uses_boot_safe_main_task_stack():
     assert "CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192" in defaults
 
 
+def test_product_release_uses_product_ble_gap_name():
+    defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="Cardputer Codex"' in defaults
+
+
 def test_wifi_cfg_partition_is_optional_for_wrong_or_generic_flash_layouts():
     wifi_manager = (REPO_ROOT / "firmware/main/product/wifi_manager.cpp").read_text(
         encoding="utf-8"

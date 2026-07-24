@@ -18,14 +18,15 @@ class UiModel {
   void set_stage_error(BootStage stage, uint16_t error_code);
   [[nodiscard]] std::string boot_line(BootStage stage) const;
 
-  void set_mode(InputMode mode) { mode_ = mode; }
-  void set_ble(ServiceState state) { ble_ = state; }
-  void set_wifi(ServiceState state) { wifi_ = state; }
-  void set_companion(ServiceState state) { companion_ = state; }
+  void set_mode(InputMode mode);
+  void set_ble(ServiceState state);
+  void set_wifi(ServiceState state);
+  void set_companion(ServiceState state);
   void set_profile(std::string_view profile);
   void set_web(std::string_view ipv4, std::string_view pairing_code);
   void set_session(std::string_view title, std::string_view cwd,
                    std::string_view state, uint8_t approvals, uint8_t inputs);
+  [[nodiscard]] uint32_t revision() const { return revision_; }
   [[nodiscard]] std::string runtime_text() const;
 
  private:
@@ -46,4 +47,5 @@ class UiModel {
   std::string session_state_ = "OFFLINE";
   uint8_t approvals_ = 0;
   uint8_t inputs_ = 0;
+  uint32_t revision_ = 0;
 };

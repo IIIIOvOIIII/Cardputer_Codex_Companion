@@ -50,9 +50,8 @@ constexpr std::array<gpio_num_t, 3> kSelectorPins{
 constexpr std::array<gpio_num_t, 7> kInputPins{
     GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_3, GPIO_NUM_4,
     GPIO_NUM_5, GPIO_NUM_6, GPIO_NUM_7};
-constexpr uint32_t kScannerStackBytes = 3072;
 StaticTask_t g_scanner_task_storage{};
-std::array<StackType_t, kScannerStackBytes> g_scanner_stack{};
+std::array<StackType_t, kKeyboardScannerTaskStackBytes> g_scanner_stack{};
 TaskHandle_t g_scanner_task = nullptr;
 MatrixEventHandler g_handler = nullptr;
 
@@ -105,7 +104,7 @@ esp_err_t keyboard_matrix_start(MatrixEventHandler handler) {
     gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
   }
   g_scanner_task = xTaskCreateStatic(
-      scanner_task, "scanner", kScannerStackBytes, nullptr,
+      scanner_task, "scanner", kKeyboardScannerTaskStackBytes, nullptr,
       tskIDLE_PRIORITY + 3, g_scanner_stack.data(), &g_scanner_task_storage);
   return g_scanner_task == nullptr ? ESP_ERR_NO_MEM : ESP_OK;
 }

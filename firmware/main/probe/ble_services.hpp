@@ -55,7 +55,12 @@ CompanionGattUuids companion_gatt_uuids();
 bool companion_binding_proof_is_complete(const CompanionBindingProof& proof);
 bool device_id_is_valid(std::span<const uint8_t, 16> device_id);
 std::string_view ble_advertised_name();
+std::string_view ble_device_name();
 std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name);
+int32_t ble_hid_advertising_duration_ms();
+uint32_t ble_advertising_watchdog_interval_ms();
+uint8_t ble_pairing_io_capability();
+bool ble_should_start_advertising(bool connected, bool advertising_active);
 std::vector<uint8_t> encode_product_text_fragment(
     uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
     std::span<const uint8_t> utf8);
