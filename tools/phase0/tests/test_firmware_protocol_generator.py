@@ -54,20 +54,31 @@ def test_generation_is_deterministic_and_checkable(tmp_path: Path) -> None:
     assert run_generator(protocol_root, first, check=True).returncode == 0
 
 
-@pytest.mark.parametrize("relative_source", SOURCE_PATHS)
-def test_check_rejects_each_stale_canonical_source(
-    tmp_path: Path, relative_source: str
-) -> None:
-    protocol_root = tmp_path / "phase0"
-    shutil.copytree(REPO_ROOT / "protocol/phase0", protocol_root)
+def test_check_rejects_stale_output_without_rewriting(tmp_path: Path) -> None:
+    protocol_root = REPO_ROOT / "protocol/phase0"
     output = tmp_path / "vectors.hpp"
     assert run_generator(protocol_root, output).returncode == 0
-    original_output = output.read_bytes()
-
-    source = protocol_root / relative_source
-    source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    output.write_text(
+        output.read_text(encoding="utf-8") + "\n// stale\n", encoding="utf-8"
+    )
+    stale_output = output.read_bytes()
     result = run_generator(protocol_root, output, check=True)
 
     assert result.returncode != 0
     assert "generated protocol header is stale" in result.stderr
-    assert output.read_bytes() == original_output
+    assert output.read_bytes() == stale_output
+
+
+@pytest.mark.parametrize("relative_source", SOURCE_PATHS)
+def test_generation_rejects_unpinned_canonical_source(
+    tmp_path: Path, relative_source: str
+) -> None:
+    protocol_root = tmp_path / "phase0"
+    shutil.copytree(REPO_ROOT / "protocol/phase0", protocol_root)
+    source = protocol_root / relative_source
+    source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = run_generator(protocol_root, tmp_path / "vectors.hpp")
+
+    assert result.returncode != 0
+    assert "canonical protocol source hash mismatch" in result.stderr

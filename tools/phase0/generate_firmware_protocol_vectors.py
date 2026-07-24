@@ -15,6 +15,15 @@ from generate_security_vectors import (
     _build_all_fixtures,
 )
 
+CANONICAL_SOURCE_SHA256 = {
+    "pairing-v1.md": "67b4f3368bc049af65591e3621c3aa91dbf244504b789558f190d1d2b84c668f",
+    "fixtures/pairing-v1.json": "c0c5f2ecec0667274d7317d45aace9bd9ca78c07802f2a574ac7bad31c574ac5",
+    "gatt-auth-v1.md": "0183d541bb45e3c333ad71da405dca8fdc2709fec41609cc4d114d25d818b231",
+    "fixtures/gatt-auth-v1.json": "d73fc79a62f883657b68a86f62b595d38aba7355aa4bad75fa422b4c54cbe9c5",
+    "wss-auth-v1.md": "3947aa3038833c19ddb0c8ac6b23c540b508c44e808e2b221f52a6cdc296e50b",
+    "fixtures/wss-auth-v1.json": "d696006f7cc748c79e79d133a3f6cc9a9c12a40d34537c4797d9e21b0a445ad1",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -96,6 +105,16 @@ def source_sha256(*paths: Path) -> str:
     for path in paths:
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def verify_canonical_source_hashes(protocol_root: Path) -> None:
+    for relative_path, expected_sha256 in CANONICAL_SOURCE_SHA256.items():
+        actual_sha256 = source_sha256(protocol_root / relative_path)
+        if actual_sha256 != expected_sha256:
+            raise ValueError(
+                "canonical protocol source hash mismatch: "
+                f"{relative_path}: expected {expected_sha256}, got {actual_sha256}"
+            )
 
 
 def build_and_validate_inputs(
@@ -234,6 +253,7 @@ def generate_cpp(protocol_root: Path, output: Path, *, check: bool = False) -> N
         wss_fixture,
     ]:
         require_file(path)
+    verify_canonical_source_hashes(protocol_root)
 
     pairing = parse_json(pairing_fixture)
     gatt = parse_json(gatt_fixture)
@@ -283,19 +303,28 @@ def generate_cpp(protocol_root: Path, output: Path, *, check: bool = False) -> N
             f"constexpr std::array<uint8_t, 32> wss_fixture = {byte_array_expr(wss_fixture_sha, 32)};",
             "}",
             "",
+            "namespace expected_source_hashes {",
+            f"constexpr std::array<uint8_t, 32> pairing_doc = {byte_array_expr(CANONICAL_SOURCE_SHA256['pairing-v1.md'], 32)};",
+            f"constexpr std::array<uint8_t, 32> pairing_fixture = {byte_array_expr(CANONICAL_SOURCE_SHA256['fixtures/pairing-v1.json'], 32)};",
+            f"constexpr std::array<uint8_t, 32> gatt_doc = {byte_array_expr(CANONICAL_SOURCE_SHA256['gatt-auth-v1.md'], 32)};",
+            f"constexpr std::array<uint8_t, 32> gatt_fixture = {byte_array_expr(CANONICAL_SOURCE_SHA256['fixtures/gatt-auth-v1.json'], 32)};",
+            f"constexpr std::array<uint8_t, 32> wss_doc = {byte_array_expr(CANONICAL_SOURCE_SHA256['wss-auth-v1.md'], 32)};",
+            f"constexpr std::array<uint8_t, 32> wss_fixture = {byte_array_expr(CANONICAL_SOURCE_SHA256['fixtures/wss-auth-v1.json'], 32)};",
+            "}",
+            "",
             "inline bool source_files_verified() {",
-            "  constexpr auto nonzero = [](const auto& digest) {",
-            "    for (uint8_t byte : digest) {",
-            "      if (byte != 0) { return true; }",
-            "    }",
-            "    return false;",
-            "  };",
-            "  return nonzero(source_hashes::pairing_doc) &&",
-            "         nonzero(source_hashes::pairing_fixture) &&",
-            "         nonzero(source_hashes::gatt_doc) &&",
-            "         nonzero(source_hashes::gatt_fixture) &&",
-            "         nonzero(source_hashes::wss_doc) &&",
-            "         nonzero(source_hashes::wss_fixture);",
+            "  return source_hashes::pairing_doc ==",
+            "             expected_source_hashes::pairing_doc &&",
+            "         source_hashes::pairing_fixture ==",
+            "             expected_source_hashes::pairing_fixture &&",
+            "         source_hashes::gatt_doc ==",
+            "             expected_source_hashes::gatt_doc &&",
+            "         source_hashes::gatt_fixture ==",
+            "             expected_source_hashes::gatt_fixture &&",
+            "         source_hashes::wss_doc ==",
+            "             expected_source_hashes::wss_doc &&",
+            "         source_hashes::wss_fixture ==",
+            "             expected_source_hashes::wss_fixture;",
             "}",
             "",
             "namespace pairing {",
