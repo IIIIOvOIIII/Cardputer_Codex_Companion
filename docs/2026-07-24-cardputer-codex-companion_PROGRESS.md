@@ -20,3 +20,10 @@
 - Expected result: 形成单一依赖顺序、27 个 reviewer-sized tasks、五份 child report/六项 gate 的机器可验证证据闭环；在没有真机、签名身份或完整工具链时不误报可行性结论。
 - Result: Achieved — 主计划与四份子计划已落盘；Codex capability 路径、Companion 并发 JSONL agent、probe/app/device provenance、共享 `HIL_BASE_COMMIT`、外部 P-256 release manifest、OTA/config slot 原子配对及不可逆 eFuse 审批边界已经统一。Markdown 链接、代码围栏、任务数量、旧契约残留与 Git whitespace 检查通过。本阶段没有编写产品实现或运行 HIL。
 - Next step: 选择 subagent-driven 或 inline 执行方式，从 foundation Tasks 1–2 开始 Phase 0；在取得六项 gate 的真实证据前保持 `NO_GO`。
+
+## 2026-07-24 09:46 HKT
+
+- Current work: 按 Subagent-Driven Development 执行 Foundation Task 1，锁定并引导仓库内 Phase 0 工具链，并完成独立规格/质量审查。
+- Expected result: ESP-IDF、Node、Python 与 Python 依赖精确锁定；ESP-IDF 安装强制使用 `.tools/uv-python` 中的 Python 3.11.11；缺失 HIL 条件如实保持 `BLOCKED`；任务通过 RED/GREEN、bootstrap 和双重审查。
+- Result: Achieved — 实现提交 `2918d35` 与修复提交 `a2337bb` 已完成；动态测试证明错误 Python 会非破坏性失败且安装器解析仓库内解释器，4/4 单测、`uv lock`、完整 bootstrap 与工具链清单验证通过。最终审查结论为规格合规、Task quality Approved，且无 Critical/Important/Minor 遗留。当前 HIL 应用前置条件仍为 `BLOCKED`，未被误报为硬件 gate 结论。
+- Next step: 执行 Foundation Task 2，固定 pairing/GATT/WSS 协议编码和确定性跨语言安全向量。
