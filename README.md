@@ -27,8 +27,8 @@ python -m esptool --chip esp32s3 -b 460800 \
 
 ## 首次使用
 
-1. 开机后屏幕应立即出现 `CARDPUTER CODEX 1.0.1` 启动页。
-2. 在 macOS 蓝牙设置中连接 `Cardputer Companion`；需要 PIN 时输入 `123456`。
+1. 开机后屏幕应立即出现 `CARDPUTER CODEX 1.0.3` 启动页。
+2. 在 macOS 蓝牙设置中连接 `Cardputer Codex`；需要 PIN 时输入 `123456`。
 3. Wi‑Fi 连通后，屏幕显示设备 IP 和八位 Web PIN。浏览器访问 `https://设备IP/`；设备证书是首次启动生成的自签名证书，首次访问需要确认。
 4. 构建并启动 Mac Companion：
 

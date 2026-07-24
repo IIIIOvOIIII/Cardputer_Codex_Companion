@@ -13,7 +13,7 @@ constexpr std::array<uint8_t, 32> kBase32Alphabet{
     '6', '7',
 };
 
-constexpr std::array<uint8_t, 66> kKeyboardReportMap = {
+constexpr auto kKeyboardReportMap = std::to_array<uint8_t>({
     0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
     0x09, 0x06,        // Usage (Keyboard)
     0xA1, 0x01,        // Collection (Application)
@@ -47,7 +47,7 @@ constexpr std::array<uint8_t, 66> kKeyboardReportMap = {
     0x29, 0x65,        //   Usage Maximum (0x65)
     0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0xC0,              // End Collection
-};
+});
 
 constexpr size_t kBase32OutputSize = 26;
 

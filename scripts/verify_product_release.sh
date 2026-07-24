@@ -18,6 +18,7 @@ ctest --test-dir build/product-host-sanitize --output-on-failure
 
 python3 scripts/build_web_assets.py --check
 
+rm -f firmware/sdkconfig firmware/sdkconfig.old
 (
   cd firmware
   ../scripts/phase0/idf.sh set-target esp32s3

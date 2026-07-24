@@ -30,3 +30,28 @@ def test_product_release_enforces_target_diram_budget():
 
     assert "-m esp_idf_size --format json" in release
     assert "tools/product/verify_firmware_memory.py" in release
+
+
+def test_product_release_recreates_ignored_sdkconfig():
+    release = (REPO_ROOT / "scripts/verify_product_release.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'rm -f firmware/sdkconfig firmware/sdkconfig.old' in release
+
+
+def test_product_release_uses_boot_safe_main_task_stack():
+    defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192" in defaults
+
+
+def test_wifi_cfg_partition_is_optional_for_wrong_or_generic_flash_layouts():
+    wifi_manager = (REPO_ROOT / "firmware/main/product/wifi_manager.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'ESP_ERROR_CHECK_WITHOUT_ABORT(nvs_flash_init_partition("wifi_cfg"))' not in wifi_manager
+    assert "init_optional_wifi_config_partition()" in wifi_manager

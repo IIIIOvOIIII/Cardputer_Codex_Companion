@@ -1,8 +1,22 @@
 #include "probe/ble_services.hpp"
 
 #include <algorithm>
+#include <string_view>
 
 namespace {
+constexpr char kBleAdvertisedName[] = "Cardputer Codex";
+constexpr std::size_t kBleLegacyAdvertisingBudgetBytes = 31;
+constexpr std::size_t kBleHidFixedAdvertisingBytes =
+    3 + 4 + 3 + 4;  // flags + appearance + tx power + HID UUID16
+
+constexpr std::size_t legacy_advertising_payload_bytes(
+    std::string_view name) {
+  return kBleHidFixedAdvertisingBytes + 2 + name.size();
+}
+
+static_assert(legacy_advertising_payload_bytes(kBleAdvertisedName) <=
+              kBleLegacyAdvertisingBudgetBytes);
+
 constexpr CompanionGattUuids kCompanionGattUuids{
     .service = {0x7a, 0x10, 0x00, 0x01, 0x2c, 0x4d, 0x4f, 0x20,
                 0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
@@ -20,6 +34,14 @@ bool has_nonzero_byte(const std::array<uint8_t, N>& value) {
                      [](uint8_t byte) { return byte != 0; });
 }
 }  // namespace
+
+std::string_view ble_advertised_name() {
+  return kBleAdvertisedName;
+}
+
+std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name) {
+  return legacy_advertising_payload_bytes(name);
+}
 
 BleServiceManifest ble_service_manifest() {
   return {
@@ -388,7 +410,8 @@ esp_err_t initialize_ble(
   if (rc != ESP_OK) {
     return rc;
   }
-  rc = esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_KEYBOARD, kDeviceName);
+  rc = esp_hid_ble_gap_adv_init(
+      ESP_HID_APPEARANCE_KEYBOARD, kBleAdvertisedName);
   if (rc != ESP_OK) {
     return rc;
   }

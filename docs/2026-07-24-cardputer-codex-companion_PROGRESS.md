@@ -139,3 +139,10 @@
 - Expected result: 保持四层 56 键、最多 16 步组合键/字符串序列及中文 UTF-8 协议不变，同时为 BLE、Wi-Fi、HTTPS 和运行时分配恢复充足的 ESP32-S3 DIRAM；发布门禁能够阻止同类内存回归。
 - Result: Achieved for compiled-firmware delivery — 原实现为 224 个按键各自预留 16 个含 `std::string` 的序列步骤，活动 `Profile` 在目标 `.bss` 占 152,348 bytes，目标 DIRAM 只余 8,909 bytes；现改为按需序列向量，主机 `sizeof(Profile)` 受 24 KiB 回归门禁约束，目标发布门禁要求至少 96 KiB DIRAM，修复镜像实测余 149,581 bytes。Python 83/83、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 `fullclean` build、产品分区、Web 资源、镜像偏移与校验均通过。应用镜像 1,468,960 bytes、SHA-256 `364f41a77794e8bb7fd056742c83848a251d36f2207d5ee4a63ef1fbe6f351ff`；私有完整镜像 1,600,032 bytes、SHA-256 `89ccf191f116ff6bc90437eb4b61196797a40f5a49c155f3c4ff7898739fcb6d`。
 - Next step: 将 `dist/private/cardputer_codex_companion-private-full.bin` 从 `0x0` 刷入，确认启动标题为 `CARDPUTER CODEX 1.0.1` 并进行实机 BLE/Wi-Fi/Web/Companion 验收。当前主机仍未发现 Cardputer 串口，因此本次未代刷、未执行重启耐久测试。
+
+## 2026-07-24 18:00 HKT
+
+- Current work: 在用户接入 Cardputer 后，通过 `/dev/cu.usbmodem21201` 串口实机排查 1.0.1 仍反复重启的问题，并刷入修复后的 private full image 做复验。
+- Expected result: 找到真实重启根因，修复后设备启动到产品运行时；不再出现 `main` stack overflow、HID report map 解析错误、缺失 `wifi_cfg` 分区或 BLE 广播启动失败；Web 状态接口在局域网可访问。
+- Result: Achieved — 串口证据显示 1.0.1 先成功初始化显示和 BLE 控制器，随后在 Wi-Fi/AP/HTTPS 启动后触发 `***ERROR*** A stack overflow in task main has been detected.`；同时发现当前设备实际分区表缺少 `wifi_cfg`，HID report map 因固定 66 字节数组多出尾部 `0x00` 触发 NimBLE HID parser 错误。修复包括：主任务栈升至 8192；发布脚本每次删除旧 `sdkconfig` 并重建；`wifi_cfg` 初始化改为可选且对缺失分区 fail-open；HID report map 改为 `std::to_array` 自动长度；BLE advertising name 缩短为 `Cardputer Codex` 并加入 31 字节 legacy advertising payload 回归测试。完整 release 门禁通过：Python 86/86、host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、产品分区校验、Swift release/doctor、generic/private image 打包。已将 1.0.3 private full image 从 `0x0` 刷入实机，esptool 写入哈希校验通过；读回分区表前 3KB 与构建产物一致；45 秒完整启动日志确认 `App version: 1.0.3`、NimBLE `advertise` started、HTTPS server listening、`product runtime started`、`Returned from app_main()`，且无 stack overflow/HID parser/wifi_cfg/panic；额外 90 秒串口静默观察 boot/panic/overflow/BLE 广播错误计数均为 0。只读 Web 状态接口返回 200，`version=1.0.3`、`wifi=OK`。
+- Next step: 提交修复；后续如需完整验收，再进行 macOS 蓝牙配对、实体 56 键、中文字符串注入、Companion/Codex 会话联动和更长时间 HIL soak。

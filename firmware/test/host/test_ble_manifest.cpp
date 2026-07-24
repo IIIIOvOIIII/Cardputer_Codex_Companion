@@ -45,6 +45,12 @@ int main() {
   assert(uuids.control == control);
   assert(uuids.identity == identity);
 
+  assert(ble_advertised_name() == "Cardputer Codex");
+  assert(ble_hid_legacy_advertising_payload_bytes(
+             "Cardputer Companion") > 31);
+  assert(ble_hid_legacy_advertising_payload_bytes(
+             ble_advertised_name()) <= 31);
+
   CompanionBindingProof proof{};
   proof.conn_handle = 7;
   proof.companion_identity_sha256[0] = 1;

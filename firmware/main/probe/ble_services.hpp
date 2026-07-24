@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 using DeviceId = std::array<uint8_t, 16>;
@@ -53,6 +54,8 @@ BleServiceManifest ble_service_manifest();
 CompanionGattUuids companion_gatt_uuids();
 bool companion_binding_proof_is_complete(const CompanionBindingProof& proof);
 bool device_id_is_valid(std::span<const uint8_t, 16> device_id);
+std::string_view ble_advertised_name();
+std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name);
 std::vector<uint8_t> encode_product_text_fragment(
     uint32_t operation_id, uint8_t fragment_index, uint8_t fragment_count,
     std::span<const uint8_t> utf8);

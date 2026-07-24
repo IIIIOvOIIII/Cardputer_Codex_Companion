@@ -51,6 +51,7 @@ void WifiStateMachine::on_disconnected() {
 #include <cstring>
 
 #include "esp_event.h"
+#include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_random.h"
@@ -62,6 +63,8 @@ void WifiStateMachine::on_disconnected() {
 #include "nvs_flash.h"
 
 namespace {
+constexpr char kTag[] = "product-wifi";
+
 class NvsWifiCredentialSource final : public WifiCredentialSource {
  public:
   std::optional<WifiCredentials> load_private() override {
@@ -180,18 +183,40 @@ void wifi_timeout_task(void*) {
     vTaskDelay(pdMS_TO_TICKS(250));
   }
 }
+
+esp_err_t init_optional_wifi_config_partition() {
+  esp_err_t result = nvs_flash_init_partition("wifi_cfg");
+  if (result == ESP_OK) {
+    return ESP_OK;
+  }
+  if (result == ESP_ERR_NOT_FOUND) {
+    ESP_LOGW(kTag, "wifi_cfg partition is absent; private Wi-Fi config disabled");
+    return ESP_OK;
+  }
+  if (result == ESP_ERR_NVS_NO_FREE_PAGES ||
+      result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    result = nvs_flash_erase_partition("wifi_cfg");
+    if (result == ESP_OK) {
+      result = nvs_flash_init_partition("wifi_cfg");
+    }
+  }
+  return result;
+}
 }  // namespace
 
 esp_err_t product_wifi_start(bool recovery_mode, WifiStatusHandler handler) {
   g_handler = handler;
-  ESP_ERROR_CHECK_WITHOUT_ABORT(nvs_flash_init_partition("wifi_cfg"));
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_init());
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_event_loop_create_default());
+  esp_err_t result = init_optional_wifi_config_partition();
+  if (result != ESP_OK) return result;
+  result = esp_netif_init();
+  if (result != ESP_OK) return result;
+  result = esp_event_loop_create_default();
+  if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return result;
   if (g_sta_netif == nullptr) {
     g_sta_netif = esp_netif_create_default_wifi_sta();
   }
   wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-  esp_err_t result = esp_wifi_init(&config);
+  result = esp_wifi_init(&config);
   if (result != ESP_OK) {
     return result;
   }
