@@ -18,4 +18,3 @@ esp_err_t start_bounded_https_server(const BoundedHttpsServerConfig& config,
                                      httpd_handle_t* server);
 
 [[nodiscard]] AdmissionSnapshot bounded_https_server_snapshot();
-
