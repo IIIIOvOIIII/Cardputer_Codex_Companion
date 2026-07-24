@@ -34,3 +34,10 @@
 - Expected result: Python 生成器、规范文档和三份 fixture 对同一协议逐字节一致；覆盖 32-byte nonce、transcript-hash HKDF salt、完整 GATT 分片/HMAC/replay、五字段 WSS exporter 绑定、固定宽度 P-256 签名、SPKI/role 拒绝和 post-SAS 双通道绑定。
 - Result: Achieved — 协议提交 `a67873c` 与负向修复提交 `781b405` 已完成；11 项测试、确定性重生成与 OpenSSL transcript SHA-256 独立对账通过。最终审查为 Spec compliant、Task quality Approved，且无 Critical/Important/Minor 遗留；fixture 私钥材料明确标记为仅限测试。
 - Next step: 按依赖顺序执行 macOS Tasks 1–6，先建立 SwiftPM target/稳定契约，再实现 Unicode、TCC、配对、BLE/GATT 和签名应用骨架；HIL live run 继续后置。
+
+## 2026-07-24 10:14 HKT
+
+- Current work: 执行 macOS Task 1 的 SwiftPM target 图和稳定 DTO 契约，并定位测试工具链阻塞。
+- Expected result: ContractTests 3/3、全部 surface tests、Swift build 与 `cardputer-phase0-probe --version` 均通过后进入独立任务审查。
+- Result: Partial — 实现提交 `15c8196` 已创建，全部生产 library/executable targets 构建成功，CLI 严格输出 `cardputer-phase0-probe 0.1.0`；但当前主机只安装 CommandLineTools，没有 `Xcode.app`，`swift test` 与直接 `import XCTest` 均以 `no such module 'XCTest'` 失败。该任务未标记完成、未进入审查，且不得用伪造 XCTest 或改写测试框架制造绿灯。
+- Next step: 利用 Foundation 后可并行的依赖边界继续 firmware Tasks 1–7；完整 Xcode/XCTest 可用后回到 macOS Task 1 完成测试、清理误纳入 Git 的 SDD 报告并执行双重审查。
