@@ -11,21 +11,197 @@
       "type": "boolean"
     },
     "run": {
+      "$ref": "#/$defs/run"
+    },
+    "hardware": {
+      "$ref": "#/$defs/hardware"
+    },
+    "services": {
+      "$ref": "#/$defs/services"
+    },
+    "ble_identity": {
+      "$ref": "#/$defs/ble_identity"
+    },
+    "https": {
+      "$ref": "#/$defs/https"
+    },
+    "web_security": {
+      "$ref": "#/$defs/web_security"
+    },
+    "wss": {
+      "$ref": "#/$defs/wss"
+    },
+    "resources": {
+      "$ref": "#/$defs/resources"
+    },
+    "hid": {
+      "$ref": "#/$defs/hid"
+    },
+    "evidence_clocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_clock"
+      }
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifacts"
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "consistency_errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "capture_complete",
+    "run",
+    "blockers",
+    "consistency_errors"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capture_complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "capture_complete"
+        ]
+      },
+      "then": {
+        "required": [
+          "hardware",
+          "services",
+          "ble_identity",
+          "https",
+          "web_security",
+          "wss",
+          "resources",
+          "hid",
+          "evidence_clocks",
+          "artifacts"
+        ],
+        "properties": {
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/run"
+              },
+              {
+                "properties": {
+                  "git_commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "git_tree_clean": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "toolchain_manifest_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "started_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "ended_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "duration_seconds": {
+                    "type": "integer",
+                    "const": 1800
+                  },
+                  "continuous_capture": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "boot_id",
+                  "app_elf_sha256",
+                  "firmware_image_sha256",
+                  "device_id_sha256",
+                  "git_commit",
+                  "git_tree_clean",
+                  "toolchain_manifest_sha256",
+                  "started_at",
+                  "ended_at",
+                  "duration_seconds",
+                  "continuous_capture"
+                ]
+              }
+            ]
+          },
+          "evidence_clocks": {
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "resources": {
+            "required": [
+              "steady",
+              "transient",
+              "attack",
+              "allocation_failures",
+              "metrics_encode_failures",
+              "task_stack_samples",
+              "https_occupancy",
+              "transient_burst"
+            ]
+          },
+          "artifacts": {
+            "required": [
+              "raw_serial_log",
+              "raw_companion_log",
+              "raw_hid_log",
+              "raw_resource_log",
+              "raw_attacker_log",
+              "flash_backup",
+              "report_sha256"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capture_complete": {
+            "const": false
+          }
+        },
+        "required": [
+          "capture_complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockers": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "run": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "run_id",
-        "boot_id",
-        "app_elf_sha256",
-        "firmware_image_sha256",
-        "device_id_sha256",
-        "git_commit",
-        "git_tree_clean",
-        "toolchain_manifest_sha256",
-        "started_at",
-        "ended_at",
-        "duration_seconds",
-        "continuous_capture"
+        "run_id"
       ],
       "properties": {
         "run_id": {
@@ -72,8 +248,7 @@
           "minimum": 0
         },
         "continuous_capture": {
-          "type": "boolean",
-          "const": true
+          "type": "boolean"
         }
       }
     },
@@ -203,7 +378,8 @@
       "additionalProperties": false,
       "required": [
         "challenge_accepted",
-        "gatt_replay_rejects"
+        "gatt_replay_rejects",
+        "attack_matrix"
       ],
       "properties": {
         "challenge_accepted": {
@@ -212,6 +388,65 @@
         "gatt_replay_rejects": {
           "type": "integer",
           "minimum": 0
+        },
+        "attack_matrix": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attack_row"
+          }
+        }
+      }
+    },
+    "attack_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "attempted",
+        "accepted",
+        "rejected",
+        "http_status_code",
+        "reason",
+        "allocation_failures_before",
+        "allocation_failures_after",
+        "heap_delta_bytes"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "http_status_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 599
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allocation_failures_before": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allocation_failures_after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "heap_delta_bytes": {
+          "type": "integer"
         }
       }
     },
@@ -240,21 +475,148 @@
     "resources": {
       "type": "object",
       "additionalProperties": false,
+      "properties": {
+        "steady": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "free_internal_heap_min",
+            "largest_internal_block_min"
+          ],
+          "properties": {
+            "free_internal_heap_min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "largest_internal_block_min": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "transient": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "free_internal_heap_min"
+          ],
+          "properties": {
+            "free_internal_heap_min": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "attack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "free_internal_heap_min"
+          ],
+          "properties": {
+            "free_internal_heap_min": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "allocation_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "metrics_encode_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "task_stack_samples": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/task_stack_sample"
+          }
+        },
+        "https_occupancy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "established",
+            "pending_handshakes"
+          ],
+          "properties": {
+            "established": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pending_handshakes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "transient_burst": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "window_us",
+            "wss_frames",
+            "wss_bytes",
+            "import_bytes",
+            "session_items",
+            "approval_fragments",
+            "approval_bytes"
+          ],
+          "properties": {
+            "window_us": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "wss_frames": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wss_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "import_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "session_items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "approval_fragments": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "approval_bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "task_stack_sample": {
+      "type": "object",
+      "additionalProperties": false,
       "required": [
-        "heap_free_bytes",
-        "largest_block_bytes",
-        "max_stack_bytes"
+        "name",
+        "configured_bytes",
+        "minimum_free_bytes"
       ],
       "properties": {
-        "heap_free_bytes": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configured_bytes": {
           "type": "integer",
           "minimum": 0
         },
-        "largest_block_bytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "max_stack_bytes": {
+        "minimum_free_bytes": {
           "type": "integer",
           "minimum": 0
         }
@@ -267,7 +629,9 @@
         "generated",
         "queued",
         "queue_failures",
-        "buckets"
+        "overflow_samples",
+        "p95_upper_bound_us",
+        "release_all_observed"
       ],
       "properties": {
         "generated": {
@@ -282,27 +646,97 @@
           "type": "integer",
           "minimum": 0
         },
-        "buckets": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "upper_us",
-              "count"
-            ],
-            "properties": {
-              "upper_us": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "count": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
-          }
+        "overflow_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "p95_upper_bound_us": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "release_all_observed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidence_clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "run_id",
+        "boot_id",
+        "app_elf_sha256",
+        "firmware_image_sha256",
+        "device_id_sha256",
+        "first_ns",
+        "last_ns"
+      ],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "boot_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "app_elf_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "firmware_image_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "device_id_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "first_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_ns": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "artifact_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "byte_length",
+        "first_runner_receipt_ns",
+        "last_runner_receipt_ns"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_runner_receipt_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_runner_receipt_ns": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -310,12 +744,31 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "raw_log_sha256",
-        "raw_hid_log_sha256",
-        "raw_resource_log_sha256",
         "report_sha256"
       ],
       "properties": {
+        "raw_serial_log": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "raw_companion_log": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "raw_hid_log": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "raw_resource_log": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "raw_attacker_log": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "flash_backup": {
+          "$ref": "#/$defs/artifact_reference"
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "raw_log_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
@@ -327,66 +780,8 @@
         "raw_resource_log_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        },
-        "report_sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        }
-      }
-    },
-    "blockers": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "consistency_errors": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    }
-  },
-  "required": [
-    "schema_version",
-    "capture_complete",
-    "run",
-    "hardware",
-    "services",
-    "ble_identity",
-    "https",
-    "web_security",
-    "wss",
-    "resources",
-    "hid",
-    "artifacts",
-    "blockers",
-    "consistency_errors"
-  ],
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "capture_complete": {
-            "const": true
-          }
-        },
-        "required": ["capture_complete"]
-      },
-      "then": {
-        "properties": {
-          "run": {
-            "properties": {
-              "git_tree_clean": {
-                "const": true
-              }
-            },
-            "required": ["git_tree_clean"]
-          }
         }
       }
     }
-  ]
+  }
 }
