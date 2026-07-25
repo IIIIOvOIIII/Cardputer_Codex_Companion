@@ -321,3 +321,10 @@
 - Expected result: 首次立即同步；成功后 30 秒检查；失败后 5 秒重试；action/snapshot 错误不再跳过 pet check；请求保持串行；恢复用户实际宠物后设备与三项连接状态正常。
 - Result: Achieved — 节拍器测试先因 `PetSyncCadence` 不存在而 RED，集成契约先因宠物同步仍位于 action `do` 块中而 RED；GREEN 后 Swift pet harness 和 Companion packaging 22/22 通过。完整门禁通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 target build、Swift release/doctor、产品分区和 private packaging。隔离 HIL 完成 `seedy → rocky → seedy`，两种宠物均真实上传并激活；首个可读探测在切换后 32.8 秒已显示 transaction active，外部轮询与 417–472 KiB 分块上传竞争时出现 curl 35/28，但新的 5 秒重试持续推进并最终提交。恢复真实 LaunchAgent 后设备为 `seedy`、摘要 `42c04b6256f2...`、事务 inactive、`last_result=ok`，status 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 全部 `OK`。Companion executable 为 615,936 bytes，SHA-256 `e1d8b862ff2bdc996f4c0936511cf0b3f924951f62791a9f33835330defc19c7`；private full image 为 1,645,472 bytes，SHA-256 `01e9614df8dac8d5f7e385a9c2dd16520bb7ff62401900f61929bf673f9dae87`。CO: Not required，属于本机开发和局域网设备验证。
 - Next step: 提交 HIL 证据，将修复 fast-forward 合并到 `main`，在主分支重新构建并把 LaunchAgent 切换到主仓库 app。
+
+## 2026-07-25 21:20 HKT
+
+- Current work: 将宠物同步可靠性修复 fast-forward 合并到 `main`，从合并结果重新构建发布制品并切换正式 LaunchAgent。
+- Expected result: `main`、运行中的 macOS Companion 和最终交付制品来自同一源代码；设备保留实际 `seedy` 宠物并恢复全部在线状态。
+- Result: Achieved — `main` 完整发布门禁再次通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4、Swift release/doctor、产品分区与 private packaging。LaunchAgent 现运行主仓库 `dist/CardputerCompanion.app`；设备宠物为 `seedy`、摘要 `42c04b6256f2...`、`last_result=ok`、事务 inactive，status 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 均 `OK`。主分支 Companion executable 为 614,992 bytes，SHA-256 `ba0f30f48d796cefb0f75e8242c6d30ecc0a2b3155eecfe8cf3bd2260b0d66ea`；private full image 为 1,645,472 bytes，SHA-256 `ee597f5217f0e303cc462dc0eaab25a8dfb05fa21740e468e58d6c28e29007b5`。
+- Next step: 提交最终主分支证据并清理已合并的 worktree/feature branch；仓库无 remote，因此没有 push 目标。
