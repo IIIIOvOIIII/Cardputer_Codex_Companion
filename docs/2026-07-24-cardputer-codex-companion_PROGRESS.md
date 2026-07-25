@@ -349,3 +349,10 @@
 - Expected result: stale 边界由 10 秒调整为 30 秒；snapshot/action/pet status/begin/chunk/commit 均只在鉴权成功后刷新同一心跳；Mac 轮询频率和串行 HTTPS 架构不变；生成可 app-only 部署的 1.0.29 镜像。
 - Result: Achieved for implementation/release — 协议测试先因 30 秒边界缺失而 RED，路由契约先因缺少统一 `note_companion_activity()` 而 RED；GREEN 后所有 Companion 专用路由均在 `authorized(request)` 之后刷新心跳。版本测试分别对旧 1.0.28 编译/运行失败，升级双来源后转绿。完整门禁通过：Python 118/118、普通 host 24/24、ASan/UBSan 24/24、Web assets、ESP-IDF 5.5.4 target build、产品分区、120,649 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。应用镜像 1,514,416 bytes，SHA-256 `b54e7ba207ad99695c9680c45773b14ae06f4d72262ea5ac22cf1349beca5366`；private full image 1,645,488 bytes，SHA-256 `69d21266cae6097cf416e7d84b6f73a01dddb00e4043972bb6c995fd3fff86dc`。首次门禁仅因 worktree 缺少被忽略的 `.tools` 目录停止；链接主仓库既有工具链后原样重跑成功。
 - Next step: 提交发布证据，将 1.0.29 应用镜像 app-only 写入 `0x20000`，重载 Companion 并完成超过旧 10 秒窗口的真机在线稳定性验证。
+
+## 2026-07-25 22:05 HKT
+
+- Current work: 将 1.0.29 app-only 部署到当前 Cardputer，重载隔离分支 Companion，并验证在线状态、持久化配置和 BLE 连接。
+- Expected result: 应用写入及独立 verify 均匹配；设备、LaunchAgent 和交付候选来自同一分支；Mac 状态在真实 curl reset/timeout 下仍跨越多个旧 10 秒窗口保持在线；现有 PIN、Wi‑Fi、Profile、BLE bond 和宠物缓存不丢失。
+- Result: Achieved for HIL — `/dev/cu.usbmodem21201` 仅写入 `0x20000` 的 1,514,416-byte 应用镜像，esptool 报告 `Hash of data verified`，随后 `verify_flash` 返回 `digest matched`。LaunchAgent PID 39949 运行 worktree `dist/CardputerCompanion.app`。设备初始及最终状态均为 version 1.0.29、BLE/Wi‑Fi/Mac 全部 `OK`；每 12 秒一次、共 7 次的约 72 秒公共状态采样全部通过，而该 `/api/v1/status` 路由不会刷新 Companion 心跳。采样期间 agent stderr 仍记录 curl 35 reset 与 curl 28 timeout，设备未误报离线。鉴权读取确认原 `SAFE` Profile revision 11、224 bindings 及 `bsod` 宠物摘要前缀 `e497204f78ef`/format 1/cache 均保留；macOS `system_profiler` 仍在 Connected 下识别 `Cardputer Codex` 为 Keyboard。未记录 PIN 或 Wi‑Fi 密码。
+- Next step: 对最终分支重新执行完成门禁，选择合并方式；若合并至 `main`，必须从合并结果重建、重载并再次 app-only 刷入，确保主分支、运行态和交付制品同源。
