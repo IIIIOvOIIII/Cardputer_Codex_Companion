@@ -300,3 +300,10 @@
 - Expected result: 最终源码、交付镜像、Mac Companion 和实机运行版本一致；颜色、背景、空帧和 HTTPS 同步节流均有自动化及设备侧证据；原 PIN、Wi-Fi、BLE bonds 和宠物缓存保持不变。
 - Result: Achieved — `main` 完整门禁通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 目标构建、Swift release/doctor、产品分区与 private packaging；应用镜像 1,514,400 bytes，SHA-256 `be960856e2679368c207be2177713cb9a727489d600bd09fa4eb0ace8f4faab6`。应用镜像已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool 报告 `Hash of data verified`；重启后状态 API 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 均 `OK`。设备仍持有 rocky 缓存摘要 `476d93d7f7e3...`、大小 471,624 bytes、状态 `cached`。最终 private full image 为 1,645,472 bytes，SHA-256 `ee6a3e81259d10c5de79774472ae5d0ec24f5af18c1e930af61b291d9779c0ca`。
 - Next step: 交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`；最终颜色与动画观感由用户在实体屏幕上确认。当前仓库无 remote，因此无 push 目标。
+
+## 2026-07-25 20:20 HKT
+
+- Current work: 排查 Codex 更换宠物后 Cardputer 未及时同步，并确定不增加 ESP32 HTTPS 并发的可靠性修复边界。
+- Expected result: 建立当前 Mac 选择、设备缓存、Companion 日志和主循环控制流之间的证据链；形成用户确认的 30 秒内同步设计。
+- Result: Achieved for diagnosis/design — Mac 当前选择和 Cardputer 最终缓存均为 `seedy`，设备摘要为 `42c04b6256f2...`，证明选择解析、转码、上传、提交与缓存链路可用；Companion 日志持续出现 curl 35 连接重置和 curl 28 超时。根因是 30 秒 pet check 位于 action/snapshot 共用 `do` 块末端，任一前置请求失败都会跳过该轮宠物检查，使实际延迟无上限。用户确认采用串行独立节拍：宠物同步到期时优先执行，成功后 30 秒复查，失败后 5 秒重试，且与 action/snapshot 使用独立错误边界。
+- Next step: 用户审阅 `docs/superpowers/specs/2026-07-25-cardputer-pet-sync-reliability-design.md`；批准后编写测试先行实施计划。
