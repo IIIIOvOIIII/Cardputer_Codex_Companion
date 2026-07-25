@@ -14,11 +14,11 @@
 
   <main id="auth-screen" class="auth-layout">
     <section class="panel auth-card">
-      <h2>先输入设备 PIN</h2>
-      <p class="hint">PIN 显示在 Cardputer 屏幕上。鉴权通过后才进入键盘配置页面。</p>
+      <h2>Codex Companion Login</h2>
+      <p class="hint">请输入设备PIN码进行鉴权</p>
       <form id="pin-form">
         <label>设备 PIN
-          <input id="login-pin" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" placeholder="8 位数字">
+          <input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" pattern="[0-9]{8}" placeholder="8 位数字">
         </label>
         <button class="primary" type="submit">进入控制台</button>
       </form>
@@ -142,6 +142,16 @@
         <button id="apply-key" class="primary" type="submit">保存并发布</button>
       </div>
     </form>
+  </div>
+
+  <div id="result-modal" class="modal result-modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-message">
+    <section id="result-card" class="modal-card result-card">
+      <h2 id="result-title">修改成功</h2>
+      <p id="result-message"></p>
+      <div class="modal-actions">
+        <button id="result-close" class="primary" type="button">确定</button>
+      </div>
+    </section>
   </div>
 
   <!--SCRIPT-->
