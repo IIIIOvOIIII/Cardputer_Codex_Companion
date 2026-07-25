@@ -314,3 +314,10 @@
 - Expected result: 计划包含明确文件、接口、RED/GREEN 命令、串行网络约束、LaunchAgent 部署、30 秒传播测量和用户配置隔离恢复。
 - Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-cardputer-pet-sync-reliability.md`，共三个独立任务：纯 `ContinuousClock` 节拍器、主循环错误边界重构、完整发布与隔离 `CODEX_HOME` 实机切换。计划不修改 CCPT、固件协议或用户实际 Codex 配置，并明确禁止并发 Cardputer HTTPS 请求和凭据日志。
 - Next step: 用户选择 Subagent-Driven 或 Inline Execution；随后在隔离 worktree 中按计划执行。
+
+## 2026-07-25 21:11 HKT
+
+- Current work: 完成宠物同步独立节拍、错误边界重构、完整发布门禁和隔离 `CODEX_HOME` 实机切换。
+- Expected result: 首次立即同步；成功后 30 秒检查；失败后 5 秒重试；action/snapshot 错误不再跳过 pet check；请求保持串行；恢复用户实际宠物后设备与三项连接状态正常。
+- Result: Achieved — 节拍器测试先因 `PetSyncCadence` 不存在而 RED，集成契约先因宠物同步仍位于 action `do` 块中而 RED；GREEN 后 Swift pet harness 和 Companion packaging 22/22 通过。完整门禁通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 target build、Swift release/doctor、产品分区和 private packaging。隔离 HIL 完成 `seedy → rocky → seedy`，两种宠物均真实上传并激活；首个可读探测在切换后 32.8 秒已显示 transaction active，外部轮询与 417–472 KiB 分块上传竞争时出现 curl 35/28，但新的 5 秒重试持续推进并最终提交。恢复真实 LaunchAgent 后设备为 `seedy`、摘要 `42c04b6256f2...`、事务 inactive、`last_result=ok`，status 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 全部 `OK`。Companion executable 为 615,936 bytes，SHA-256 `e1d8b862ff2bdc996f4c0936511cf0b3f924951f62791a9f33835330defc19c7`；private full image 为 1,645,472 bytes，SHA-256 `01e9614df8dac8d5f7e385a9c2dd16520bb7ff62401900f61929bf673f9dae87`。CO: Not required，属于本机开发和局域网设备验证。
+- Next step: 提交 HIL 证据，将修复 fast-forward 合并到 `main`，在主分支重新构建并把 LaunchAgent 切换到主仓库 app。
