@@ -237,3 +237,10 @@
 - Expected result: 组合键完全经 BLE HID 执行且具有可被主机观察到的按下保持时间；可表示的 ASCII 字符串逐键走 HID、不依赖 Mac Agent；中文及其他 Unicode 仍走原生 Unicode Agent 通道。
 - Result: Achieved — 回归测试先复现了组合键按下/释放之间无间隔，以及 ASCII 字符串被无条件发送到当前未获辅助功能权限的 Mac Agent。组合键现按“按下、保持 30 ms、释放”直接走 BLE HID；可表示的 US-HID ASCII 字符串逐键走 HID（每键按下 30 ms、释放 10 ms），中文及其他 Unicode 整串保留 GATT/Companion 路径；测试覆盖大小写、Shift 标点和通道隔离。完整发布门禁通过：Python 103/103、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。1.0.26 应用镜像 1,488,848 bytes，SHA-256 `4f4ea3fcbe414b048d9939d7292f0d76958a49d28ed51224945a4972cefe9024`；private full image 1,619,920 bytes，SHA-256 `82ce7c8339be6afddf2c1ff675586d7a1396612bb3acfef0666c79036fd086f4`。应用镜像已刷入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool hash verified；HTTPS 状态返回 `version=1.0.26`、BLE/Wi-Fi/Mac 均 `OK`，Profile revision 6 和 V 键 `hihihi` 配置保持不变。
 - Next step: 用户在任意 Mac 文本框按 V 验证现有 `hihihi` 映射，并将任意键设为组合键做实体输入复验；中文等 Unicode 仍需在 macOS 辅助功能中授权 `CardputerCompanion.app`。
+
+## 2026-07-25 17:27 HKT
+
+- Current work: 完成键位结果反馈、登录 PIN 掩码、登录文案和间距调整的设计确认，并将实施拆分为静态结构、交互发布、1.0.27 发布部署三个测试先行任务。
+- Expected result: 规格与计划无占位符、接口命名一致，覆盖保存及恢复直通的成功/失败窗口、PIN 掩码、指定文案、样式、生成资源、完整门禁与 app-only 实机刷写。
+- Result: Achieved — 设计提交为 `c1e8d5f`；实施计划写入 `docs/superpowers/plans/2026-07-25-web-key-result-login-polish.md`，明确了 RED/GREEN 命令、具体 HTML/CSS/JavaScript、版本双来源、发布门禁和实机验证步骤。
+- Next step: 用户选择 inline execution 后，按计划执行 Tasks 1–3。
