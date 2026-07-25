@@ -1,5 +1,14 @@
 import Foundation
 
+public protocol CodexRPCClient: AnyObject {
+    func start() throws
+    func request(
+        method: String,
+        params: [String: Any]
+    ) throws -> [String: Any]
+    func respondToPendingApproval(approved: Bool) throws
+}
+
 public enum JSONRPCProcessError: Error {
     case notRunning
     case malformedResponse
@@ -7,7 +16,7 @@ public enum JSONRPCProcessError: Error {
     case responseTooLarge
 }
 
-public final class JSONRPCProcess: @unchecked Sendable {
+public final class JSONRPCProcess: CodexRPCClient, @unchecked Sendable {
     private let process = Process()
     private let input = Pipe()
     private let output = Pipe()

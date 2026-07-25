@@ -43,6 +43,10 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
     public let petID: String
     public let petDigest: String
     public let petState: PetState
+    public let model: String?
+    public let thinkingLevel: String?
+    public let fast: Bool?
+    public let limits: [CodexLimitUsage]?
 
     enum CodingKeys: String, CodingKey {
         case type, sequence, title, cwd, state, approvals, inputs
@@ -50,6 +54,8 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
         case petID = "pet_id"
         case petDigest = "pet_digest"
         case petState = "pet_state"
+        case model, fast, limits
+        case thinkingLevel = "thinking_level"
     }
 
     public init(
@@ -62,7 +68,11 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
         inputs: UInt8,
         petID: String = "",
         petDigest: String = "",
-        petState: PetState = .idle
+        petState: PetState = .idle,
+        model: String? = nil,
+        thinkingLevel: String? = nil,
+        fast: Bool? = nil,
+        limits: [CodexLimitUsage]? = nil
     ) {
         self.type = "snapshot"
         self.sequence = sequence
@@ -75,6 +85,38 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
         self.petID = petID
         self.petDigest = petDigest
         self.petState = petState
+        self.model = model
+        self.thinkingLevel = thinkingLevel
+        self.fast = fast
+        self.limits = limits.map { Array($0.prefix(4)) }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
+            ?? "snapshot"
+        sequence = try values.decode(UInt64.self, forKey: .sequence)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        title = try values.decode(String.self, forKey: .title)
+        cwd = try values.decode(String.self, forKey: .cwd)
+        state = try values.decode(String.self, forKey: .state)
+        approvals = try values.decode(UInt8.self, forKey: .approvals)
+        inputs = try values.decode(UInt8.self, forKey: .inputs)
+        petID = try values.decodeIfPresent(String.self, forKey: .petID) ?? ""
+        petDigest = try values.decodeIfPresent(String.self, forKey: .petDigest)
+            ?? ""
+        petState = try values.decodeIfPresent(PetState.self, forKey: .petState)
+            ?? .idle
+        model = try values.decodeIfPresent(String.self, forKey: .model)
+        thinkingLevel = try values.decodeIfPresent(
+            String.self,
+            forKey: .thinkingLevel
+        )
+        fast = try values.decodeIfPresent(Bool.self, forKey: .fast)
+        limits = try values.decodeIfPresent(
+            [CodexLimitUsage].self,
+            forKey: .limits
+        ).map { Array($0.prefix(4)) }
     }
 
     public func hasSameContent(as other: CompanionSnapshot) -> Bool {
@@ -86,7 +128,11 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
             inputs == other.inputs &&
             petID == other.petID &&
             petDigest == other.petDigest &&
-            petState == other.petState
+            petState == other.petState &&
+            model == other.model &&
+            thinkingLevel == other.thinkingLevel &&
+            fast == other.fast &&
+            limits == other.limits
     }
 
     public func withSequence(_ value: UInt64) -> CompanionSnapshot {
@@ -100,7 +146,11 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
             inputs: inputs,
             petID: petID,
             petDigest: petDigest,
-            petState: petState
+            petState: petState,
+            model: model,
+            thinkingLevel: thinkingLevel,
+            fast: fast,
+            limits: limits
         )
     }
 
@@ -115,7 +165,11 @@ public struct CompanionSnapshot: Codable, Equatable, Sendable {
             inputs: inputs,
             petID: id,
             petDigest: digest,
-            petState: petState
+            petState: petState,
+            model: model,
+            thinkingLevel: thinkingLevel,
+            fast: fast,
+            limits: limits
         )
     }
 }

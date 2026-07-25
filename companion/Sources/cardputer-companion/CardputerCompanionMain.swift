@@ -90,17 +90,7 @@ struct CardputerCompanionMain {
                     lastPostedSnapshot = nil
                 }
                 try adapter.perform(action.action)
-                var currentSnapshot = try adapter.snapshot().withPet(
-                    id: synchronizedPet.petID,
-                    digest: synchronizedPet.digest
-                )
-                try await postSnapshotIfChanged(
-                    currentSnapshot,
-                    bridge: bridge,
-                    lastPosted: &lastPostedSnapshot,
-                    wireSequence: &wireSequence
-                )
-                currentSnapshot = try adapter.snapshot().withPet(
+                let currentSnapshot = try adapter.snapshot().withPet(
                     id: synchronizedPet.petID,
                     digest: synchronizedPet.digest
                 )

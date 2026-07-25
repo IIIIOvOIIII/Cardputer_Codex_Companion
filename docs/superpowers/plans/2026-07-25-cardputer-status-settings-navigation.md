@@ -81,8 +81,10 @@
 - Modify: `companion/Sources/CodexAppServer/JSONRPCProcess.swift`
 - Modify: `companion/Sources/CodexAppServer/CodexAdapter.swift`
 - Modify: `companion/Sources/cardputer-companion/CardputerCompanionMain.swift`
+- Modify: `companion/Package.swift`
 - Test: `companion/Tests/ProductContractsTests/CompanionDTOTests.swift`
 - Test: `companion/Tests/CodexAppServerTests/CodexAdapterTests.swift`
+- Create: `companion/Tests/ProductTelemetryExecutableTests/main.swift`
 
 **Interfaces:**
 - Produces:
@@ -114,12 +116,12 @@ public struct CodexTelemetry: Equatable, Sendable {
 
 - `CompanionSnapshot` gains optional `model`, `thinkingLevel`, `fast`, and a
   bounded `[CodexLimitUsage]` with snake-case keys.
-- `CodexTelemetryReader.read(threadID:now:)` returns session values plus only
-  fresh classified limits.
+- `CodexTelemetryReader.read(thread:now:)` reads the latest session
+  `turn_context`, global service tier, and only fresh classified limits.
 - `CodexRPCClient` exposes `start()`, `request(method:params:)`, and approval
   response so a fake can test `CodexAdapter`.
 
-- [ ] **Step 1: Write failing Codable and content-equality tests**
+- [x] **Step 1: Write failing Codable and content-equality tests**
 
 Add tests that encode:
 
@@ -148,30 +150,31 @@ let telemetry = CompanionSnapshot(
 Assert `thinking_level`, `used_percent`, `scope`, and `window` are exact, and
 that changing Fast or a limit percentage makes `hasSameContent` return false.
 
-- [ ] **Step 2: Run the ProductContracts RED test**
+- [x] **Step 2: Run the ProductContracts RED test**
 
 Run:
 
 ```bash
-swift test --package-path companion --filter ProductContractsTests
+swift run --package-path companion product-telemetry-tests
 ```
 
 Expected: compile failure because the telemetry types and initializer fields do
-not exist.
+not exist. This executable target mirrors the XCTest assertions because the
+installed Command Line Tools Swift distribution has no XCTest module.
 
-- [ ] **Step 3: Implement the telemetry DTO and snapshot fields**
+- [x] **Step 3: Implement the telemetry DTO and snapshot fields**
 
 Implement the exact enums and structs above. Clamp decoded limit arrays to four
 entries in a custom `CompanionSnapshot.init(from:)`, and keep all new fields
 optional/defaulted so existing call sites and old payloads still decode.
 
-- [ ] **Step 4: Run ProductContracts GREEN**
+- [x] **Step 4: Run ProductContracts GREEN**
 
 Run the command from Step 2.
 
 Expected: all ProductContracts tests pass.
 
-- [ ] **Step 5: Write failing app-server classification and cache tests**
+- [x] **Step 5: Write failing app-server classification and cache tests**
 
 Use a fake `CodexRPCClient` with these response facts:
 
@@ -194,8 +197,9 @@ let rateLimitsByLimitID: [String: Any] = [
 
 Assert:
 
-- `thread/resume` maps model `gpt-5.6`, reasoning `high`, service tier
-  `priority` to Fast ON;
+- the latest JSONL `turn_context` maps model `gpt-5.6` and effort `high`,
+  while `config/read` service tier `priority` maps Fast ON;
+- a valid `turn_context` remains discoverable behind a 600 KiB turn payload;
 - exactly four ordered limit rows are returned;
 - a 301-minute window, unnamed Spark bucket, duplicate conflict, or missing
   `usedPercent` is omitted;
@@ -203,18 +207,18 @@ Assert:
 - a refresh occurs at 60 seconds;
 - cached limits disappear after 120 seconds without a successful refresh.
 
-- [ ] **Step 6: Run the CodexAppServer RED test**
+- [x] **Step 6: Run the CodexAppServer RED test**
 
 Run:
 
 ```bash
-swift test --package-path companion --filter CodexAppServerTests
+swift run --package-path companion product-telemetry-tests
 ```
 
 Expected: compile failure because `CodexTelemetryReader` and `CodexRPCClient`
 do not exist.
 
-- [ ] **Step 7: Implement the RPC protocol and telemetry reader**
+- [x] **Step 7: Implement the RPC protocol and telemetry reader**
 
 Make `JSONRPCProcess` conform to `CodexRPCClient`. Implement exact identity
 normalization by lowercasing and removing non-alphanumeric characters. Accept
@@ -222,41 +226,43 @@ Spark only when the normalized ID or name contains
 `gpt53codexspark`; accept ordinary Codex only when identity contains `codex`
 and not `spark`. Match only `300` and `10080` minute windows.
 
-Keep the last successful limit observation and timestamps in
-`CodexTelemetryReader`; do not perform a limit RPC inside the 60-second
-cadence.
+Read at most the last 8 MiB of the JSONL path and scan backward for the latest
+complete `turn_context`. Keep the last successful limit observation and
+timestamps in `CodexTelemetryReader`; do not perform a limit RPC inside the
+60-second cadence.
 
-- [ ] **Step 8: Update CodexAdapter and the main loop**
+- [x] **Step 8: Update CodexAdapter and the main loop**
 
-For the selected thread, call `thread/resume` through the isolated app-server
-process and attach telemetry to the snapshot. Change the main loop to compute
-one Codex snapshot per two-second iteration after applying any remote action;
-remove the immediate duplicate `adapter.snapshot()` call.
+For the selected thread, read its latest `turn_context`, call `config/read`,
+and attach telemetry to the snapshot. Never call `thread/resume` for
+telemetry. Change the main loop to compute one Codex snapshot per two-second
+iteration after applying any remote action; remove the immediate duplicate
+`adapter.snapshot()` call.
 
 On a rate-limit error, retain only a still-fresh cache and continue publishing
 base session state. Do not add a Cardputer request.
 
-- [ ] **Step 9: Run Swift GREEN and release compilation**
+- [x] **Step 9: Run Swift GREEN and release compilation**
 
 Run:
 
 ```bash
-swift test --package-path companion
+swift run --package-path companion product-telemetry-tests
 swift build --package-path companion -c release
 ```
 
 Expected: all Swift tests pass and the release executable links.
 
-- [ ] **Step 10: Perform the non-mutating thread/resume gate**
+- [x] **Step 10: Perform the non-mutating telemetry gate**
 
-Start the release Companion against a temporary app-server process, record the
-selected thread status before and after one `thread/resume`, and confirm no turn
-is created and no thread content/status changes. Record only model-independent
-booleans and method results; do not record session IDs or titles.
+Start a temporary app-server process, read the selected JSONL tail, call
+`config/read` and `account/rateLimits/read`, and confirm no turn is created and
+no thread content/status changes. Record only model-independent booleans and
+method results; do not record session IDs or titles.
 
-Expected: `thread/resume` loads effective settings into the isolated process
-without starting a turn. If this fails, stop implementation and revise the
-approved design before continuing.
+Expected: context/config/limits are available and all three mutation booleans
+are false. Live result: available booleans were true; turn-created,
+status-changed, and last-turn-changed were false.
 
 - [ ] **Step 11: Commit Task 1**
 

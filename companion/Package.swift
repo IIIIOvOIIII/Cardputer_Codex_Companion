@@ -16,7 +16,8 @@ let package = Package(
         .library(name: "ProductUnicode", targets: ["ProductUnicode"]),
         .library(name: "ProductGATT", targets: ["ProductGATT"]),
         .executable(name: "cardputer-phase0-probe", targets: ["cardputer-phase0-probe"]),
-        .executable(name: "cardputer-companion", targets: ["cardputer-companion"])
+        .executable(name: "cardputer-companion", targets: ["cardputer-companion"]),
+        .executable(name: "product-telemetry-tests", targets: ["product-telemetry-tests"])
     ],
     targets: [
         .systemLibrary(name: "CSQLite", pkgConfig: "sqlite3"),
@@ -99,6 +100,11 @@ let package = Package(
             name: "product-pet-tests",
             dependencies: ["ProductContracts", "CodexAppServer", "ProductPet"],
             path: "Tests/ProductPetExecutableTests"
+        ),
+        .executableTarget(
+            name: "product-telemetry-tests",
+            dependencies: ["ProductContracts", "CodexAppServer"],
+            path: "Tests/ProductTelemetryExecutableTests"
         ),
         .testTarget(name: "Phase0ContractsTests", dependencies: ["Phase0Contracts"]),
         .testTarget(name: "Phase0LedgerTests", dependencies: ["Phase0Ledger"]),

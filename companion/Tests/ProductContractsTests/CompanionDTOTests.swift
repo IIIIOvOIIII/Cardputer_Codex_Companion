@@ -62,4 +62,107 @@ final class CompanionDTOTests: XCTestCase {
         )
         XCTAssertTrue(value.needsSnapshot)
     }
+
+    func testSnapshotEncodesCodexTelemetryWithStableKeys() throws {
+        let value = CompanionSnapshot(
+            sequence: 7,
+            sessionID: "thread-1",
+            title: "Cardputer",
+            cwd: "/tmp/project",
+            state: "active",
+            approvals: 0,
+            inputs: 0,
+            model: "gpt-5.6",
+            thinkingLevel: "high",
+            fast: true,
+            limits: [
+                CodexLimitUsage(
+                    scope: .codex,
+                    window: .fiveHours,
+                    usedPercent: 38
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(value)
+        let json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(json["thinking_level"] as? String, "high")
+        XCTAssertEqual(json["fast"] as? Bool, true)
+        let limit = try XCTUnwrap((json["limits"] as? [[String: Any]])?.first)
+        XCTAssertEqual(limit["scope"] as? String, "codex")
+        XCTAssertEqual(limit["window"] as? String, "5h")
+        XCTAssertEqual(limit["used_percent"] as? Int, 38)
+    }
+
+    func testSnapshotContentComparisonIncludesTelemetry() {
+        let base = CompanionSnapshot(
+            sequence: 1,
+            sessionID: "thread-1",
+            title: "Cardputer",
+            cwd: "/tmp/project",
+            state: "active",
+            approvals: 0,
+            inputs: 0,
+            model: "gpt-5.6",
+            thinkingLevel: "high",
+            fast: true,
+            limits: [
+                CodexLimitUsage(
+                    scope: .codex,
+                    window: .fiveHours,
+                    usedPercent: 38
+                )
+            ]
+        )
+        let changedFast = CompanionSnapshot(
+            sequence: 2,
+            sessionID: "thread-1",
+            title: "Cardputer",
+            cwd: "/tmp/project",
+            state: "active",
+            approvals: 0,
+            inputs: 0,
+            model: "gpt-5.6",
+            thinkingLevel: "high",
+            fast: false,
+            limits: base.limits
+        )
+        let changedLimit = CompanionSnapshot(
+            sequence: 3,
+            sessionID: "thread-1",
+            title: "Cardputer",
+            cwd: "/tmp/project",
+            state: "active",
+            approvals: 0,
+            inputs: 0,
+            model: "gpt-5.6",
+            thinkingLevel: "high",
+            fast: true,
+            limits: [
+                CodexLimitUsage(
+                    scope: .codex,
+                    window: .fiveHours,
+                    usedPercent: 39
+                )
+            ]
+        )
+        XCTAssertFalse(base.hasSameContent(as: changedFast))
+        XCTAssertFalse(base.hasSameContent(as: changedLimit))
+    }
+
+    func testSnapshotDecodingClampsLimitsToFourRows() throws {
+        let rows = (0..<6).map {
+            #"{"scope":"codex","window":"5h","used_percent":\#($0)}"#
+        }.joined(separator: ",")
+        let data = Data(
+            """
+            {"type":"snapshot","sequence":1,"session_id":"thread","title":"t",
+            "cwd":"/tmp","state":"active","approvals":0,"inputs":0,
+            "pet_id":"","pet_digest":"","pet_state":"idle","limits":[\(rows)]}
+            """.utf8
+        )
+        let value = try JSONDecoder().decode(CompanionSnapshot.self, from: data)
+        XCTAssertEqual(value.limits?.count, 4)
+    }
 }

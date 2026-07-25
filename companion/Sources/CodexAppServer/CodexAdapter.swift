@@ -2,13 +2,15 @@ import Foundation
 import ProductContracts
 
 public final class CodexAdapter {
-    private let rpc: JSONRPCProcess
+    private let rpc: CodexRPCClient
+    private let telemetryReader: CodexTelemetryReader
     private var threads: [[String: Any]] = []
     private var selectedIndex = 0
     private var sequence: UInt64 = 0
 
-    public init(rpc: JSONRPCProcess = JSONRPCProcess()) {
+    public init(rpc: CodexRPCClient = JSONRPCProcess()) {
         self.rpc = rpc
+        self.telemetryReader = CodexTelemetryReader(rpc: rpc)
     }
 
     public func start() throws {
@@ -46,7 +48,12 @@ public final class CodexAdapter {
                 inputs: 0
             )
         }
-        return normalize(threads[selectedIndex])
+        let selected = threads[selectedIndex]
+        let telemetry = try? telemetryReader.read(
+            thread: selected,
+            now: Date()
+        )
+        return normalize(selected, telemetry: telemetry)
     }
 
     public func perform(_ action: RemoteAction) throws {
@@ -74,7 +81,10 @@ public final class CodexAdapter {
         }
     }
 
-    private func normalize(_ thread: [String: Any]) -> CompanionSnapshot {
+    private func normalize(
+        _ thread: [String: Any],
+        telemetry: CodexTelemetry?
+    ) -> CompanionSnapshot {
         let status = thread["status"] as? [String: Any] ?? [:]
         let flags = status["activeFlags"] as? [String] ?? []
         let title = (thread["name"] as? String).flatMap {
@@ -91,7 +101,11 @@ public final class CodexAdapter {
             petState: PetState.resolve(
                 sessionState: status["type"] as? String ?? "unknown",
                 flags: flags
-            )
+            ),
+            model: telemetry?.model,
+            thinkingLevel: telemetry?.thinkingLevel,
+            fast: telemetry?.fast,
+            limits: telemetry?.limits
         )
     }
 

@@ -52,9 +52,9 @@ control, the current pet cache, and the existing Unicode GATT path.
 - The current product Web request limit is 16 KiB.
 - The current Mac Companion owns one serialized HTTPS request stream to the
   Cardputer. This must remain serialized to avoid ESP32 HTTPS contention.
-- The current app-server protocol, generated locally from Codex CLI `0.145.0`,
-  exposes `thread/resume`, `account/rateLimits/read`, `reasoningEffort`,
-  `serviceTier`, and multi-bucket rate-limit snapshots.
+- The current app-server exposes read-only `config/read` and
+  `account/rateLimits/read`; `thread/list` supplies the local session JSONL
+  path, whose latest `turn_context` records the effective model and effort.
 
 ## Considered Architectures
 
@@ -192,16 +192,17 @@ Rules:
 
 The existing `CodexAdapter` continues to select the first active thread, or the
 most recently updated thread when none is active. For the selected thread it
-uses `thread/resume` in the Companion's isolated app-server process to read:
+reads at most the last 8 MiB of the JSONL path returned by `thread/list` and
+uses the latest complete `turn_context` for:
 
 - effective model;
-- effective reasoning effort;
-- effective service tier.
+- effective reasoning effort.
 
-Resuming in this isolated process must not start a turn or modify the thread.
-This is an implementation gate: if live protocol verification shows a
-user-visible mutation, implementation stops and replaces the call with a
-non-mutating protocol source before proceeding.
+Fast comes from `config/read.config.service_tier`. The JSONL read,
+`config/read`, and `account/rateLimits/read` path is fully read-only. Live
+verification rejected `thread/resume` because it changed an unloaded thread
+from `notLoaded` to `idle`, despite creating no turn; the Agent must never call
+it for telemetry.
 
 ### Rate limits
 

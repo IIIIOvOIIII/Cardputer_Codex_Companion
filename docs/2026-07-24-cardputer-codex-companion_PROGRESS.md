@@ -377,3 +377,10 @@
 - Expected result: 明确 Swift app-server 遥测、固件可选字段解析、双 bank Profile Catalog、Web 多 Profile、设备端滚动设置、Wi-Fi 试连回滚、PIN Agent 迁移、运行时接线、版本发布及实机验收的文件、接口、RED/GREEN 命令和提交边界。
 - Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-cardputer-status-settings-navigation.md`，共九个顺序任务。计划固定统一鉴权快照、Fast 紧跟 Model、不可用限额隐藏、SAFE 加四个自定义 Profile、五分钟 PIN 迁移和 app-only `0x20000` 部署，并包含完整 release gate、实机矩阵与 30 分钟 soak。自检同时移除了不存在的刷写验证脚本引用，改用当前 esptool 的 `verify_flash`。
 - Next step: 选择 Subagent-Driven 或 Inline Execution；执行时从隔离 `feat/status-settings-navigation` worktree 开始，按 Tasks 1–9 完成实现、1.0.30 发布和实机部署。
+
+## 2026-07-25 23:37 HKT
+
+- Current work: 在隔离 `feat/status-settings-navigation` worktree 执行 Task 1 的 Codex 遥测 TDD，并验证 `thread/resume` 的真实只读边界。
+- Expected result: 通过统一 app-server 快照获得 Model、Thinking、Fast 和限额，同时不创建 turn、不改变 thread 状态。
+- Result: Partial / design gate not achieved — 完整基线门禁通过；遥测 DTO、四行限制、60 秒刷新及 120 秒隐藏已完成可执行 RED/GREEN，release Agent 可链接。本机缺少 XCTest 模块，因此按仓库现有模式增加无测试框架的 Swift 可执行测试。真实 app-server 检查确认 `thread/resume` 不创建 turn、也不改变最后一个 turn，但会把 thread 顶层状态从 `notLoaded` 改为 `idle`，违反批准的只读边界。只读替代来源已证实可用：`thread/list` 返回会话 JSONL path，最新 `turn_context` 含 model/effort；`config/read` 含 `service_tier`；`account/rateLimits/read` 保持不变。
+- Next step: 用户确认改用“JSONL 最新 turn_context + config/read + rateLimits/read”的只读替代后，删除 `thread/resume` 依赖、补齐相应 RED/GREEN，再继续 Tasks 2–9。
