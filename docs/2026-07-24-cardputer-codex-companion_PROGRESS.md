@@ -353,6 +353,13 @@
 ## 2026-07-25 22:05 HKT
 
 - Current work: 将 1.0.29 app-only 部署到当前 Cardputer，重载隔离分支 Companion，并验证在线状态、持久化配置和 BLE 连接。
-- Expected result: 应用写入及独立 verify 均匹配；设备、LaunchAgent 和交付候选来自同一分支；Mac 状态在真实 curl reset/timeout 下仍跨越多个旧 10 秒窗口保持在线；现有 PIN、Wi‑Fi、Profile、BLE bond 和宠物缓存不丢失。
-- Result: Achieved for HIL — `/dev/cu.usbmodem21201` 仅写入 `0x20000` 的 1,514,416-byte 应用镜像，esptool 报告 `Hash of data verified`，随后 `verify_flash` 返回 `digest matched`。LaunchAgent PID 39949 运行 worktree `dist/CardputerCompanion.app`。设备初始及最终状态均为 version 1.0.29、BLE/Wi‑Fi/Mac 全部 `OK`；每 12 秒一次、共 7 次的约 72 秒公共状态采样全部通过，而该 `/api/v1/status` 路由不会刷新 Companion 心跳。采样期间 agent stderr 仍记录 curl 35 reset 与 curl 28 timeout，设备未误报离线。鉴权读取确认原 `SAFE` Profile revision 11、224 bindings 及 `bsod` 宠物摘要前缀 `e497204f78ef`/format 1/cache 均保留；macOS `system_profiler` 仍在 Connected 下识别 `Cardputer Codex` 为 Keyboard。未记录 PIN 或 Wi‑Fi 密码。
+- Expected result: 应用写入及独立 verify 均匹配；设备、LaunchAgent 和交付候选来自同一分支；Mac 状态在真实 curl reset/timeout 下仍跨越多个旧 10 秒窗口保持在线；现有 PIN、Wi-Fi、Profile、BLE bond 和宠物缓存不丢失。
+- Result: Achieved for HIL — `/dev/cu.usbmodem21201` 仅写入 `0x20000` 的 1,514,416-byte 应用镜像，esptool 报告 `Hash of data verified`，随后 `verify_flash` 返回 `digest matched`。LaunchAgent PID 39949 运行 worktree `dist/CardputerCompanion.app`。设备初始及最终状态均为 version 1.0.29、BLE/Wi-Fi/Mac 全部 `OK`；每 12 秒一次、共 7 次的约 72 秒公共状态采样全部通过，而该 `/api/v1/status` 路由不会刷新 Companion 心跳。采样期间 agent stderr 仍记录 curl 35 reset 与 curl 28 timeout，设备未误报离线。鉴权读取确认原 `SAFE` Profile revision 11、224 bindings 及 `bsod` 宠物摘要前缀 `e497204f78ef`/format 1/cache 均保留；macOS `system_profiler` 仍在 Connected 下识别 `Cardputer Codex` 为 Keyboard。未记录 PIN 或 Wi-Fi 密码。
 - Next step: 对最终分支重新执行完成门禁，选择合并方式；若合并至 `main`，必须从合并结果重建、重载并再次 app-only 刷入，确保主分支、运行态和交付制品同源。
+
+## 2026-07-25 22:22 HKT
+
+- Current work: 将 Companion 心跳修复 fast-forward 合并至 `main`，从合并结果重建最终制品、重刷实机并把正式 LaunchAgent 切回主仓库。
+- Expected result: 主分支源码、交付镜像、Mac Companion 与实机运行版本完全同源；配置不丢失；BLE、Wi-Fi、Mac 状态在瞬时 HTTPS 故障后继续保持或自动恢复。
+- Result: Achieved — 主分支完整门禁重新通过：Python 118/118、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 target build、产品分区、120,649 bytes DIRAM headroom、Swift release/doctor 与 private packaging。最终应用镜像 1,514,416 bytes，SHA-256 `a81bf0eb50557e1b6cdb5b24be16dac864564ee56bb8757cd8a7fe60aab506b7`；private full image 1,645,488 bytes，SHA-256 `eeb9988758afba542278eab80ee656e553dd6875edc02b1e894e5781fc8e361e`。主分支应用镜像已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，写入 hash 和独立 `verify_flash` digest 均匹配。LaunchAgent PID 61270 运行主仓库 app；实机返回 version 1.0.29 且 BLE/Wi-Fi/Mac 全部 `OK`，约 38 秒复测期间一次 HTTPS 请求失败后后续采样自动恢复且 Mac 未掉线。鉴权复核保留 `SAFE` Profile revision 11、224 bindings 与 `bsod` 宠物；macOS 仍识别 `Cardputer Codex`。CO: Not required，属于本机与局域网开发设备变更。
+- Next step: 提交最终证据、清理已合并的 heartbeat worktree/branch，并交付主仓库 private full image；仓库无 remote，因此没有 push 目标。
