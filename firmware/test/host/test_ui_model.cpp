@@ -1,4 +1,6 @@
 #include <cassert>
+#include <array>
+#include <span>
 #include <string>
 
 #include "product/ui_model.hpp"
@@ -32,6 +34,19 @@ int main() {
   model.set_profile("CODEX");
   model.set_web("192.168.1.88", "12345678");
   model.set_session("agent-loop", "Cardputer_Codex_Companion", "WAITING", 2, 1);
+  const std::array limits{
+      CodexLimitUsage{
+          .scope = CodexLimitScope::codex,
+          .window = CodexLimitWindow::five_hours,
+          .used_percent = 38,
+      },
+      CodexLimitUsage{
+          .scope = CodexLimitScope::spark,
+          .window = CodexLimitWindow::weekly,
+          .used_percent = 22,
+      },
+  };
+  model.set_codex("gpt-5.6", "high", true, limits);
   const uint32_t runtime_revision = model.revision();
   model.set_mode(InputMode::codex_remote);
   model.set_ble(ServiceState::ok);
@@ -40,6 +55,7 @@ int main() {
   model.set_profile("CODEX");
   model.set_web("192.168.1.88", "12345678");
   model.set_session("agent-loop", "Cardputer_Codex_Companion", "WAITING", 2, 1);
+  model.set_codex("gpt-5.6", "high", true, limits);
   assert(model.revision() == runtime_revision);
 
   const std::string page = model.runtime_text();
@@ -52,18 +68,49 @@ int main() {
   assert(page.find("Cardputer_Codex_Companion") == std::string::npos);
 
   model.navigate(UiNavAction::next_page);
-  assert(model.page() == UiPage::connection);
+  assert(model.page() == UiPage::device_status);
   model.navigate(UiNavAction::next_page);
-  assert(model.page() == UiPage::session);
+  assert(model.page() == UiPage::codex_status);
+  UiPageContent codex = model.page_content();
+  std::string codex_joined;
+  for (uint8_t index = 0; index < codex.count; ++index) {
+    codex_joined.append(codex.lines[index]).push_back('\n');
+  }
+  const auto session_at = codex_joined.find("SESSION:");
+  const auto model_at = codex_joined.find("MODEL:");
+  const auto fast_at = codex_joined.find("FAST:");
+  const auto thinking_at = codex_joined.find("THINKING:");
+  const auto five_at = codex_joined.find("5H:");
+  const auto spark_at = codex_joined.find("SPARK WEEKLY:");
+  assert(session_at < model_at);
+  assert(model_at < fast_at);
+  assert(fast_at < thinking_at);
+  assert(thinking_at < five_at);
+  assert(five_at < spark_at);
   model.navigate(UiNavAction::next_page);
-  assert(model.page() == UiPage::device);
+  assert(model.page() == UiPage::sync_status);
+  model.set_pet("rocky", "0123456789abcdef", PetState::working, "ok");
+  model.set_heartbeat_age(3);
+  model.set_pet_sync_age(7);
+  const UiPageContent sync = model.page_content();
+  std::string sync_joined;
+  for (uint8_t index = 0; index < sync.count; ++index) {
+    sync_joined.append(sync.lines[index]).push_back('\n');
+  }
+  assert(sync_joined.find("IP:192.168.1.88") != std::string::npos);
+  assert(sync_joined.find("HEARTBEAT:3s") != std::string::npos);
+  assert(sync_joined.find("PET SYNC:ok 7s") != std::string::npos);
+  assert(sync_joined.find("PROFILE:CODEX") != std::string::npos);
+  model.navigate(UiNavAction::next_page);
+  assert(model.page() == UiPage::settings);
   model.navigate(UiNavAction::next_page);
   assert(model.page() == UiPage::pet);
   model.navigate(UiNavAction::previous_page);
-  assert(model.page() == UiPage::device);
+  assert(model.page() == UiPage::settings);
 
-  model.set_pet("rocky", "0123456789abcdef", PetState::working, "ok");
   model.set_pet_storage(25772, 1);
+  model.navigate(UiNavAction::next_page);
+  model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
   assert(device.count >= 5);
   std::string joined;
@@ -71,9 +118,25 @@ int main() {
     joined.append(device.lines[index]).push_back('\n');
   }
   assert(joined.find("FW:1.0.29") != std::string::npos);
-  assert(joined.find("PET:rocky") != std::string::npos);
-  assert(joined.find("FMT:1") != std::string::npos);
+  assert(joined.find("PIN:") != std::string::npos);
+  assert(joined.find("BLE:OK") != std::string::npos);
+  assert(joined.find("WIFI:OFF") != std::string::npos);
+  assert(joined.find("AGENT:OK") != std::string::npos);
   model.navigate(UiNavAction::scroll_down);
   assert(model.scroll_offset() <= device.count);
+
+  model.navigate(UiNavAction::next_page);
+  model.set_codex("gpt-5.6", "high", false, {});
+  codex = model.page_content();
+  codex_joined.clear();
+  for (uint8_t index = 0; index < codex.count; ++index) {
+    codex_joined.append(codex.lines[index]).push_back('\n');
+  }
+  assert(codex_joined.find("MODEL:gpt-5.6") != std::string::npos);
+  assert(codex_joined.find("FAST:OFF") != std::string::npos);
+  assert(codex_joined.find("5H") == std::string::npos);
+  assert(codex_joined.find("WEEKLY") == std::string::npos);
+  assert(codex_joined.find("N/A") == std::string::npos);
+  assert(codex_joined.find("NA") == std::string::npos);
   return 0;
 }

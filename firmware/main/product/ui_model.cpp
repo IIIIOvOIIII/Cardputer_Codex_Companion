@@ -137,6 +137,30 @@ void UiModel::set_session(std::string_view title, std::string_view cwd,
   ++revision_;
 }
 
+void UiModel::set_codex(std::string_view model,
+                        std::string_view thinking_level,
+                        std::optional<bool> fast,
+                        std::span<const CodexLimitUsage> limits) {
+  const std::string next_model = clipped(model, 32);
+  const std::string next_thinking = clipped(thinking_level, 16);
+  const uint8_t next_count = static_cast<uint8_t>(
+      std::min<std::size_t>(limits.size(), limits_.size()));
+  bool same = codex_model_ == next_model &&
+              thinking_level_ == next_thinking && fast_ == fast &&
+              limit_count_ == next_count;
+  for (uint8_t index = 0; same && index < next_count; ++index) {
+    same = limits_[index] == limits[index];
+  }
+  if (same) return;
+  codex_model_ = next_model;
+  thinking_level_ = next_thinking;
+  fast_ = fast;
+  limits_ = {};
+  std::copy_n(limits.begin(), next_count, limits_.begin());
+  limit_count_ = next_count;
+  ++revision_;
+}
+
 void UiModel::set_pet(std::string_view id, std::string_view digest,
                       PetState state, std::string_view sync_result) {
   std::string next_id = clipped(id, 64);
@@ -166,17 +190,17 @@ void UiModel::set_pet_storage(uint32_t used_bytes, uint16_t format_version) {
 void UiModel::set_heartbeat_age(uint32_t seconds) {
   if (heartbeat_age_seconds_ == seconds) return;
   heartbeat_age_seconds_ = seconds;
-  if (page_ == UiPage::connection) ++revision_;
+  if (page_ == UiPage::sync_status) ++revision_;
 }
 
 void UiModel::set_pet_sync_age(uint32_t seconds) {
   if (pet_sync_age_seconds_ == seconds) return;
   pet_sync_age_seconds_ = seconds;
-  if (page_ == UiPage::connection) ++revision_;
+  if (page_ == UiPage::sync_status) ++revision_;
 }
 
 void UiModel::navigate(UiNavAction action) {
-  constexpr uint8_t count = 4;
+  constexpr uint8_t count = 5;
   if (action == UiNavAction::previous_page ||
       action == UiNavAction::next_page) {
     const uint8_t current = static_cast<uint8_t>(page_);
@@ -214,42 +238,54 @@ UiPageContent UiModel::page_content() const {
     case UiPage::pet:
       add_line(content, std::string(pet_state_name(pet_state_)));
       break;
-    case UiPage::connection:
+    case UiPage::device_status:
       add_line(content, "BLE:" + std::string(compact_state(ble_)));
       add_line(content, "WIFI:" + std::string(compact_state(wifi_)));
-      add_line(content, "MAC:" + std::string(compact_state(companion_)));
+      add_line(content, "AGENT:" + std::string(compact_state(companion_)));
+      add_line(content, "FW:" + std::string(kProductVersion));
+      add_line(content, "PIN:********");
+      break;
+    case UiPage::codex_status:
+      add_line(content, "SESSION:" + session_title_);
+      if (!codex_model_.empty()) {
+        add_line(content, "MODEL:" + codex_model_);
+      }
+      if (fast_.has_value()) {
+        add_line(content, std::string("FAST:") +
+                              (*fast_ ? "ON" : "OFF"));
+      }
+      if (!thinking_level_.empty()) {
+        add_line(content, "THINKING:" + thinking_level_);
+      }
+      for (uint8_t index = 0; index < limit_count_; ++index) {
+        const CodexLimitUsage& limit = limits_[index];
+        std::string label;
+        if (limit.scope == CodexLimitScope::spark) {
+          label = "SPARK ";
+        }
+        label += limit.window == CodexLimitWindow::five_hours
+                     ? "5H:"
+                     : "WEEKLY:";
+        std::snprintf(value, sizeof(value), "%u%%",
+                      static_cast<unsigned>(limit.used_percent));
+        add_line(content, label + value);
+      }
+      break;
+    case UiPage::sync_status:
       add_line(content, "IP:" + ipv4_);
       std::snprintf(value, sizeof(value), "HEARTBEAT:%lus",
                     static_cast<unsigned long>(heartbeat_age_seconds_));
       add_line(content, value);
-      std::snprintf(value, sizeof(value), "PET SYNC:%lus",
+      std::snprintf(value, sizeof(value), "PET SYNC:%s %lus",
+                    pet_sync_result_.c_str(),
                     static_cast<unsigned long>(pet_sync_age_seconds_));
       add_line(content, value);
-      add_line(content, "SYNC:" + pet_sync_result_);
-      break;
-    case UiPage::session:
-      add_line(content, "TITLE:" + session_title_);
-      add_line(content, "STATE:" + session_state_);
-      add_line(content, "CWD:" + cwd_);
-      std::snprintf(value, sizeof(value), "APPROVALS:%u",
-                    static_cast<unsigned>(approvals_));
-      add_line(content, value);
-      std::snprintf(value, sizeof(value), "INPUTS:%u",
-                    static_cast<unsigned>(inputs_));
-      add_line(content, value);
-      break;
-    case UiPage::device:
-      add_line(content, "FW:" + std::string(kProductVersion));
       add_line(content, "PROFILE:" + profile_);
-      add_line(content, "PIN:" + pairing_code_);
-      add_line(content, "PET:" + pet_id_);
-      add_line(content, "SHA:" + clipped(pet_digest_, 12));
-      std::snprintf(value, sizeof(value), "STORE:%lu",
-                    static_cast<unsigned long>(pet_storage_used_));
-      add_line(content, value);
-      std::snprintf(value, sizeof(value), "FMT:%u",
-                    static_cast<unsigned>(pet_format_version_));
-      add_line(content, value);
+      break;
+    case UiPage::settings:
+      add_line(content, "KEYBOARD PROFILE");
+      add_line(content, "CHANGE PIN");
+      add_line(content, "BIND WIFI");
       break;
   }
   return content;

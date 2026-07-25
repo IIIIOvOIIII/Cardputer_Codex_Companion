@@ -44,16 +44,17 @@ const char* pet_state_name(PetState state) {
 const char* page_title(UiPage page) {
   switch (page) {
     case UiPage::pet: return "PET";
-    case UiPage::connection: return "CONNECTION";
-    case UiPage::session: return "SESSION";
-    case UiPage::device: return "DEVICE";
+    case UiPage::device_status: return "DEVICE";
+    case UiPage::codex_status: return "CODEX";
+    case UiPage::sync_status: return "SYNC";
+    case UiPage::settings: return "SETTINGS";
   }
   return "PET";
 }
 
 void draw_page_dots(UiPage active) {
-  constexpr int centers[] = {105, 115, 125, 135};
-  for (int index = 0; index < 4; ++index) {
+  constexpr int centers[] = {100, 110, 120, 130, 140};
+  for (int index = 0; index < 5; ++index) {
     const uint32_t color =
         index == static_cast<int>(active) ? kAccent : 0x39505a;
     M5.Display.fillCircle(centers[index], 131, 2, color);

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -8,6 +10,17 @@
 #include "product/pet_bundle.hpp"
 
 inline constexpr uint64_t kCompanionStaleAfterMs = 30000;
+
+enum class CodexLimitScope : uint8_t { codex, spark };
+enum class CodexLimitWindow : uint8_t { five_hours, weekly };
+
+struct CodexLimitUsage {
+  CodexLimitScope scope = CodexLimitScope::codex;
+  CodexLimitWindow window = CodexLimitWindow::five_hours;
+  uint8_t used_percent = 0;
+
+  bool operator==(const CodexLimitUsage&) const = default;
+};
 
 struct CompanionSnapshot {
   uint64_t sequence = 0;
@@ -20,6 +33,11 @@ struct CompanionSnapshot {
   std::string pet_id;
   std::string pet_digest;
   PetState pet_state = PetState::idle;
+  std::string model;
+  std::string thinking_level;
+  std::optional<bool> fast;
+  std::array<CodexLimitUsage, 4> limits{};
+  uint8_t limit_count = 0;
 };
 
 enum class CompanionMessageResult : uint8_t {

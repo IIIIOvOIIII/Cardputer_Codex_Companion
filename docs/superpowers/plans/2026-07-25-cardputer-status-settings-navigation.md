@@ -281,6 +281,7 @@ git commit -m "feat: add Codex telemetry snapshot"
 - Modify: `firmware/main/product/ui_model.hpp`
 - Modify: `firmware/main/product/ui_model.cpp`
 - Modify: `firmware/main/product/ui_navigation.cpp`
+- Modify: `firmware/main/product/display.cpp`
 - Test: `firmware/test/host/test_companion_protocol.cpp`
 - Test: `firmware/test/host/test_ui_model.cpp`
 - Test: `firmware/test/host/test_ui_navigation.cpp`
@@ -308,7 +309,7 @@ void UiModel::set_codex(std::string_view model,
 - `UiPage` is exactly `{pet, device_status, codex_status, sync_status,
   settings}`.
 
-- [ ] **Step 1: Write the failing optional telemetry parser test**
+- [x] **Step 1: Write the failing optional telemetry parser test**
 
 Extend the snapshot fixture with:
 
@@ -325,7 +326,7 @@ Extend the snapshot fixture with:
 Assert exact parsing, a maximum of four rows, percentage clamping/rejection,
 and that a malformed `limits` member does not reject the base snapshot.
 
-- [ ] **Step 2: Run the parser RED test**
+- [x] **Step 2: Run the parser RED test**
 
 ```bash
 cmake -S firmware/test/host -B build/product-host
@@ -335,20 +336,20 @@ cmake --build build/product-host --target test_companion_protocol -j
 
 Expected: compile failure because telemetry fields do not exist.
 
-- [ ] **Step 3: Implement bounded optional parsing**
+- [x] **Step 3: Implement bounded optional parsing**
 
 Retain the existing base field parser. Add bounded helpers that find the
 `limits` array, inspect no more than four objects, accept only exact enum
 strings, and never allocate from an untrusted claimed count. Clip Model to 32
 bytes and Thinking Level to 16 bytes.
 
-- [ ] **Step 4: Run parser GREEN**
+- [x] **Step 4: Run parser GREEN**
 
 Run the command from Step 2.
 
 Expected: `test_companion_protocol` exits zero.
 
-- [ ] **Step 5: Write failing five-page and row-order tests**
+- [x] **Step 5: Write failing five-page and row-order tests**
 
 In `test_ui_model.cpp`, navigate through:
 
@@ -380,7 +381,7 @@ SPARK WEEKLY:
 Call `set_codex` without limits and assert no line contains `5H`, `WEEKLY`,
 `N/A`, or `NA`.
 
-- [ ] **Step 6: Run the UI RED tests**
+- [x] **Step 6: Run the UI RED tests**
 
 ```bash
 cmake --build build/product-host --target test_ui_model test_ui_navigation -j
@@ -390,7 +391,7 @@ cmake --build build/product-host --target test_ui_model test_ui_navigation -j
 
 Expected: compile or assertion failure on the old four-page enum/content.
 
-- [ ] **Step 7: Implement the read-only page model**
+- [x] **Step 7: Implement the read-only page model**
 
 Move former connection/session/device fields into the approved Device, Codex,
 and Sync pages. Device has Version, PIN, BLE, Wi-Fi, Agent. Sync has IP,
@@ -401,7 +402,7 @@ present.
 Keep `UiPageContent` bounded at 12 rows and compute scroll maximum from actual
 row count.
 
-- [ ] **Step 8: Run UI GREEN and all host tests**
+- [x] **Step 8: Run UI GREEN and all host tests**
 
 ```bash
 cmake --build build/product-host -j

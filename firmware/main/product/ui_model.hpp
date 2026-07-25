@@ -2,14 +2,23 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
+#include "product/companion_protocol.hpp"
 #include "product/product_types.hpp"
 #include "product/pet_bundle.hpp"
 #include "product/ui_navigation.hpp"
 
-enum class UiPage : uint8_t { pet, connection, session, device };
+enum class UiPage : uint8_t {
+  pet,
+  device_status,
+  codex_status,
+  sync_status,
+  settings,
+};
 
 struct UiPageContent {
   std::array<std::string, 12> lines{};
@@ -35,6 +44,9 @@ class UiModel {
   void set_web(std::string_view ipv4, std::string_view pairing_code);
   void set_session(std::string_view title, std::string_view cwd,
                    std::string_view state, uint8_t approvals, uint8_t inputs);
+  void set_codex(std::string_view model, std::string_view thinking_level,
+                 std::optional<bool> fast,
+                 std::span<const CodexLimitUsage> limits);
   void set_pet(std::string_view id, std::string_view digest,
                PetState state, std::string_view sync_result);
   void set_pet_storage(uint32_t used_bytes, uint16_t format_version);
@@ -69,6 +81,11 @@ class UiModel {
   std::string session_state_ = "OFFLINE";
   uint8_t approvals_ = 0;
   uint8_t inputs_ = 0;
+  std::string codex_model_;
+  std::string thinking_level_;
+  std::optional<bool> fast_;
+  std::array<CodexLimitUsage, 4> limits_{};
+  uint8_t limit_count_ = 0;
   UiPage page_ = UiPage::pet;
   uint8_t scroll_offset_ = 0;
   std::string pet_id_ = "-";

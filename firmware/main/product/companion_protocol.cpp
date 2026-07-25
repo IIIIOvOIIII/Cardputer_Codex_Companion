@@ -29,6 +29,17 @@ std::optional<uint64_t> integer_field(std::string_view json,
   return value;
 }
 
+std::optional<bool> bool_field(std::string_view json,
+                               std::string_view name) {
+  const std::string needle = "\"" + std::string(name) + "\":";
+  const std::size_t start = json.find(needle);
+  if (start == std::string_view::npos) return std::nullopt;
+  const std::string_view tail = json.substr(start + needle.size());
+  if (tail.starts_with("true")) return true;
+  if (tail.starts_with("false")) return false;
+  return std::nullopt;
+}
+
 std::string clipped(std::optional<std::string_view> value,
                     std::size_t maximum) {
   return value.has_value()
@@ -50,6 +61,82 @@ PetState parse_pet_state(std::string_view value) {
   if (value == "review") return PetState::review;
   if (value == "failed") return PetState::failed;
   return PetState::idle;
+}
+
+std::optional<CodexLimitUsage> parse_limit(std::string_view object) {
+  const auto scope_value = string_field(object, "scope");
+  const auto window_value = string_field(object, "window");
+  const auto percent = integer_field(object, "used_percent");
+  if (!scope_value || !window_value || !percent || *percent > 100) {
+    return std::nullopt;
+  }
+  CodexLimitUsage usage;
+  if (*scope_value == "codex") {
+    usage.scope = CodexLimitScope::codex;
+  } else if (*scope_value == "spark") {
+    usage.scope = CodexLimitScope::spark;
+  } else {
+    return std::nullopt;
+  }
+  if (*window_value == "5h") {
+    usage.window = CodexLimitWindow::five_hours;
+  } else if (*window_value == "weekly") {
+    usage.window = CodexLimitWindow::weekly;
+  } else {
+    return std::nullopt;
+  }
+  usage.used_percent = static_cast<uint8_t>(*percent);
+  return usage;
+}
+
+uint8_t parse_limits(std::string_view json,
+                     std::array<CodexLimitUsage, 4>& output) {
+  constexpr std::string_view needle = "\"limits\":[";
+  const std::size_t found = json.find(needle);
+  if (found == std::string_view::npos) return 0;
+  std::size_t cursor = found + needle.size();
+  uint8_t inspected = 0;
+  uint8_t accepted = 0;
+  while (cursor < json.size() && inspected < output.size()) {
+    const std::size_t start = json.find('{', cursor);
+    const std::size_t array_end = json.find(']', cursor);
+    if (start == std::string_view::npos ||
+        (array_end != std::string_view::npos && start > array_end)) {
+      break;
+    }
+    bool quoted = false;
+    bool escaped = false;
+    unsigned depth = 0;
+    std::size_t end = start;
+    for (; end < json.size(); ++end) {
+      const char character = json[end];
+      if (quoted) {
+        if (escaped) {
+          escaped = false;
+        } else if (character == '\\') {
+          escaped = true;
+        } else if (character == '"') {
+          quoted = false;
+        }
+        continue;
+      }
+      if (character == '"') {
+        quoted = true;
+      } else if (character == '{') {
+        ++depth;
+      } else if (character == '}' && --depth == 0) {
+        break;
+      }
+    }
+    if (end >= json.size()) break;
+    ++inspected;
+    if (const auto usage = parse_limit(
+            json.substr(start, end - start + 1))) {
+      output[accepted++] = *usage;
+    }
+    cursor = end + 1;
+  }
+  return accepted;
 }
 }  // namespace
 
@@ -78,6 +165,12 @@ CompanionMessageResult CompanionProtocol::apply(std::string_view json,
   snapshot_.pet_digest = valid_digest(digest) ? digest : "";
   snapshot_.pet_state = parse_pet_state(
       string_field(json, "pet_state").value_or("idle"));
+  snapshot_.model = clipped(string_field(json, "model"), 32);
+  snapshot_.thinking_level =
+      clipped(string_field(json, "thinking_level"), 16);
+  snapshot_.fast = bool_field(json, "fast");
+  snapshot_.limits = {};
+  snapshot_.limit_count = parse_limits(json, snapshot_.limits);
   has_snapshot_ = true;
   updated_at_ms_ = now_ms;
   return CompanionMessageResult::snapshot;
