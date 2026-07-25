@@ -265,3 +265,10 @@
 - Expected result: 明确宠物来源、状态联动、设备缓存、资源格式、分段上传、页面布局、键盘兼容、错误回退和实机验收，实施前不修改固件或 Companion。
 - Result: Achieved for design — 用户选择跟随桌面端当前宠物、状态联动、布局 C、启动页和详情页显示版本、多个只读页面、左右换页/上下滚动、Fn+标点导航以及离线继续播放最后缓存宠物。选定 Companion 转码 + 设备 SPIFFS 缓存架构；完整规格写入 `docs/superpowers/specs/2026-07-25-cardputer-pet-ui-design.md`。
 - Next step: 用户审阅已落盘规格；批准后生成测试先行的逐任务实施计划。
+
+## 2026-07-25 18:12 HKT
+
+- Current work: 将已批准的 1.0.28 宠物 UI 规格拆成可直接执行的测试先行实施计划。
+- Expected result: 计划覆盖 Swift 宠物发现/转码、CCPT 跨端格式、SPIFFS 双槽事务、PIN 鉴权上传、会话状态、Fn 本地导航、局部动画渲染、完整发布门禁与 app-only 真机部署，且无待定接口或占位步骤。
+- Result: Achieved — 计划写入 `docs/superpowers/plans/2026-07-25-cardputer-pet-ui.md`，共九个逐项提交任务；明确 132-byte CCPT 头、五状态/四十帧、raw/RLE 编码、两类 SHA-256、820 KiB 上限、12 条 Web 路由、两槽掉电回退、19,968-byte 帧缓冲、400 ms 局部刷新、Pet/Connection/Session/Device 页面和保留普通标点的 Fn 捕获规则。自审覆盖已批准规格、接口签名、RED/GREEN 命令、发布私有数据边界和实机验收。
+- Next step: 由用户选择 Subagent-Driven 或 Inline Execution；实施开始时先创建隔离 worktree，再按 Tasks 1–9 执行。
