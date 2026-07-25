@@ -24,5 +24,14 @@ int main() {
          UiNavAction::next_page);
   assert(navigation.on_key(54, false, false).captured);
   assert(!navigation.on_key(15, true, true).captured);
+
+  result = navigation.on_key(
+      39, true, false, UiInteractionContext::settings_browse);
+  assert(result.captured);
+  assert(result.action == UiNavAction::none);
+  assert(navigation.on_key(
+      39, false, false, UiInteractionContext::settings_browse).captured);
+  assert(!navigation.on_key(
+      39, true, false, UiInteractionContext::normal).captured);
   return 0;
 }

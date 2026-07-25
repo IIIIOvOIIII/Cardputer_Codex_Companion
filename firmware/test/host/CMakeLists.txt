@@ -287,3 +287,17 @@ add_executable(test_ui_navigation
 )
 target_include_directories(test_ui_navigation PRIVATE ../../main)
 add_test(NAME ui_navigation COMMAND test_ui_navigation)
+
+add_executable(test_device_settings
+  test_device_settings.cpp
+  ../../main/product/device_settings.cpp
+)
+target_include_directories(test_device_settings PRIVATE ../../main)
+add_test(NAME device_settings COMMAND test_device_settings)
+
+add_executable(test_settings_menu
+  test_settings_menu.cpp
+  ../../main/product/settings_menu.cpp
+)
+target_include_directories(test_settings_menu PRIVATE ../../main)
+add_test(NAME settings_menu COMMAND test_settings_menu)

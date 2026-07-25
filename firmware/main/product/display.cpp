@@ -128,8 +128,9 @@ void display_render_page(const UiModel& model) {
   }
   begin_page(page_title(model.page()));
   const UiPageContent content = model.page_content();
+  const uint8_t visible = model.page() == UiPage::settings ? 5 : 6;
   const uint8_t end = std::min<uint8_t>(
-      content.count, model.scroll_offset() + 6);
+      content.count, model.scroll_offset() + visible);
   for (uint8_t index = model.scroll_offset(); index < end; ++index) {
     M5.Display.println(content.lines[index].c_str());
   }

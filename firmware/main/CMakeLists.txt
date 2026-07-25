@@ -53,6 +53,8 @@ idf_component_register(
         "probe/web_handlers.cpp"
         "product/ui_model.cpp"
         "product/ui_navigation.cpp"
+        "product/device_settings.cpp"
+        "product/settings_menu.cpp"
         "product/display.cpp"
         "product/keyboard_matrix.cpp"
         "product/input_router.cpp"

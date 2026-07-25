@@ -107,6 +107,15 @@ int main() {
   assert(model.page() == UiPage::pet);
   model.navigate(UiNavAction::previous_page);
   assert(model.page() == UiPage::settings);
+  const std::array<std::string_view, 7> settings_rows{
+      "> KEYBOARD PROFILE", "  CHANGE PIN", "  BIND WIFI",
+      "  BRIGHTNESS 75%", "  RETURN 30S", "  PET FPS 2.5",
+      "  ABOUT"};
+  model.set_settings_content(settings_rows, 0, 0);
+  const UiPageContent settings = model.page_content();
+  assert(settings.count == settings_rows.size());
+  assert(settings.lines[0] == "> KEYBOARD PROFILE");
+  assert(settings.lines[5] == "  PET FPS 2.5");
 
   model.set_pet_storage(25772, 1);
   model.navigate(UiNavAction::next_page);

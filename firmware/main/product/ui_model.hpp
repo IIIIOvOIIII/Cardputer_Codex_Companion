@@ -52,6 +52,8 @@ class UiModel {
   void set_pet_storage(uint32_t used_bytes, uint16_t format_version);
   void set_heartbeat_age(uint32_t seconds);
   void set_pet_sync_age(uint32_t seconds);
+  void set_settings_content(std::span<const std::string_view> rows,
+                            uint8_t selected, uint8_t scroll);
   void navigate(UiNavAction action);
   [[nodiscard]] uint32_t revision() const { return revision_; }
   [[nodiscard]] std::string runtime_text() const;
@@ -96,5 +98,9 @@ class UiModel {
   uint16_t pet_format_version_ = 0;
   uint32_t heartbeat_age_seconds_ = 0;
   uint32_t pet_sync_age_seconds_ = 0;
+  std::array<std::string, 12> settings_rows_{};
+  uint8_t settings_count_ = 0;
+  uint8_t settings_selected_ = 0;
+  uint8_t settings_scroll_ = 0;
   uint32_t revision_ = 0;
 };

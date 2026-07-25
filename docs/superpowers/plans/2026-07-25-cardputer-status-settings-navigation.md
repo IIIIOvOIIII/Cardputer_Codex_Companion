@@ -770,7 +770,7 @@ struct SettingsInputResult {
 - `UiNavigation` accepts current page/interaction context so bare punctuation
   is captured only by Settings browse states.
 
-- [ ] **Step 1: Write failing display-settings validation tests**
+- [x] **Step 1: Write failing display-settings validation tests**
 
 Test:
 
@@ -781,7 +781,7 @@ Test:
 - encode/decode round-trips a valid record;
 - a failed backend commit leaves the previous runtime settings selected.
 
-- [ ] **Step 2: Run display-settings RED**
+- [x] **Step 2: Run display-settings RED**
 
 ```bash
 cmake -S firmware/test/host -B build/product-host
@@ -790,13 +790,13 @@ cmake --build build/product-host --target test_device_settings -j
 
 Expected: target or compile failure because the module does not exist.
 
-- [ ] **Step 3: Implement the versioned settings record**
+- [x] **Step 3: Implement the versioned settings record**
 
 Use a fixed POD wire record with explicit fields and CRC32 rather than
 persisting compiler padding. Keep NVS behind a `DeviceSettingsBackend`
 interface so host tests do not link ESP-IDF.
 
-- [ ] **Step 4: Run display-settings GREEN**
+- [x] **Step 4: Run display-settings GREEN**
 
 ```bash
 cmake --build build/product-host --target test_device_settings -j
@@ -805,7 +805,7 @@ cmake --build build/product-host --target test_device_settings -j
 
 Expected: executable exits zero.
 
-- [ ] **Step 5: Write failing Settings interaction tests**
+- [x] **Step 5: Write failing Settings interaction tests**
 
 Cover this exact sequence:
 
@@ -831,7 +831,7 @@ Also assert:
 - return timeout is suspended in edit/confirm/apply/result states;
 - leaving Settings restores ordinary bare punctuation passthrough.
 
-- [ ] **Step 6: Run Settings RED**
+- [x] **Step 6: Run Settings RED**
 
 ```bash
 cmake --build build/product-host --target test_settings_menu \
@@ -841,20 +841,20 @@ cmake --build build/product-host --target test_settings_menu \
 Expected: target or compile failure because Settings interaction context does
 not exist.
 
-- [ ] **Step 7: Implement the pure Settings state machine**
+- [x] **Step 7: Implement the pure Settings state machine**
 
 Use the existing physical key map to derive HID usage. Implement a bounded
 US-layout usage-to-ASCII decoder for letters, numbers, and printable Cardputer
 punctuation. Do not call ESP, BLE, NVS, display, or Web functions from
 `settings_menu.cpp`; emit commands for the runtime to execute.
 
-- [ ] **Step 8: Add scrollable Settings content to UiModel**
+- [x] **Step 8: Add scrollable Settings content to UiModel**
 
 Expose top-level and submenu rows through `UiPageContent`. Keep five visible
 rows and ensure selected index remains inside the viewport. Use masked PIN and
 password editor values; never expose password through a model getter.
 
-- [ ] **Step 9: Run Settings and full host GREEN**
+- [x] **Step 9: Run Settings and full host GREEN**
 
 ```bash
 cmake --build build/product-host -j

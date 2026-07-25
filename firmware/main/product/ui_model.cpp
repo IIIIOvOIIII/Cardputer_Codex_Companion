@@ -199,6 +199,29 @@ void UiModel::set_pet_sync_age(uint32_t seconds) {
   if (page_ == UiPage::sync_status) ++revision_;
 }
 
+void UiModel::set_settings_content(
+    std::span<const std::string_view> rows,
+    uint8_t selected,
+    uint8_t scroll
+) {
+  const uint8_t count =
+      static_cast<uint8_t>(std::min(rows.size(), settings_rows_.size()));
+  std::array<std::string, 12> next{};
+  for (uint8_t index = 0; index < count; ++index) {
+    next[index] = clipped(rows[index], 32);
+  }
+  if (settings_rows_ == next && settings_count_ == count &&
+      settings_selected_ == selected && settings_scroll_ == scroll) {
+    return;
+  }
+  settings_rows_ = std::move(next);
+  settings_count_ = count;
+  settings_selected_ = selected;
+  settings_scroll_ = scroll;
+  if (page_ == UiPage::settings) scroll_offset_ = scroll;
+  ++revision_;
+}
+
 void UiModel::navigate(UiNavAction action) {
   constexpr uint8_t count = 5;
   if (action == UiNavAction::previous_page ||
@@ -221,7 +244,8 @@ void UiModel::navigate(UiNavAction action) {
   }
   if (action == UiNavAction::scroll_down) {
     const UiPageContent content = page_content();
-    constexpr uint8_t visible_lines = 6;
+    const uint8_t visible_lines =
+        page_ == UiPage::settings ? 5 : 6;
     const uint8_t maximum =
         content.count > visible_lines ? content.count - visible_lines : 0;
     if (scroll_offset_ < maximum) {
@@ -283,9 +307,19 @@ UiPageContent UiModel::page_content() const {
       add_line(content, "PROFILE:" + profile_);
       break;
     case UiPage::settings:
-      add_line(content, "KEYBOARD PROFILE");
-      add_line(content, "CHANGE PIN");
-      add_line(content, "BIND WIFI");
+      if (settings_count_ == 0) {
+        add_line(content, "> KEYBOARD PROFILE");
+        add_line(content, "  CHANGE PIN");
+        add_line(content, "  BIND WIFI");
+        add_line(content, "  BRIGHTNESS 75%");
+        add_line(content, "  RETURN TO PET 30S");
+        add_line(content, "  PET FPS 2.5");
+        add_line(content, "  ABOUT");
+      } else {
+        for (uint8_t index = 0; index < settings_count_; ++index) {
+          add_line(content, settings_rows_[index]);
+        }
+      }
       break;
   }
   return content;

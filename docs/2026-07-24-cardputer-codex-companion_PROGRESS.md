@@ -398,3 +398,10 @@
 - Expected result: API 支持列表、创建/克隆、按 ID 读取/发布、激活和删除；旧无 ID 路由继续代表当前 Profile；Web 仅编辑选中 Profile，SAFE 和当前 Profile 不可删除。
 - Result: Achieved — 路由清单由 12 扩展为 16，新增 DELETE 与 `/api/v1/profiles`、`/api/v1/profile/activate`；ESP-IDF 编译通过。Web 源契约 7/7 和嵌入资源一致性通过。浏览器使用模拟 SAFE/CODING/REVIEW 数据验证：鉴权后默认选中当前 CODING、状态为 BLE/Wi-Fi/Mac 正常、Alt+V 映射真实显示、键位弹窗与 Settings 可见；800×900 视口下键盘按七列展示且工具栏可换行。冒烟临时页面已删除，未使用真实 PIN。
 - Next step: 实现设备端 Settings 状态机、版本化显示设置及其 host RED/GREEN。
+
+## 2026-07-26 00:04 HKT
+
+- Current work: 完成 Task 5 的设备端 Settings 输入状态机、版本化显示设置和五行滚动内容。
+- Expected result: Settings 浏览态使用裸 `; . , /`；编辑态将标点作为文本且不泄漏 HID；PIN 双次八位确认；SSID/密码有界；显示设置 CRC 持久化失败时保留旧运行值。
+- Result: Achieved — 新增纯 C++ `SettingsMenu` 与 `DeviceSettingsStore`，覆盖按下/释放捕获、重复按键抑制、Esc/Backspace/Enter、8/32/64 字节边界、US HID 字符映射及应用态超时暂停。UiModel 可接收七行设置内容并保持选中项在五行视窗中；display 对 Settings 只绘制五行。完整 host 27/27 通过，ESP-IDF 固件编译通过，应用大小 0x176fa0。
+- Next step: 将 Wi-Fi 管理器改为候选连接成功后才持久化，并加入失败回滚及异步扫描。

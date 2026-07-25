@@ -18,10 +18,18 @@ struct UiNavigationResult {
   UiNavAction action = UiNavAction::none;
 };
 
+enum class UiInteractionContext : uint8_t {
+  normal,
+  settings_browse,
+  settings_modal,
+};
+
 class UiNavigation {
  public:
   UiNavigationResult on_key(uint8_t physical_key, bool pressed,
-                            bool fn_pressed);
+                            bool fn_pressed,
+                            UiInteractionContext context =
+                                UiInteractionContext::normal);
 
  private:
   std::array<bool, kPhysicalKeyCount> captured_{};

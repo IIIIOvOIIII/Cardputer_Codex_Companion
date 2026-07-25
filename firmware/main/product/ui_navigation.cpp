@@ -13,13 +13,19 @@ UiNavAction action_for(uint8_t physical_key) {
 }  // namespace
 
 UiNavigationResult UiNavigation::on_key(uint8_t physical_key, bool pressed,
-                                        bool fn_pressed) {
+                                        bool fn_pressed,
+                                        UiInteractionContext context) {
   if (physical_key >= captured_.size()) return {};
   if (!pressed && captured_[physical_key]) {
     captured_[physical_key] = false;
     return {.captured = true, .action = UiNavAction::none};
   }
   const UiNavAction action = action_for(physical_key);
+  if (pressed && context != UiInteractionContext::normal &&
+      action != UiNavAction::none) {
+    captured_[physical_key] = true;
+    return {.captured = true, .action = UiNavAction::none};
+  }
   if (pressed && fn_pressed && action != UiNavAction::none) {
     captured_[physical_key] = true;
     return {.captured = true, .action = action};
