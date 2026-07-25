@@ -328,3 +328,10 @@
 - Expected result: `main`、运行中的 macOS Companion 和最终交付制品来自同一源代码；设备保留实际 `seedy` 宠物并恢复全部在线状态。
 - Result: Achieved — `main` 完整发布门禁再次通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4、Swift release/doctor、产品分区与 private packaging。LaunchAgent 现运行主仓库 `dist/CardputerCompanion.app`；设备宠物为 `seedy`、摘要 `42c04b6256f2...`、`last_result=ok`、事务 inactive，status 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 均 `OK`。主分支 Companion executable 为 614,992 bytes，SHA-256 `ba0f30f48d796cefb0f75e8242c6d30ecc0a2b3155eecfe8cf3bd2260b0d66ea`；private full image 为 1,645,472 bytes，SHA-256 `ee597f5217f0e303cc462dc0eaab25a8dfb05fa21740e468e58d6c28e29007b5`。
 - Next step: 提交最终主分支证据并清理已合并的 worktree/feature branch；仓库无 remote，因此没有 push 目标。
+
+## 2026-07-25 21:50 HKT
+
+- Current work: 排查运行中的 Mac Companion 被 Cardputer 间歇性显示为离线，并固化修复设计。
+- Expected result: 区分 agent 进程退出、LAN 传输失败和固件 stale 误判；形成不增加 ESP32 HTTPS 并发且保留用户配置的修复边界。
+- Result: Achieved for diagnosis/design — LaunchAgent PID 24719 及其 `codex app-server` 子进程持续运行，日志继续产生宠物检查，设备也能自行恢复 `Mac OK`。固件仅允许 10 秒无心跳，但普通 curl 请求最长 5 秒、宠物事务最长 15 秒，近期还有 curl 35/28 短暂失败；同时鉴权成功的 30 秒宠物状态 GET 未刷新心跳。用户接受最多约 30 秒的真实离线检测延迟，并确认采用 30 秒 stale 窗口及所有鉴权 Companion 请求刷新心跳的方案。
+- Next step: 用户审阅 `docs/superpowers/specs/2026-07-25-companion-heartbeat-resilience-design.md`；批准后编写测试先行实施计划。
