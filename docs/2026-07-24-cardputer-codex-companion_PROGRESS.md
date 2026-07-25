@@ -293,3 +293,10 @@
 - Expected result: 设备以 native RGB565 显示正确颜色；透明背景与页面一致；八帧循环均来自可见源单元；宠物包跨重启保持；Mac agent 不持续挤占设备 HTTPS。
 - Result: Partial, visual code path and persistence achieved — 新测试先分别因空列被编码和缺少 M5GFX byte-order 声明失败，修复后通过；完整门禁通过 Python 116/116、host 24/24、ASan/UBSan 24/24、ESP-IDF 目标构建、Swift release 和私有打包。应用镜像已从 `0x20000` 写入并 hash verified。新 rocky 包摘要为 `476d93d7f7e3...`，大小 471,624 bytes，事务完成；硬复位后状态为 `cached`、事务 inactive，证明 raw A/B 槽持久化有效。串口确认 1.0.28 稳定启动、BLE ready、Wi-Fi/HTTPS 正常且无 panic/reboot。HIL 同时证明 agent 每 2 秒重复 pet GET 会与动作轮询共同造成 HTTPS 连接竞争；新增 RED/GREEN 回归后，pet 同步频率限制为 30 秒，动作/会话仍保持 2 秒。
 - Next step: 重建并加载节流后的 Companion，连续验证 Mac 在线与 Web 状态可访问；提交补丁后合并到 `main`，在主分支重跑完整发布门禁、重刷同源应用镜像并交付最终 private full image。
+
+## 2026-07-25 19:45 HKT
+
+- Current work: 将宠物显示修复 fast-forward 合并到 `main`，从主分支重新执行完整发布门禁，并把同源 1.0.28 应用镜像部署到当前 Cardputer。
+- Expected result: 最终源码、交付镜像、Mac Companion 和实机运行版本一致；颜色、背景、空帧和 HTTPS 同步节流均有自动化及设备侧证据；原 PIN、Wi-Fi、BLE bonds 和宠物缓存保持不变。
+- Result: Achieved — `main` 完整门禁通过 Python 117/117、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 目标构建、Swift release/doctor、产品分区与 private packaging；应用镜像 1,514,400 bytes，SHA-256 `be960856e2679368c207be2177713cb9a727489d600bd09fa4eb0ace8f4faab6`。应用镜像已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool 报告 `Hash of data verified`；重启后状态 API 返回 version `1.0.28` 且 BLE/Wi-Fi/Mac 均 `OK`。设备仍持有 rocky 缓存摘要 `476d93d7f7e3...`、大小 471,624 bytes、状态 `cached`。最终 private full image 为 1,645,472 bytes，SHA-256 `ee6a3e81259d10c5de79774472ae5d0ec24f5af18c1e930af61b291d9779c0ca`。
+- Next step: 交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`；最终颜色与动画观感由用户在实体屏幕上确认。当前仓库无 remote，因此无 push 目标。
