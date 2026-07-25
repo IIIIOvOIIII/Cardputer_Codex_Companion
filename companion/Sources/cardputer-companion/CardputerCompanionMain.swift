@@ -3,6 +3,7 @@ import CodexAppServer
 import Foundation
 import ProductContracts
 import ProductGATT
+import ProductPet
 import ProductUnicode
 
 @main
@@ -44,6 +45,10 @@ struct CardputerCompanionMain {
             baseURL: deviceURL,
             pairingCode: pairingCode
         )
+        let petSync = PetSyncCoordinator(
+            reader: PetSelectionReader(),
+            transcoder: PetTranscoder()
+        )
         var lastPostedSnapshot: CompanionSnapshot?
         var wireSequence: UInt64 = 0
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
@@ -54,7 +59,16 @@ struct CardputerCompanionMain {
                     lastPostedSnapshot = nil
                 }
                 try adapter.perform(action.action)
-                let currentSnapshot = try adapter.snapshot()
+                let pet = await petSync.synchronize(client: bridge)
+                if let errorCode = pet.errorCode {
+                    FileHandle.standardError.write(
+                        Data("pet sync warning: \(errorCode)\n".utf8)
+                    )
+                }
+                let currentSnapshot = try adapter.snapshot().withPet(
+                    id: pet.petID,
+                    digest: pet.digest
+                )
                 if lastPostedSnapshot == nil ||
                     !currentSnapshot.hasSameContent(as: lastPostedSnapshot!) {
                     wireSequence += 1

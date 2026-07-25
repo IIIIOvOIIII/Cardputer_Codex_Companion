@@ -87,7 +87,11 @@ public final class CodexAdapter {
             cwd: thread["cwd"] as? String ?? "-",
             state: status["type"] as? String ?? "unknown",
             approvals: flags.contains("waitingOnApproval") ? 1 : 0,
-            inputs: flags.contains("waitingOnUserInput") ? 1 : 0
+            inputs: flags.contains("waitingOnUserInput") ? 1 : 0,
+            petState: PetState.resolve(
+                sessionState: status["type"] as? String ?? "unknown",
+                flags: flags
+            )
         )
     }
 

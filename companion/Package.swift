@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "Phase0Unicode", targets: ["Phase0Unicode"]),
         .library(name: "ProductContracts", targets: ["ProductContracts"]),
         .library(name: "CodexAppServer", targets: ["CodexAppServer"]),
+        .library(name: "ProductPet", targets: ["ProductPet"]),
         .library(name: "ProductUnicode", targets: ["ProductUnicode"]),
         .library(name: "ProductGATT", targets: ["ProductGATT"]),
         .executable(name: "cardputer-phase0-probe", targets: ["cardputer-phase0-probe"]),
@@ -52,6 +53,15 @@ let package = Package(
         .target(name: "ProductContracts"),
         .target(name: "CodexAppServer", dependencies: ["ProductContracts"]),
         .target(
+            name: "ProductPet",
+            dependencies: ["ProductContracts"],
+            linkerSettings: [
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("CryptoKit"),
+                .linkedFramework("ImageIO")
+            ]
+        ),
+        .target(
             name: "ProductUnicode",
             linkerSettings: [
                 .linkedFramework("ApplicationServices"),
@@ -80,9 +90,15 @@ let package = Package(
             dependencies: [
                 "ProductContracts",
                 "CodexAppServer",
+                "ProductPet",
                 "ProductGATT",
                 "ProductUnicode"
             ]
+        ),
+        .executableTarget(
+            name: "product-pet-tests",
+            dependencies: ["ProductContracts", "CodexAppServer", "ProductPet"],
+            path: "Tests/ProductPetExecutableTests"
         ),
         .testTarget(name: "Phase0ContractsTests", dependencies: ["Phase0Contracts"]),
         .testTarget(name: "Phase0LedgerTests", dependencies: ["Phase0Ledger"]),
