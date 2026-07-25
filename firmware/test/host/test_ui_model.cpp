@@ -70,7 +70,7 @@ int main() {
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
-  assert(joined.find("FW:1.0.28") != std::string::npos);
+  assert(joined.find("FW:1.0.29") != std::string::npos);
   assert(joined.find("PET:rocky") != std::string::npos);
   assert(joined.find("FMT:1") != std::string::npos);
   model.navigate(UiNavAction::scroll_down);
