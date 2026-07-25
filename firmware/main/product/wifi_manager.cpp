@@ -5,13 +5,20 @@ WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
     state_ = WifiState::provisioning;
     return WifiCommand::start_provisioning_ap;
   }
+  const auto runtime = credentials_.load_runtime();
+  if (credentials_.runtime_override_enabled() && runtime.has_value()) {
+    selected_ = runtime;
+    state_ = WifiState::connecting;
+    connect_started_ms_ = now_ms;
+    return WifiCommand::connect_runtime;
+  }
   selected_ = credentials_.load_private();
   if (selected_.has_value()) {
     state_ = WifiState::connecting;
     connect_started_ms_ = now_ms;
     return WifiCommand::connect_private;
   }
-  selected_ = credentials_.load_runtime();
+  selected_ = runtime;
   if (selected_.has_value()) {
     state_ = WifiState::connecting;
     connect_started_ms_ = now_ms;
@@ -22,12 +29,60 @@ WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
 }
 
 WifiCommand WifiStateMachine::tick(uint64_t now_ms) {
+  if (state_ == WifiState::candidate_connecting) {
+    return on_candidate_timeout(now_ms);
+  }
+  if (state_ == WifiState::rollback_connecting &&
+      now_ms - connect_started_ms_ >= kWifiConnectTimeoutMs) {
+    state_ = WifiState::offline;
+    return WifiCommand::rollback_failed;
+  }
   if (state_ == WifiState::connecting &&
       now_ms - connect_started_ms_ >= kWifiConnectTimeoutMs) {
     state_ = WifiState::offline;
     return WifiCommand::stop_and_offline;
   }
   return WifiCommand::none;
+}
+
+WifiCommand WifiStateMachine::stage(WifiCredentials candidate,
+                                    uint64_t now_ms) {
+  if (candidate.ssid.empty()) return WifiCommand::none;
+  previous_ = selected_;
+  selected_ = std::move(candidate);
+  state_ = WifiState::candidate_connecting;
+  connect_started_ms_ = now_ms;
+  return WifiCommand::connect_candidate;
+}
+
+WifiCommand WifiStateMachine::on_candidate_timeout(uint64_t now_ms) {
+  if (state_ != WifiState::candidate_connecting ||
+      now_ms - connect_started_ms_ < kWifiConnectTimeoutMs) {
+    return WifiCommand::none;
+  }
+  if (!previous_.has_value()) {
+    state_ = WifiState::offline;
+    return WifiCommand::rollback_failed;
+  }
+  selected_ = previous_;
+  state_ = WifiState::rollback_connecting;
+  connect_started_ms_ = now_ms;
+  return WifiCommand::reconnect_previous;
+}
+
+WifiCommand WifiStateMachine::on_persist_failed(uint64_t now_ms) {
+  if (!previous_.has_value()) {
+    state_ = WifiState::offline;
+    return WifiCommand::rollback_failed;
+  }
+  selected_ = previous_;
+  state_ = WifiState::rollback_connecting;
+  connect_started_ms_ = now_ms;
+  return WifiCommand::reconnect_previous;
+}
+
+void WifiStateMachine::on_persisted() {
+  previous_.reset();
 }
 
 void WifiStateMachine::connect_runtime(WifiCredentials credentials,
@@ -37,8 +92,17 @@ void WifiStateMachine::connect_runtime(WifiCredentials credentials,
   connect_started_ms_ = now_ms;
 }
 
-void WifiStateMachine::on_connected() {
+WifiCommand WifiStateMachine::on_connected() {
+  const WifiState prior = state_;
   state_ = WifiState::online;
+  if (prior == WifiState::candidate_connecting) {
+    return WifiCommand::persist_candidate;
+  }
+  if (prior == WifiState::rollback_connecting) {
+    previous_.reset();
+    return WifiCommand::rollback_restored;
+  }
+  return WifiCommand::none;
 }
 
 void WifiStateMachine::on_disconnected() {
@@ -47,8 +111,10 @@ void WifiStateMachine::on_disconnected() {
 
 #ifdef ESP_PLATFORM
 #include <array>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -72,6 +138,18 @@ class NvsWifiCredentialSource final : public WifiCredentialSource {
   }
   std::optional<WifiCredentials> load_runtime() override {
     return load("nvs");
+  }
+  bool runtime_override_enabled() override {
+    nvs_handle_t handle;
+    if (nvs_open_from_partition("nvs", "wifi", NVS_READONLY, &handle) !=
+        ESP_OK) {
+      return false;
+    }
+    uint8_t enabled = 0;
+    const bool result =
+        nvs_get_u8(handle, "override", &enabled) == ESP_OK && enabled == 1;
+    nvs_close(handle);
+    return result;
   }
 
  private:
@@ -101,6 +179,8 @@ class NvsWifiCredentialSource final : public WifiCredentialSource {
 NvsWifiCredentialSource g_credentials;
 WifiStateMachine g_machine(g_credentials);
 WifiStatusHandler g_handler = nullptr;
+WifiScanHandler g_scan_handler = nullptr;
+std::array<WifiScanEntry, 12> g_scan_results{};
 esp_netif_t* g_sta_netif = nullptr;
 esp_netif_t* g_ap_netif = nullptr;
 std::array<char, 16> g_ipv4{"0.0.0.0"};
@@ -134,6 +214,69 @@ void connect_selected() {
   notify(WifiState::connecting, nullptr);
 }
 
+esp_err_t persist_runtime_credentials(const WifiCredentials& credentials) {
+  nvs_handle_t handle;
+  esp_err_t result =
+      nvs_open_from_partition("nvs", "wifi", NVS_READWRITE, &handle);
+  if (result != ESP_OK) return result;
+  result = nvs_set_str(handle, "ssid", credentials.ssid.c_str());
+  if (result == ESP_OK) {
+    result = nvs_set_str(handle, "password", credentials.password.c_str());
+  }
+  if (result == ESP_OK) result = nvs_set_u8(handle, "override", 1);
+  if (result == ESP_OK) result = nvs_commit(handle);
+  nvs_close(handle);
+  return result;
+}
+
+void publish_scan_results() {
+  uint16_t count = 0;
+  if (esp_wifi_scan_get_ap_num(&count) != ESP_OK || count == 0) {
+    if (g_scan_handler != nullptr) g_scan_handler({});
+    return;
+  }
+  count = std::min<uint16_t>(count, 48);
+  std::vector<wifi_ap_record_t> records(count);
+  if (esp_wifi_scan_get_ap_records(&count, records.data()) != ESP_OK) {
+    if (g_scan_handler != nullptr) g_scan_handler({});
+    return;
+  }
+  std::vector<WifiScanEntry> unique;
+  unique.reserve(count);
+  for (uint16_t index = 0; index < count; ++index) {
+    const auto& record = records[index];
+    const std::string_view ssid(
+        reinterpret_cast<const char*>(record.ssid),
+        strnlen(reinterpret_cast<const char*>(record.ssid),
+                sizeof(record.ssid)));
+    if (ssid.empty()) continue;
+    auto existing = std::find_if(
+        unique.begin(), unique.end(), [&](const WifiScanEntry& entry) {
+          return ssid == entry.ssid.data();
+        });
+    if (existing != unique.end()) {
+      if (record.rssi > existing->rssi) existing->rssi = record.rssi;
+      continue;
+    }
+    WifiScanEntry entry;
+    std::copy_n(ssid.begin(), std::min(ssid.size(), entry.ssid.size() - 1),
+                entry.ssid.begin());
+    entry.rssi = record.rssi;
+    entry.secured = record.authmode != WIFI_AUTH_OPEN;
+    unique.push_back(entry);
+  }
+  std::sort(unique.begin(), unique.end(),
+            [](const WifiScanEntry& lhs, const WifiScanEntry& rhs) {
+              return lhs.rssi > rhs.rssi;
+            });
+  const std::size_t published =
+      std::min(unique.size(), g_scan_results.size());
+  std::copy_n(unique.begin(), published, g_scan_results.begin());
+  if (g_scan_handler != nullptr) {
+    g_scan_handler(std::span(g_scan_results).first(published));
+  }
+}
+
 void start_provisioning() {
   if (g_ap_netif == nullptr) {
     g_ap_netif = esp_netif_create_default_wifi_ap();
@@ -163,8 +306,27 @@ void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
     const auto* event = static_cast<ip_event_got_ip_t*>(data);
     std::snprintf(g_ipv4.data(), g_ipv4.size(), IPSTR,
                   IP2STR(&event->ip_info.ip));
-    g_machine.on_connected();
-    notify(WifiState::online, g_ipv4.data());
+    const WifiCommand command = g_machine.on_connected();
+    if (command == WifiCommand::persist_candidate) {
+      const auto& selected = g_machine.selected();
+      const esp_err_t persisted =
+          selected.has_value()
+              ? persist_runtime_credentials(*selected)
+              : ESP_ERR_INVALID_STATE;
+      if (persisted == ESP_OK) {
+        g_machine.on_persisted();
+        notify(WifiState::online, g_ipv4.data());
+      } else {
+        g_machine.on_persist_failed(
+            static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+        esp_wifi_disconnect();
+        connect_selected();
+      }
+    } else {
+      notify(WifiState::online, g_ipv4.data());
+    }
+  } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+    publish_scan_results();
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED &&
              g_machine.state() == WifiState::online) {
     g_machine.on_disconnected();
@@ -176,7 +338,12 @@ void wifi_timeout_task(void*) {
   while (true) {
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-    if (g_machine.tick(now_ms) == WifiCommand::stop_and_offline) {
+    const WifiCommand command = g_machine.tick(now_ms);
+    if (command == WifiCommand::reconnect_previous) {
+      esp_wifi_disconnect();
+      connect_selected();
+    } else if (command == WifiCommand::stop_and_offline ||
+               command == WifiCommand::rollback_failed) {
       esp_wifi_disconnect();
       notify(WifiState::offline, nullptr);
     }
@@ -243,30 +410,23 @@ esp_err_t product_wifi_save(std::string_view ssid,
   if (ssid.empty() || ssid.size() > 32 || password.size() > 64) {
     return ESP_ERR_INVALID_ARG;
   }
-  nvs_handle_t handle;
-  esp_err_t result =
-      nvs_open_from_partition("nvs", "wifi", NVS_READWRITE, &handle);
-  if (result != ESP_OK) {
-    return result;
-  }
   const std::string ssid_copy(ssid);
   const std::string password_copy(password);
-  result = nvs_set_str(handle, "ssid", ssid_copy.c_str());
-  if (result == ESP_OK) {
-    result = nvs_set_str(handle, "password", password_copy.c_str());
+  const WifiCommand command = g_machine.stage(
+      WifiCredentials{.ssid = ssid_copy, .password = password_copy},
+      static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+  if (command != WifiCommand::connect_candidate) {
+    return ESP_ERR_INVALID_STATE;
   }
-  if (result == ESP_OK) {
-    result = nvs_commit(handle);
-  }
-  nvs_close(handle);
-  if (result == ESP_OK) {
-    g_machine.connect_runtime(
-        WifiCredentials{.ssid = ssid_copy, .password = password_copy},
-        static_cast<uint64_t>(esp_timer_get_time()) / 1000);
-    esp_wifi_disconnect();
-    connect_selected();
-  }
-  return result;
+  esp_wifi_disconnect();
+  connect_selected();
+  return ESP_OK;
+}
+
+esp_err_t product_wifi_scan(WifiScanHandler handler) {
+  if (handler == nullptr) return ESP_ERR_INVALID_ARG;
+  g_scan_handler = handler;
+  return esp_wifi_scan_start(nullptr, false);
 }
 
 esp_err_t product_wifi_reconnect() {

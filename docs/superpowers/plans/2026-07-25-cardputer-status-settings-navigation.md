@@ -911,7 +911,7 @@ WifiCommand WifiStateMachine::on_candidate_timeout(uint64_t now_ms);
 - ESP adapter exposes asynchronous scan and staged connection callbacks; no
   callback executes on the 10 ms keyboard scanner task.
 
-- [ ] **Step 1: Replace the current precedence test with the approved behavior**
+- [x] **Step 1: Replace the current precedence test with the approved behavior**
 
 Assert:
 
@@ -923,7 +923,7 @@ Assert:
 - rollback success restores online state;
 - candidate failure never mutates the credential source.
 
-- [ ] **Step 2: Run Wi-Fi RED**
+- [x] **Step 2: Run Wi-Fi RED**
 
 ```bash
 cmake --build build/product-host --target test_wifi_manager -j
@@ -933,19 +933,19 @@ cmake --build build/product-host --target test_wifi_manager -j
 Expected: assertions fail because current code chooses private first and writes
 candidate credentials before connection.
 
-- [ ] **Step 3: Implement the pure staging state machine**
+- [x] **Step 3: Implement the pure staging state machine**
 
 Add explicit `candidate_connecting` and `rollback_connecting` states. Preserve
 the 15-second timeout. Make persistence a command emitted only after
 `on_connected()` for the candidate.
 
-- [ ] **Step 4: Run pure Wi-Fi GREEN**
+- [x] **Step 4: Run pure Wi-Fi GREEN**
 
 Run the command from Step 2.
 
 Expected: executable exits zero.
 
-- [ ] **Step 5: Implement asynchronous scan**
+- [x] **Step 5: Implement asynchronous scan**
 
 Use `esp_wifi_scan_start(..., false)` and consume
 `WIFI_EVENT_SCAN_DONE`. Read at most the platform result count, deduplicate by
@@ -953,7 +953,7 @@ the exact SSID bytes, retain the strongest RSSI, sort descending, and publish
 at most 12 entries to the Settings backend. Append Hidden Network in the UI,
 not the scan result array.
 
-- [ ] **Step 6: Delay persistence until candidate success**
+- [x] **Step 6: Delay persistence until candidate success**
 
 Remove the immediate NVS write from `product_wifi_save`. Add a staging entry
 point that disconnects and attempts the candidate in RAM. On candidate
@@ -962,7 +962,7 @@ fails or connection times out, restore the prior configuration and reconnect.
 
 Never overwrite the `wifi_cfg` private partition.
 
-- [ ] **Step 7: Run host tests and ESP target compile**
+- [x] **Step 7: Run host tests and ESP target compile**
 
 ```bash
 cmake --build build/product-host -j

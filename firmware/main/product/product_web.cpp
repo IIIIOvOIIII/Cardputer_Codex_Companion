@@ -573,7 +573,7 @@ esp_err_t wifi_handler(httpd_req_t* request) {
       product_wifi_save(ssid->valuestring, password->valuestring);
   cJSON_Delete(root);
   return saved == ESP_OK
-             ? json_response(request, "{\"saved\":true}")
+             ? json_response(request, "{\"staged\":true}")
              : json_response(request, "{\"error\":\"wifi_save_failed\"}",
                              "400 Bad Request");
 }

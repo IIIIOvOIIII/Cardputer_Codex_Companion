@@ -279,6 +279,8 @@ void wifi_status_changed(WifiState state, const char* detail) {
       g_wifi_state = ServiceState::ok;
       break;
     case WifiState::connecting:
+    case WifiState::candidate_connecting:
+    case WifiState::rollback_connecting:
       g_wifi_state = ServiceState::starting;
       break;
     case WifiState::provisioning:
