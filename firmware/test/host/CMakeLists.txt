@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(phase0_firmware_host LANGUAGES CXX)
+project(phase0_firmware_host LANGUAGES C CXX)
 enable_testing()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -212,10 +212,28 @@ add_test(NAME input_router COMMAND test_input_router)
 add_executable(test_profile
   test_profile.cpp
   ../../main/product/profile.cpp
+  ../../main/product/profile_codec.cpp
   ../../main/product/profile_store.cpp
+  ../../../.tools/esp-idf/components/json/cJSON/cJSON.c
 )
-target_include_directories(test_profile PRIVATE ../../main)
+target_include_directories(test_profile PRIVATE
+  ../../main
+  ../../../.tools/esp-idf/components/json/cJSON
+)
 add_test(NAME profile COMMAND test_profile)
+
+add_executable(test_profile_catalog
+  test_profile_catalog.cpp
+  ../../main/product/profile.cpp
+  ../../main/product/profile_codec.cpp
+  ../../main/product/profile_catalog.cpp
+  ../../../.tools/esp-idf/components/json/cJSON/cJSON.c
+)
+target_include_directories(test_profile_catalog PRIVATE
+  ../../main
+  ../../../.tools/esp-idf/components/json/cJSON
+)
+add_test(NAME profile_catalog COMMAND test_profile_catalog)
 
 add_executable(test_macro_engine
   test_macro_engine.cpp

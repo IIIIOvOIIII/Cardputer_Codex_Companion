@@ -57,6 +57,8 @@ idf_component_register(
         "product/keyboard_matrix.cpp"
         "product/input_router.cpp"
         "product/profile.cpp"
+        "product/profile_codec.cpp"
+        "product/profile_catalog.cpp"
         "product/profile_store.cpp"
         "product/macro_engine.cpp"
         "product/wifi_manager.cpp"

@@ -19,6 +19,7 @@
 #include "product/companion_protocol.hpp"
 #include "product/device_identity.hpp"
 #include "product/profile.hpp"
+#include "product/profile_codec.hpp"
 #include "product/web_assets.hpp"
 #include "product/wifi_manager.hpp"
 
@@ -56,56 +57,6 @@ class ProfileLock {
  private:
   bool locked_ = false;
 };
-
-const char* action_name(ActionKind kind) {
-  switch (kind) {
-    case ActionKind::passthrough: return "passthrough";
-    case ActionKind::hid_chord: return "hid_chord";
-    case ActionKind::text_utf8: return "text_utf8";
-    case ActionKind::input_sequence: return "input_sequence";
-    case ActionKind::device_action: return "device_action";
-    case ActionKind::codex_action: return "codex_action";
-    case ActionKind::disabled: return "disabled";
-  }
-  return "disabled";
-}
-
-ActionKind parse_action(const char* value) {
-  if (value == nullptr) return ActionKind::disabled;
-  if (std::strcmp(value, "passthrough") == 0) return ActionKind::passthrough;
-  if (std::strcmp(value, "hid_chord") == 0) return ActionKind::hid_chord;
-  if (std::strcmp(value, "text_utf8") == 0) return ActionKind::text_utf8;
-  if (std::strcmp(value, "input_sequence") == 0) return ActionKind::input_sequence;
-  if (std::strcmp(value, "device_action") == 0) return ActionKind::device_action;
-  if (std::strcmp(value, "codex_action") == 0) return ActionKind::codex_action;
-  return ActionKind::disabled;
-}
-
-const char* device_action_name(DeviceAction action) {
-  switch (action) {
-    case DeviceAction::toggle_mode: return "toggle_mode";
-    case DeviceAction::next_profile: return "next_profile";
-    case DeviceAction::previous_profile: return "previous_profile";
-    case DeviceAction::open_pairing: return "open_pairing";
-    case DeviceAction::reconnect_wifi: return "reconnect_wifi";
-    case DeviceAction::none: return "none";
-  }
-  return "none";
-}
-
-DeviceAction parse_device_action(const char* value) {
-  if (value == nullptr) return DeviceAction::none;
-  if (std::strcmp(value, "toggle_mode") == 0) return DeviceAction::toggle_mode;
-  if (std::strcmp(value, "next_profile") == 0) return DeviceAction::next_profile;
-  if (std::strcmp(value, "previous_profile") == 0) {
-    return DeviceAction::previous_profile;
-  }
-  if (std::strcmp(value, "open_pairing") == 0) return DeviceAction::open_pairing;
-  if (std::strcmp(value, "reconnect_wifi") == 0) {
-    return DeviceAction::reconnect_wifi;
-  }
-  return DeviceAction::none;
-}
 
 bool authorized(httpd_req_t* request) {
   const size_t length = httpd_req_get_hdr_value_len(request, kPairingHeader);
@@ -192,173 +143,6 @@ bool parse_sha256(std::string_view text, std::array<uint8_t, 32>* output) {
   return true;
 }
 
-cJSON* action_json(ActionKind kind, uint8_t modifiers,
-                   const std::array<uint8_t, 6>& usage_values,
-                   uint8_t usage_count, std::string_view text,
-                   const std::vector<SequenceStep>* sequence,
-                   DeviceAction device,
-                   CodexAction codex) {
-    cJSON* item = cJSON_CreateObject();
-    cJSON_AddStringToObject(item, "kind", action_name(kind));
-    if (modifiers != 0) {
-      cJSON_AddNumberToObject(item, "modifiers", modifiers);
-    }
-    if (usage_count != 0) {
-      cJSON* usages_json = cJSON_AddArrayToObject(item, "usages");
-      for (uint8_t index = 0; index < usage_count; ++index) {
-        cJSON_AddItemToArray(
-            usages_json, cJSON_CreateNumber(usage_values[index]));
-      }
-    }
-    if (!text.empty()) {
-      cJSON_AddStringToObject(item, "text", std::string(text).c_str());
-    }
-    if (kind == ActionKind::device_action) {
-      cJSON_AddStringToObject(item, "device", device_action_name(device));
-    }
-    if (kind == ActionKind::codex_action) {
-      const std::string_view name = codex_action_name(codex);
-      cJSON_AddStringToObject(item, "codex", std::string(name).c_str());
-    }
-    if (kind == ActionKind::input_sequence && sequence != nullptr) {
-      cJSON* steps = cJSON_AddArrayToObject(item, "sequence");
-      for (const SequenceStep& step : *sequence) {
-        cJSON_AddItemToArray(
-            steps, action_json(step.kind, step.modifiers, step.usages,
-                               step.usage_count, step.text, nullptr,
-                               DeviceAction::none, CodexAction::none));
-        cJSON* encoded_step =
-            cJSON_GetArrayItem(steps, cJSON_GetArraySize(steps) - 1);
-        if (step.delay_ms != 0) {
-          cJSON_AddNumberToObject(encoded_step, "delay_ms", step.delay_ms);
-        }
-      }
-    }
-    return item;
-}
-
-cJSON* profile_json(const Profile& profile) {
-  cJSON* root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "name", profile.name.c_str());
-  cJSON_AddNumberToObject(root, "revision", profile.revision);
-  cJSON* bindings = cJSON_AddArrayToObject(root, "bindings");
-  for (const KeyBinding& binding : profile.bindings) {
-    const KeyAction& action = binding.action;
-    if (product_web_binding_uses_sparse_null(action.kind)) {
-      cJSON_AddItemToArray(bindings, cJSON_CreateNull());
-      continue;
-    }
-    cJSON_AddItemToArray(
-        bindings, action_json(action.kind, action.modifiers, action.usages,
-                              action.usage_count, action.text,
-                              &action.sequence,
-                              action.device, action.codex));
-  }
-  return root;
-}
-
-bool parse_leaf(const cJSON* item, ActionKind& kind, uint8_t& modifiers,
-                std::array<uint8_t, 6>& usage_values, uint8_t& usage_count,
-                std::string& text, DeviceAction* device, CodexAction* codex) {
-  if (!cJSON_IsObject(item)) return false;
-  const cJSON* kind_json = cJSON_GetObjectItemCaseSensitive(item, "kind");
-  kind = parse_action(cJSON_IsString(kind_json) ? kind_json->valuestring : nullptr);
-  const cJSON* modifiers_json =
-      cJSON_GetObjectItemCaseSensitive(item, "modifiers");
-  if (cJSON_IsNumber(modifiers_json)) {
-    if (modifiers_json->valueint < 0 || modifiers_json->valueint > 255) {
-      return false;
-    }
-    modifiers = static_cast<uint8_t>(modifiers_json->valueint);
-  }
-  const cJSON* usages_json = cJSON_GetObjectItemCaseSensitive(item, "usages");
-  if (cJSON_IsArray(usages_json)) {
-    const int count = cJSON_GetArraySize(usages_json);
-    if (count > 6) return false;
-    usage_count = static_cast<uint8_t>(count);
-    for (int usage = 0; usage < count; ++usage) {
-      const cJSON* value = cJSON_GetArrayItem(usages_json, usage);
-      if (!cJSON_IsNumber(value) || value->valueint < 0 ||
-          value->valueint > 255) {
-        return false;
-      }
-      usage_values[usage] = static_cast<uint8_t>(value->valueint);
-    }
-  }
-  const cJSON* text_json = cJSON_GetObjectItemCaseSensitive(item, "text");
-  if (cJSON_IsString(text_json)) text = text_json->valuestring;
-  if (device != nullptr) {
-    const cJSON* value = cJSON_GetObjectItemCaseSensitive(item, "device");
-    *device = parse_device_action(cJSON_IsString(value) ? value->valuestring
-                                                        : nullptr);
-  }
-  if (codex != nullptr) {
-    const cJSON* value = cJSON_GetObjectItemCaseSensitive(item, "codex");
-    *codex = parse_codex_action(
-        cJSON_IsString(value) ? value->valuestring : std::string_view{});
-  }
-  return true;
-}
-
-bool parse_profile(const cJSON* root, Profile& output) {
-  const cJSON* name = cJSON_GetObjectItemCaseSensitive(root, "name");
-  const cJSON* revision = cJSON_GetObjectItemCaseSensitive(root, "revision");
-  const cJSON* bindings = cJSON_GetObjectItemCaseSensitive(root, "bindings");
-  if (!cJSON_IsString(name) || !cJSON_IsNumber(revision) ||
-      !cJSON_IsArray(bindings) ||
-      cJSON_GetArraySize(bindings) != kProfileBindingCount) {
-    return false;
-  }
-  output.name.clear();
-  output.revision = 1;
-  for (KeyBinding& binding : output.bindings) {
-    binding.action = KeyAction{};
-  }
-  output.name = name->valuestring;
-  output.revision = static_cast<uint32_t>(revision->valuedouble);
-  for (int index = 0; index < cJSON_GetArraySize(bindings); ++index) {
-    const cJSON* item = cJSON_GetArrayItem(bindings, index);
-    KeyAction& action = output.bindings[index].action;
-    if (cJSON_IsNull(item)) {
-      action = KeyAction{};
-      continue;
-    }
-    if (!parse_leaf(item, action.kind, action.modifiers, action.usages,
-                    action.usage_count, action.text, &action.device,
-                    &action.codex)) {
-      return false;
-    }
-    if (action.kind == ActionKind::input_sequence) {
-      const cJSON* steps = cJSON_GetObjectItemCaseSensitive(item, "sequence");
-      if (!cJSON_IsArray(steps) ||
-          cJSON_GetArraySize(steps) > static_cast<int>(kMaxSequenceSteps)) {
-        return false;
-      }
-      const uint8_t sequence_count =
-          static_cast<uint8_t>(cJSON_GetArraySize(steps));
-      action.sequence.resize(sequence_count);
-      for (uint8_t step_index = 0; step_index < sequence_count; ++step_index) {
-        const cJSON* step_json = cJSON_GetArrayItem(steps, step_index);
-        SequenceStep& step = action.sequence[step_index];
-        if (!parse_leaf(step_json, step.kind, step.modifiers, step.usages,
-                        step.usage_count, step.text, nullptr, nullptr)) {
-          return false;
-        }
-        const cJSON* delay =
-            cJSON_GetObjectItemCaseSensitive(step_json, "delay_ms");
-        if (cJSON_IsNumber(delay)) {
-          if (delay->valuedouble < 0 ||
-              delay->valuedouble > kMaxSequenceDelayMs) {
-            return false;
-          }
-          step.delay_ms = static_cast<uint32_t>(delay->valuedouble);
-        }
-      }
-    }
-  }
-  return validate_profile(output) == ProfileError::none;
-}
-
 esp_err_t persist_profile(const char* json) {
   nvs_handle_t handle;
   esp_err_t result =
@@ -381,12 +165,11 @@ void load_profile() {
   }
   std::string json(size, '\0');
   if (nvs_get_str(handle, kProfileNvsKey, json.data(), &size) == ESP_OK) {
-    cJSON* root = cJSON_Parse(json.c_str());
     auto loaded = std::make_unique<Profile>();
-    if (root != nullptr && parse_profile(root, *loaded)) {
+    json.resize(std::strlen(json.c_str()));
+    if (decode_profile(json, *loaded) == ProfileCodecResult::ok) {
       g_profile = std::move(*loaded);
     }
-    cJSON_Delete(root);
   }
   nvs_close(handle);
 }
@@ -479,26 +262,20 @@ esp_err_t get_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   ProfileLock lock;
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  cJSON* root = profile_json(g_profile);
-  char* json = cJSON_PrintUnformatted(root);
-  const esp_err_t result =
-      json == nullptr ? ESP_ERR_NO_MEM : json_response(request, json);
-  cJSON_free(json);
-  cJSON_Delete(root);
-  return result;
+  std::string json;
+  return encode_profile(g_profile, json) == ProfileCodecResult::ok
+             ? json_response(request, json.c_str())
+             : ESP_ERR_NO_MEM;
 }
 
 esp_err_t put_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   const std::string body = read_body(request);
-  cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
   auto candidate = std::make_unique<Profile>();
-  if (root == nullptr || !parse_profile(root, *candidate)) {
-    cJSON_Delete(root);
+  if (decode_profile(body, *candidate) != ProfileCodecResult::ok) {
     return json_response(request, "{\"error\":\"invalid_profile\"}",
                          "400 Bad Request");
   }
-  cJSON_Delete(root);
   ProfileLock lock;
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
   if (candidate->revision != g_profile.revision) {
@@ -506,27 +283,20 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
                          "409 Conflict");
   }
   candidate->revision += 1;
-  cJSON* encoded = profile_json(*candidate);
-  char* json = cJSON_PrintUnformatted(encoded);
-  if (json == nullptr) {
-    cJSON_Delete(encoded);
+  std::string json;
+  if (encode_profile(*candidate, json) != ProfileCodecResult::ok) {
     return ESP_ERR_NO_MEM;
   }
-  const esp_err_t persisted = persist_profile(json);
+  const esp_err_t persisted = persist_profile(json.c_str());
   if (product_web_profile_activation(persisted == ESP_OK) ==
       ProductWebProfileActivation::keep_active) {
-    cJSON_free(json);
-    cJSON_Delete(encoded);
     return json_response(
         request,
         "{\"error\":\"profile_persist_failed\"}",
         "500 Internal Server Error");
   }
   g_profile = std::move(*candidate);
-  const esp_err_t result = json_response(request, json);
-  cJSON_free(json);
-  cJSON_Delete(encoded);
-  return result;
+  return json_response(request, json.c_str());
 }
 
 esp_err_t wifi_handler(httpd_req_t* request) {

@@ -480,7 +480,7 @@ class ProfileCatalogStore {
 - The catalog keeps only a fixed summary/index in RAM and streams unchanged
   JSON from the active bank to the inactive bank in at most 4 KiB chunks.
 
-- [ ] **Step 1: Extract codec tests before moving implementation**
+- [x] **Step 1: Extract codec tests before moving implementation**
 
 Move sparse round-trip expectations into `test_profile.cpp`:
 
@@ -490,7 +490,7 @@ Move sparse round-trip expectations into `test_profile.cpp`:
   16 KiB fail;
 - a valid encoded Profile preserves name and revision.
 
-- [ ] **Step 2: Run codec RED**
+- [x] **Step 2: Run codec RED**
 
 ```bash
 cmake --build build/product-host --target test_profile -j
@@ -499,7 +499,7 @@ cmake --build build/product-host --target test_profile -j
 
 Expected: compile failure because `profile_codec.hpp` does not exist.
 
-- [ ] **Step 3: Extract the codec**
+- [x] **Step 3: Extract the codec**
 
 Move `action_json`, `profile_json`, `parse_leaf`, and `parse_profile` from
 `product_web.cpp` into `profile_codec.cpp` without changing the wire shape.
@@ -510,7 +510,7 @@ ProfileCodecResult encode_profile(const Profile&, std::string& output);
 ProfileCodecResult decode_profile(std::string_view, Profile& output);
 ```
 
-- [ ] **Step 4: Run codec GREEN and product Web regression**
+- [x] **Step 4: Run codec GREEN and product Web regression**
 
 ```bash
 cmake --build build/product-host --target test_profile test_product_web -j
@@ -520,7 +520,7 @@ cmake --build build/product-host --target test_profile test_product_web -j
 
 Expected: both executables exit zero.
 
-- [ ] **Step 5: Write the failing catalog bank tests**
+- [x] **Step 5: Write the failing catalog bank tests**
 
 Implement a memory backend covering:
 
@@ -535,7 +535,7 @@ Implement a memory backend covering:
 - delete and activate never delete SAFE;
 - no backend read/write call exceeds 4096 bytes.
 
-- [ ] **Step 6: Run catalog RED**
+- [x] **Step 6: Run catalog RED**
 
 ```bash
 cmake -S firmware/test/host -B build/product-host
@@ -544,7 +544,7 @@ cmake --build build/product-host --target test_profile_catalog -j
 
 Expected: CMake target or compile failure because the catalog does not exist.
 
-- [ ] **Step 7: Implement and verify the raw two-bank catalog**
+- [x] **Step 7: Implement and verify the raw two-bank catalog**
 
 Use bank bases `0x1c0000` and `0x1d0000` relative to the `storage` partition.
 Use a fixed `CCPF` header and fixed four-entry table. Compute CRC32 while
@@ -556,7 +556,7 @@ For ESP builds, add a `ProfileCatalogBackend` that calls
 `esp_partition_read`, `esp_partition_erase_range`, and
 `esp_partition_write`. Verify the partition is at least `0x1e0000` bytes.
 
-- [ ] **Step 8: Run catalog GREEN, sanitizer, and partition checks**
+- [x] **Step 8: Run catalog GREEN, sanitizer, and partition checks**
 
 ```bash
 cmake --build build/product-host --target test_profile_catalog -j

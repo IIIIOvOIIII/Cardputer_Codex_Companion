@@ -384,3 +384,10 @@
 - Expected result: 通过统一 app-server 快照获得 Model、Thinking、Fast 和限额，同时不创建 turn、不改变 thread 状态。
 - Result: Partial / design gate not achieved — 完整基线门禁通过；遥测 DTO、四行限制、60 秒刷新及 120 秒隐藏已完成可执行 RED/GREEN，release Agent 可链接。本机缺少 XCTest 模块，因此按仓库现有模式增加无测试框架的 Swift 可执行测试。真实 app-server 检查确认 `thread/resume` 不创建 turn、也不改变最后一个 turn，但会把 thread 顶层状态从 `notLoaded` 改为 `idle`，违反批准的只读边界。只读替代来源已证实可用：`thread/list` 返回会话 JSONL path，最新 `turn_context` 含 model/effort；`config/read` 含 `service_tier`；`account/rateLimits/read` 保持不变。
 - Next step: 用户确认改用“JSONL 最新 turn_context + config/read + rateLimits/read”的只读替代后，删除 `thread/resume` 依赖、补齐相应 RED/GREEN，再继续 Tasks 2–9。
+
+## 2026-07-25 23:52 HKT
+
+- Current work: 完成 Task 1–3 的只读 Codex 遥测、五页状态模型以及事务式多 Profile 底层。
+- Expected result: Mac 快照不改变会话状态；设备可解析并展示五页数据；SAFE 加四个自定义 Profile 使用 storage 末尾双 64 KiB bank，具备 CRC、断电恢复、旧配置迁移和 4 KiB 分块 I/O。
+- Result: Achieved — 只读遥测 live gate 确认没有创建 turn、没有改变 thread status 或 last turn；Swift 可执行测试与 release build 通过。固件 host 24 项基线保持通过，状态页顺序为 Pets/Device/Codex/Sync/Settings，Fast 紧跟 Model 且缺失限额不生成行。Profile codec 和 catalog 完成 RED/GREEN；目录测试、产品 Web 回归、ASan/UBSan 均通过，ESP-IDF 5.5.4 固件链接成功，应用占用 0x172c80，产品分区布局未变化。Profile 目录单次后端读写不超过 4096 bytes，失效的新 bank 会回退到上一有效序列。
+- Next step: 实现 PIN 鉴权的多 Profile Web API/UI，然后继续设备端滚动 Settings、Wi-Fi/PIN 迁移和运行时接线。
