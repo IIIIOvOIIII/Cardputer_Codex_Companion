@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -12,6 +15,10 @@
 
 #ifdef ESP_PLATFORM
 #include "esp_partition.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #endif
 
 namespace {
@@ -21,6 +28,12 @@ constexpr std::size_t kCrcOffset = 20;
 constexpr std::size_t kEntryOffset = 24;
 constexpr std::size_t kEntryBytes = 48;
 constexpr std::size_t kChunkBytes = 4096;
+#ifdef ESP_PLATFORM
+constexpr uint8_t kCommandRead = 1;
+constexpr uint8_t kCommandErase = 2;
+constexpr uint8_t kCommandWrite = 3;
+constexpr std::size_t kFlashEraseSectorBytes = 4096;
+#endif
 
 uint16_t get_u16(const uint8_t* value) {
   return static_cast<uint16_t>(value[0]) |
@@ -110,7 +123,7 @@ struct LoadedBank {
 };
 
 LoadedBank inspect_bank(ProfileCatalogBackend& backend,
-                        std::size_t bank_offset) {
+                        std::size_t bank_offset, Profile& scratch) {
   LoadedBank result;
   result.offset = bank_offset;
   std::array<uint8_t, kProfileCatalogHeaderBytes> header{};
@@ -190,10 +203,9 @@ LoadedBank inspect_bank(ProfileCatalogBackend& backend,
       }
       read_position += size;
     }
-    Profile profile;
-    if (decode_profile(json, profile) != ProfileCodecResult::ok ||
-        profile.revision != entry.summary.revision ||
-        profile.name != entry.summary.name.data()) {
+    if (decode_profile(json, scratch) != ProfileCodecResult::ok ||
+        scratch.revision != entry.summary.revision ||
+        scratch.name != entry.summary.name.data()) {
       return result;
     }
   }
@@ -207,49 +219,214 @@ LoadedBank inspect_bank(ProfileCatalogBackend& backend,
 }  // namespace
 
 #ifdef ESP_PLATFORM
+struct EspProfileCatalogBackend::Impl {
+  const esp_partition_t* partition = nullptr;
+  StaticSemaphore_t command_mutex_storage{};
+  SemaphoreHandle_t command_mutex = nullptr;
+  StaticSemaphore_t completion_storage{};
+  SemaphoreHandle_t completion = nullptr;
+  StaticQueue_t command_queue_storage{};
+  std::array<uint8_t, 1> command_queue_buffer{};
+  QueueHandle_t command_queue = nullptr;
+  StaticTask_t storage_task_storage{};
+  std::array<StackType_t, 2048> storage_task_stack{};
+  TaskHandle_t storage_task_handle = nullptr;
+  std::atomic<bool> command_active{false};
+  std::size_t command_offset = 0;
+  std::size_t command_length = 0;
+  std::array<uint8_t, kChunkBytes> command_input{};
+  bool command_result = false;
+};
+
 bool EspProfileCatalogBackend::start() {
-  partition_ = esp_partition_find_first(
+  if (impl_ != nullptr) return true;
+  auto impl = std::make_unique<Impl>();
+  impl->partition = esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "storage");
-  return partition_ != nullptr &&
-         partition_->size >=
-             kProfileCatalogBankBOffset + kProfileCatalogBankBytes;
+  impl->command_mutex =
+      xSemaphoreCreateMutexStatic(&impl->command_mutex_storage);
+  impl->completion =
+      xSemaphoreCreateBinaryStatic(&impl->completion_storage);
+  impl->command_queue = xQueueCreateStatic(
+      1, sizeof(uint8_t), impl->command_queue_buffer.data(),
+      &impl->command_queue_storage);
+  if (impl->partition == nullptr ||
+      impl->partition->size <
+          kProfileCatalogBankBOffset + kProfileCatalogBankBytes ||
+      impl->command_mutex == nullptr || impl->completion == nullptr ||
+      impl->command_queue == nullptr) {
+    return false;
+  }
+  impl_ = impl.release();
+  impl_->storage_task_handle = xTaskCreateStatic(
+      storage_task, "profile-storage", impl_->storage_task_stack.size(),
+      this, tskIDLE_PRIORITY, impl_->storage_task_stack.data(),
+      &impl_->storage_task_storage);
+  if (impl_->storage_task_handle == nullptr) {
+    delete impl_;
+    impl_ = nullptr;
+    return false;
+  }
+  return true;
 }
 
 bool EspProfileCatalogBackend::read(
     std::size_t offset,
     std::span<uint8_t> output
 ) {
-  return partition_ != nullptr &&
-         offset <= partition_->size &&
-         output.size() <= partition_->size - offset &&
-         esp_partition_read(partition_, offset, output.data(), output.size()) ==
-             ESP_OK;
+  if (impl_ == nullptr || impl_->partition == nullptr ||
+      offset > impl_->partition->size ||
+      output.size() > impl_->partition->size - offset ||
+      output.size() > impl_->command_input.size() ||
+      xSemaphoreTake(impl_->command_mutex, pdMS_TO_TICKS(30000)) != pdTRUE) {
+    return false;
+  }
+  bool result = false;
+  if (!impl_->command_active.load()) {
+    impl_->command_offset = offset;
+    impl_->command_length = output.size();
+    result = submit_storage_command(kCommandRead);
+    if (result) {
+      std::copy_n(
+          impl_->command_input.begin(), output.size(), output.begin());
+    }
+  }
+  xSemaphoreGive(impl_->command_mutex);
+  return result;
 }
 
 bool EspProfileCatalogBackend::erase(
     std::size_t offset,
     std::size_t length
 ) {
-  return partition_ != nullptr &&
-         offset <= partition_->size &&
-         length <= partition_->size - offset &&
-         esp_partition_erase_range(partition_, offset, length) == ESP_OK;
+  if (impl_ == nullptr || impl_->partition == nullptr ||
+      offset > impl_->partition->size ||
+      length > impl_->partition->size - offset ||
+      offset % kFlashEraseSectorBytes != 0 ||
+      length % kFlashEraseSectorBytes != 0) {
+    return false;
+  }
+  if (xSemaphoreTake(impl_->command_mutex, pdMS_TO_TICKS(30000)) != pdTRUE) {
+    return false;
+  }
+  bool result = false;
+  if (!impl_->command_active.load()) {
+    impl_->command_offset = offset;
+    impl_->command_length = length;
+    result = submit_storage_command(kCommandErase);
+  }
+  xSemaphoreGive(impl_->command_mutex);
+  return result;
 }
 
 bool EspProfileCatalogBackend::write(
     std::size_t offset,
     std::span<const uint8_t> input
 ) {
-  return partition_ != nullptr &&
-         offset <= partition_->size &&
-         input.size() <= partition_->size - offset &&
-         esp_partition_write(partition_, offset, input.data(), input.size()) ==
-             ESP_OK;
+  if (impl_ == nullptr || impl_->partition == nullptr ||
+      offset > impl_->partition->size ||
+      input.size() > impl_->partition->size - offset ||
+      input.size() > impl_->command_input.size() ||
+      xSemaphoreTake(impl_->command_mutex, pdMS_TO_TICKS(30000)) != pdTRUE) {
+    return false;
+  }
+  bool result = false;
+  if (!impl_->command_active.load()) {
+    impl_->command_offset = offset;
+    impl_->command_length = input.size();
+    std::copy(input.begin(), input.end(), impl_->command_input.begin());
+    result = submit_storage_command(kCommandWrite);
+  }
+  xSemaphoreGive(impl_->command_mutex);
+  return result;
+}
+
+bool EspProfileCatalogBackend::submit_storage_command(uint8_t command) {
+  while (xSemaphoreTake(impl_->completion, 0) == pdTRUE) {
+  }
+  impl_->command_active.store(true);
+  if (xQueueSend(impl_->command_queue, &command, 0) != pdTRUE) {
+    impl_->command_active.store(false);
+    return false;
+  }
+  if (xSemaphoreTake(impl_->completion, pdMS_TO_TICKS(30000)) != pdTRUE) {
+    return false;
+  }
+  return impl_->command_result;
+}
+
+bool EspProfileCatalogBackend::do_read() {
+  return esp_partition_read(
+             impl_->partition, impl_->command_offset,
+             impl_->command_input.data(), impl_->command_length) == ESP_OK;
+}
+
+bool EspProfileCatalogBackend::do_erase() {
+  for (std::size_t erased = 0; erased < impl_->command_length;
+       erased += kFlashEraseSectorBytes) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+    if (esp_partition_erase_range(
+            impl_->partition, impl_->command_offset + erased,
+            kFlashEraseSectorBytes) != ESP_OK) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool EspProfileCatalogBackend::do_write() {
+  return esp_partition_write(
+             impl_->partition, impl_->command_offset,
+             impl_->command_input.data(), impl_->command_length) == ESP_OK;
+}
+
+void EspProfileCatalogBackend::storage_task(void* context) {
+  auto* backend = static_cast<EspProfileCatalogBackend*>(context);
+  uint8_t command = 0;
+  while (true) {
+    if (xQueueReceive(
+            backend->impl_->command_queue, &command, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+    switch (command) {
+      case kCommandRead:
+        backend->impl_->command_result = backend->do_read();
+        break;
+      case kCommandErase:
+        backend->impl_->command_result = backend->do_erase();
+        break;
+      case kCommandWrite:
+        backend->impl_->command_result = backend->do_write();
+        break;
+      default:
+        backend->impl_->command_result = false;
+        break;
+    }
+    backend->impl_->command_active.store(false);
+    xSemaphoreGive(backend->impl_->completion);
+  }
 }
 #endif
 
 ProfileCatalogStore::ProfileCatalogStore(ProfileCatalogBackend& backend)
     : backend_(backend) {}
+
+bool ProfileCatalogStore::reserve_scratch() {
+  if (scratch_ != nullptr) return true;
+  scratch_.reset(new (std::nothrow) Profile());
+  return scratch_ != nullptr;
+}
+
+void ProfileCatalogStore::release_scratch() {
+  scratch_.reset();
+}
+
+ProfileCatalogResult ProfileCatalogStore::finish_transaction(
+    ProfileCatalogResult result
+) {
+  release_scratch();
+  return result;
+}
 
 std::optional<std::size_t> ProfileCatalogStore::find(
     std::string_view id
@@ -263,8 +440,12 @@ std::optional<std::size_t> ProfileCatalogStore::find(
 ProfileCatalogLoadResult ProfileCatalogStore::load(
     std::optional<std::string_view> legacy_json
 ) {
-  const LoadedBank first = inspect_bank(backend_, kProfileCatalogBankAOffset);
-  const LoadedBank second = inspect_bank(backend_, kProfileCatalogBankBOffset);
+  if (!reserve_scratch()) return ProfileCatalogLoadResult::storage_error;
+  Profile& scratch = *scratch_;
+  const LoadedBank first =
+      inspect_bank(backend_, kProfileCatalogBankAOffset, scratch);
+  const LoadedBank second =
+      inspect_bank(backend_, kProfileCatalogBankBOffset, scratch);
   const LoadedBank* selected = nullptr;
   if (first.valid && second.valid) {
     selected = first.sequence >= second.sequence ? &first : &second;
@@ -278,6 +459,7 @@ ProfileCatalogLoadResult ProfileCatalogStore::load(
     entry_count_ = selected->count;
     sequence_ = selected->sequence;
     active_bank_offset_ = selected->offset;
+    release_scratch();
     return ProfileCatalogLoadResult::loaded;
   }
 
@@ -286,22 +468,24 @@ ProfileCatalogLoadResult ProfileCatalogStore::load(
   sequence_ = 0;
   active_bank_offset_ = kProfileCatalogBankBOffset;
   if (!legacy_json.has_value() || legacy_json->empty()) {
+    release_scratch();
     return ProfileCatalogLoadResult::empty;
   }
-  Profile legacy;
-  if (decode_profile(*legacy_json, legacy) != ProfileCodecResult::ok) {
+  if (decode_profile(*legacy_json, scratch) != ProfileCodecResult::ok) {
+    release_scratch();
     return ProfileCatalogLoadResult::empty;
   }
-  legacy.name = "IMPORTED";
-  if (legacy.revision == 0) legacy.revision = 1;
+  scratch.name = "IMPORTED";
+  if (scratch.revision == 0) scratch.revision = 1;
   std::string encoded;
-  if (encode_profile(legacy, encoded) != ProfileCodecResult::ok) {
+  if (encode_profile(scratch, encoded) != ProfileCodecResult::ok) {
+    release_scratch();
     return ProfileCatalogLoadResult::empty;
   }
   Entry migrated;
   assign_string(migrated.summary.id, "00000001");
-  assign_string(migrated.summary.name, legacy.name);
-  migrated.summary.revision = legacy.revision;
+  assign_string(migrated.summary.name, scratch.name);
+  migrated.summary.revision = scratch.revision;
   migrated.length = static_cast<uint32_t>(encoded.size());
   if (commit(std::span(&migrated, 1), "00000001", encoded) !=
       ProfileCatalogResult::ok) {
@@ -372,18 +556,25 @@ ProfileCatalogResult ProfileCatalogStore::create(
                ? ProfileCatalogResult::capacity
                : ProfileCatalogResult::invalid;
   }
-  Profile profile;
+  if (!reserve_scratch()) return ProfileCatalogResult::storage_error;
+  Profile& scratch = *scratch_;
   if (clone_id.has_value()) {
-    const ProfileCatalogResult result = read(*clone_id, profile);
-    if (result != ProfileCatalogResult::ok) return result;
+    const ProfileCatalogResult result = read(*clone_id, scratch);
+    if (result != ProfileCatalogResult::ok) {
+      return finish_transaction(result);
+    }
   } else {
-    profile = safe_profile();
+    scratch.name = "SAFE";
+    scratch.revision = 1;
+    for (KeyBinding& binding : scratch.bindings) {
+      binding.action = KeyAction{};
+    }
   }
-  profile.name = std::string(name);
-  profile.revision = 1;
+  scratch.name = std::string(name);
+  scratch.revision = 1;
   std::string json;
-  if (encode_profile(profile, json) != ProfileCodecResult::ok) {
-    return ProfileCatalogResult::invalid;
+  if (encode_profile(scratch, json) != ProfileCodecResult::ok) {
+    return finish_transaction(ProfileCatalogResult::invalid);
   }
 
   uint32_t seed = sequence_ + 1;
@@ -417,15 +608,17 @@ ProfileCatalogResult ProfileCatalogStore::publish(
       profile.revision != expected_revision) {
     return ProfileCatalogResult::revision_conflict;
   }
-  Profile next_profile = profile;
-  next_profile.revision = expected_revision + 1;
+  if (!reserve_scratch()) return ProfileCatalogResult::storage_error;
+  Profile& scratch = *scratch_;
+  scratch = profile;
+  scratch.revision = expected_revision + 1;
   std::string json;
-  if (encode_profile(next_profile, json) != ProfileCodecResult::ok) {
-    return ProfileCatalogResult::invalid;
+  if (encode_profile(scratch, json) != ProfileCodecResult::ok) {
+    return finish_transaction(ProfileCatalogResult::invalid);
   }
   std::array<Entry, kProfileCatalogMaximumCustomProfiles> next = entries_;
-  assign_string(next[*index].summary.name, next_profile.name);
-  next[*index].summary.revision = next_profile.revision;
+  assign_string(next[*index].summary.name, scratch.name);
+  next[*index].summary.revision = scratch.revision;
   next[*index].length = static_cast<uint32_t>(json.size());
   return commit(std::span(next).first(entry_count_), id, json);
 }
@@ -456,6 +649,7 @@ ProfileCatalogResult ProfileCatalogStore::commit(
     std::optional<std::string_view> replacement_id,
     std::optional<std::string_view> replacement_json
 ) {
+  if (!reserve_scratch()) return ProfileCatalogResult::storage_error;
   std::array<Entry, kProfileCatalogMaximumCustomProfiles> next{};
   uint32_t payload_length = 0;
   for (std::size_t index = 0; index < requested.size(); ++index) {
@@ -465,7 +659,7 @@ ProfileCatalogResult ProfileCatalogStore::commit(
         next[index].length > kProfileJsonMaximumBytes ||
         payload_length > kProfileCatalogPayloadMaximum -
                              next[index].length) {
-      return ProfileCatalogResult::invalid;
+      return finish_transaction(ProfileCatalogResult::invalid);
     }
     payload_length += next[index].length;
   }
@@ -478,9 +672,8 @@ ProfileCatalogResult ProfileCatalogStore::commit(
   auto header =
       make_header(std::span(next).first(requested.size()), next_sequence,
                   payload_length);
-  if (!backend_.erase(target, kProfileCatalogBankBytes) ||
-      !backend_.write(target, header)) {
-    return ProfileCatalogResult::storage_error;
+  if (!backend_.erase(target, kProfileCatalogBankBytes)) {
+    return finish_transaction(ProfileCatalogResult::storage_error);
   }
   uint32_t crc = crc32_update(0xffffffffu, header);
   std::array<uint8_t, kChunkBytes> chunk{};
@@ -500,7 +693,7 @@ ProfileCatalogResult ProfileCatalogStore::commit(
         if (!backend_.write(target + kProfileCatalogHeaderBytes +
                                 destination.offset + position,
                             bytes)) {
-          return ProfileCatalogResult::storage_error;
+          return finish_transaction(ProfileCatalogResult::storage_error);
         }
         crc = crc32_update(crc, bytes);
         position += size;
@@ -509,7 +702,9 @@ ProfileCatalogResult ProfileCatalogStore::commit(
     }
 
     const auto source_index = find(id);
-    if (!source_index.has_value()) return ProfileCatalogResult::invalid;
+    if (!source_index.has_value()) {
+      return finish_transaction(ProfileCatalogResult::invalid);
+    }
     const Entry& source = entries_[*source_index];
     std::size_t position = 0;
     while (position < source.length) {
@@ -522,25 +717,24 @@ ProfileCatalogResult ProfileCatalogStore::commit(
           !backend_.write(target + kProfileCatalogHeaderBytes +
                               destination.offset + position,
                           bytes)) {
-        return ProfileCatalogResult::storage_error;
+        return finish_transaction(ProfileCatalogResult::storage_error);
       }
       crc = crc32_update(crc, bytes);
       position += size;
     }
   }
   const uint32_t completed_crc = crc ^ 0xffffffffu;
-  std::array<uint8_t, 4> crc_bytes{};
-  put_u32(crc_bytes.data(), completed_crc);
-  if (!backend_.write(target + kCrcOffset, crc_bytes)) {
-    return ProfileCatalogResult::storage_error;
+  put_u32(header.data() + kCrcOffset, completed_crc);
+  if (!backend_.write(target, header)) {
+    return finish_transaction(ProfileCatalogResult::storage_error);
   }
-  const LoadedBank verified = inspect_bank(backend_, target);
+  const LoadedBank verified = inspect_bank(backend_, target, *scratch_);
   if (!verified.valid || verified.sequence != next_sequence) {
-    return ProfileCatalogResult::storage_error;
+    return finish_transaction(ProfileCatalogResult::storage_error);
   }
   entries_ = verified.entries;
   entry_count_ = verified.count;
   sequence_ = verified.sequence;
   active_bank_offset_ = target;
-  return ProfileCatalogResult::ok;
+  return finish_transaction(ProfileCatalogResult::ok);
 }

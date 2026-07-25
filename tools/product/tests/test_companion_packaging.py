@@ -232,7 +232,8 @@ def test_pet_sync_keeps_companion_online_and_closes_curl_pipes():
     web = (ROOT / "firmware/main/product/product_web.cpp").read_text()
 
     assert "postSnapshotIfChanged" in main
-    assert main.count("try await postSnapshotIfChanged") == 2
+    assert main.count("try await postSnapshotIfChanged") == 1
+    assert "petSyncCadence.isDue" in main
     assert "note_companion_activity();" in web
     assert "try? output.fileHandleForReading.close()" in bridge
     assert "try? error.fileHandleForReading.close()" in bridge
@@ -254,9 +255,13 @@ def test_authenticated_companion_handlers_refresh_heartbeat():
         ("esp_err_t pet_chunk_handler", "esp_err_t pet_commit_handler"),
         ("esp_err_t pet_commit_handler", "}  // namespace"),
     )
-    for start, end in boundaries:
+    for index, (start, end) in enumerate(boundaries):
         handler = web.split(start, 1)[1].split(end, 1)[0]
-        authorization = handler.index("authorized(request)")
+        authorization = handler.index(
+            "authorize_request(request, true)"
+            if index == 1
+            else "authorized(request)"
+        )
         activity = handler.index("note_companion_activity();")
         assert authorization < activity
 

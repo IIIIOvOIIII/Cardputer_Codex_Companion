@@ -25,14 +25,18 @@ int main() {
   assert(machine.begin(100, false) == WifiCommand::connect_private);
   assert(machine.state() == WifiState::connecting);
   assert(machine.tick(15099) == WifiCommand::none);
-  assert(machine.tick(15100) == WifiCommand::stop_and_offline);
+  assert(machine.tick(15100) == WifiCommand::retry_selected);
+  assert(machine.state() == WifiState::connecting);
+  assert(machine.tick(30099) == WifiCommand::none);
+  assert(machine.tick(30100) == WifiCommand::retry_selected);
+  assert(machine.tick(45100) == WifiCommand::stop_and_offline);
   assert(machine.state() == WifiState::offline);
   assert(machine.tick(30000) == WifiCommand::none);
 
   assert(machine.on_connected() == WifiCommand::none);
   assert(machine.state() == WifiState::online);
-  machine.on_disconnected();
-  assert(machine.state() == WifiState::offline);
+  assert(machine.on_disconnected(31000) == WifiCommand::retry_selected);
+  assert(machine.state() == WifiState::connecting);
   assert(machine.stage(
       WifiCredentials{.ssid = "replacement", .password = "new-password"},
       50000) == WifiCommand::connect_candidate);

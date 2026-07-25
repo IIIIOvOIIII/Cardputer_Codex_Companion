@@ -426,3 +426,10 @@
 - Expected result: 启动先恢复 Profile Catalog；Settings 严格优先于全局导航和 HID；Profile、PIN、Wi-Fi、亮度、自动返回、宠物 FPS 均可从设备执行并保持；宠物动画不插入空白帧。
 - Result: Achieved — controller 在 Web 前加载双 bank Profile Catalog，并让 Web、设备菜单及 DeviceAction 共用当前 Profile；Settings 提供 Profile 和 Wi-Fi 二级列表、隐藏 SSID 手工输入、PIN 双次确认及三项版本化显示设置，耗时操作通过独立队列离开 10 ms 键盘路径。输入优先级已固定为 BLE 配对、Settings 编辑/浏览、Fn 导航、宏/HID；页面加入滚动提示，动画间隔可在 500/400/333 ms 切换且直接覆盖上一帧。Codex Model/Thinking/Fast/限额现已接入 UiModel。完整 host 28/28、专项 4/4 及 ESP-IDF 5.5.4 编译通过，应用大小 0x17d330。
 - Next step: 提交 Task 8，升级 1.0.30，运行完整 release gate，构建最终制品并 app-only 部署到当前 Cardputer。
+
+## 2026-07-26 02:32 HKT
+
+- Current work: 完成 1.0.30 发布候选的循环重启、Wi-Fi/TLS 资源竞争修复，重新发布并在真实 Cardputer 上执行 30 分钟稳定性验收。
+- Expected result: 旧 Profile 迁移及正常启动均不发生栈溢出；BLE/Wi-Fi 初始化前释放迁移临时内存；HTTPS 可同时承载 Mac Agent 与 Web 请求；最终制品、实机和 LaunchAgent 同源。
+- Result: Achieved — 串口先后定位到 `profile-storage` 线程 1 KiB 有效栈溢出、旧 Profile 迁移的 24 KiB 临时栈溢出，以及迁移任务与 BLE/Wi-Fi 并行导致 DHCP 时堆仅余约 20 KiB。修复后 Flash worker 使用 2 KiB 有效栈，迁移由 32 KiB 临时任务在网络服务前完成并等待回收，Profile 解码不再在受限栈复制约 16 KiB 对象，事务结束立即释放 scratch；HTTPS 启用动态 TLS 缓冲并限制为三个 LRU 连接，Wi-Fi 初始连接及掉线增加三次重试。冷启动在约 3.3 秒完成，目录初始化后 free heap 为 149,580 bytes，首次取得 IP 后启动 HTTPS，串口无 panic、watchdog 或软件复位。并发 HTTPS 12/12 成功；最终 30 分钟 HIL 60/60 返回 HTTP 200，version `1.0.30` 且 BLE/Wi-Fi/Agent 始终 `OK`。完整发布门禁通过 Python 134/134、普通 host 28/28、ASan/UBSan 28/28、ESP-IDF 目标构建、Swift release/doctor、分区与 private packaging。最终应用镜像 SHA-256 为 `dc4528f4d4f3669bc8cbd2345f2b16d8808576de4a7a24c14cde51feff78a5a6`；private full image 为 1,697,920 bytes，SHA-256 `26bb18d048ce53b2ed9cf3bfb035c9225cbd968a03b2e4d66ac8f6bbc78c0715`。应用镜像已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，独立 `verify_flash` digest matched；LaunchAgent PID 87725 运行本 worktree 的最终 app。CO: Not required，本次为本机固件开发和局域网设备验证。
+- Next step: 提交最终修复与文档；仓库无 remote，因此无 push 目标。交付 `dist/private/cardputer_codex_companion-private-full.bin`，已有配置设备继续使用 app-only 镜像升级。

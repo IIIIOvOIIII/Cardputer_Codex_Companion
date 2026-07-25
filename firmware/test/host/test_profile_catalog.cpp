@@ -43,7 +43,9 @@ struct MemoryCatalogBackend final : ProfileCatalogBackend {
     if (offset > bytes.size() || input.size() > bytes.size() - offset) {
       return false;
     }
-    std::copy(input.begin(), input.end(), bytes.begin() + offset);
+    for (std::size_t index = 0; index < input.size(); ++index) {
+      bytes[offset + index] &= input[index];
+    }
     return true;
   }
 };

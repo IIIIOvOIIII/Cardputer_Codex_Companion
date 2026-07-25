@@ -258,10 +258,10 @@ void load_profile() {
   }
   std::string json(size, '\0');
   if (nvs_get_str(handle, kProfileNvsKey, json.data(), &size) == ESP_OK) {
-    auto loaded = std::make_unique<Profile>();
     json.resize(std::strlen(json.c_str()));
-    if (decode_profile(json, *loaded) == ProfileCodecResult::ok) {
-      g_profile = std::move(*loaded);
+    if (decode_profile(json, g_profile) != ProfileCodecResult::ok) {
+      g_profile.name = "SAFE";
+      g_profile.revision = 1;
     }
   }
   nvs_close(handle);
@@ -304,13 +304,11 @@ std::string persisted_active_profile() {
 
 bool activate_catalog_profile(std::string_view id) {
   if (g_profile_catalog == nullptr) return false;
-  Profile selected;
-  if (g_profile_catalog->read(id, selected) != ProfileCatalogResult::ok ||
+  if (g_profile_catalog->read(id, g_profile) != ProfileCatalogResult::ok ||
       persist_active_profile(id) != ESP_OK ||
       g_profile_catalog->activate(id) != ProfileCatalogResult::ok) {
     return false;
   }
-  g_profile = std::move(selected);
   return true;
 }
 
@@ -420,16 +418,16 @@ esp_err_t get_profile_handler(httpd_req_t* request) {
   {
     ProfileLock lock;
     if (!lock.locked()) return ESP_ERR_TIMEOUT;
-    Profile selected;
+    auto selected = std::make_unique<Profile>();
     if (g_profile_catalog == nullptr) {
-      selected = g_profile;
+      *selected = g_profile;
     } else {
       catalog_result =
           g_profile_catalog->read(requested_or_active_profile_id(request),
-                                  selected);
+                                  *selected);
     }
     if (catalog_result == ProfileCatalogResult::ok &&
-        encode_profile(selected, json) != ProfileCodecResult::ok) {
+        encode_profile(*selected, json) != ProfileCodecResult::ok) {
       return ESP_ERR_NO_MEM;
     }
   }
@@ -456,11 +454,11 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
       catalog_result = g_profile_catalog->publish(
           id, *candidate, candidate->revision);
       if (catalog_result == ProfileCatalogResult::ok) {
-        Profile saved;
-        catalog_result = g_profile_catalog->read(id, saved);
+        auto saved = std::make_unique<Profile>();
+        catalog_result = g_profile_catalog->read(id, *saved);
         if (catalog_result == ProfileCatalogResult::ok) {
-          if (id == g_profile_catalog->active_id()) g_profile = saved;
-          if (encode_profile(saved, json) != ProfileCodecResult::ok) {
+          if (id == g_profile_catalog->active_id()) g_profile = *saved;
+          if (encode_profile(*saved, json) != ProfileCodecResult::ok) {
             return ESP_ERR_NO_MEM;
           }
         }
@@ -594,16 +592,16 @@ esp_err_t activate_profile_handler(httpd_req_t* request) {
     if (!lock.locked()) return ESP_ERR_TIMEOUT;
     const std::string previous(g_profile_catalog->active_id());
     result = g_profile_catalog->activate(requested);
-    Profile selected;
+    auto selected = std::make_unique<Profile>();
     if (result == ProfileCatalogResult::ok) {
-      result = g_profile_catalog->read(requested, selected);
+      result = g_profile_catalog->read(requested, *selected);
     }
     if (result == ProfileCatalogResult::ok &&
         persist_active_profile(requested) != ESP_OK) {
       g_profile_catalog->activate(previous);
       result = ProfileCatalogResult::storage_error;
     }
-    if (result == ProfileCatalogResult::ok) g_profile = std::move(selected);
+    if (result == ProfileCatalogResult::ok) g_profile = std::move(*selected);
   }
   return result == ProfileCatalogResult::ok
              ? json_response(request, "{\"active\":true}")
@@ -919,6 +917,8 @@ esp_err_t product_web_start() {
   config.httpd.server_port = 443;
   config.httpd.max_uri_handlers = kProductWebRoutes.size();
   config.httpd.stack_size = 10240;
+  config.httpd.max_open_sockets = 3;
+  config.httpd.lru_purge_enable = true;
   config.servercert = identity.certificate;
   config.servercert_len = identity.certificate_length;
   config.prvtkey_pem = identity.private_key;

@@ -1,21 +1,25 @@
 #include "product/product_controller.hpp"
 
 void ProductController::start() {
-  const std::array<bool (ProductStartupBackend::*)(), 7> steps{{
-      &ProductStartupBackend::display,
-      &ProductStartupBackend::config,
-      &ProductStartupBackend::keyboard,
-      &ProductStartupBackend::ble,
-      &ProductStartupBackend::wifi,
-      &ProductStartupBackend::web,
-      &ProductStartupBackend::companion,
+  struct StartupStep {
+    BootStage stage;
+    bool (ProductStartupBackend::*run)();
+  };
+  const std::array<StartupStep, 7> steps{{
+      {BootStage::display, &ProductStartupBackend::display},
+      {BootStage::config, &ProductStartupBackend::config},
+      {BootStage::keyboard, &ProductStartupBackend::keyboard},
+      {BootStage::ble, &ProductStartupBackend::ble},
+      {BootStage::wifi, &ProductStartupBackend::wifi},
+      {BootStage::web, &ProductStartupBackend::web},
+      {BootStage::companion, &ProductStartupBackend::companion},
   }};
-  for (std::size_t index = 0; index < steps.size(); ++index) {
-    const bool ok = (backend_.*steps[index])();
-    const BootStage stage = static_cast<BootStage>(index);
-    states_[index] =
+  for (const StartupStep& step : steps) {
+    const bool ok = (backend_.*step.run)();
+    states_[static_cast<std::size_t>(step.stage)] =
         ok ? ServiceState::ok
-           : (stage == BootStage::wifi || stage == BootStage::companion
+           : (step.stage == BootStage::wifi ||
+                      step.stage == BootStage::companion
                   ? ServiceState::offline
                   : ServiceState::error);
   }
@@ -32,6 +36,7 @@ void ProductController::start() {
 #include <string_view>
 
 #include "M5Unified.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -134,6 +139,10 @@ StaticTask_t g_macro_task_storage{};
 std::array<StackType_t, 6144> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
+TaskHandle_t g_profile_catalog_task_handle = nullptr;
+StaticSemaphore_t g_profile_catalog_initialization_done_storage{};
+SemaphoreHandle_t g_profile_catalog_initialization_done = nullptr;
+std::atomic<bool> g_profile_catalog_initialization_complete{false};
 ServiceState g_ble_state = ServiceState::offline;
 ServiceState g_wifi_state = ServiceState::offline;
 std::atomic<ServiceState> g_companion_state{ServiceState::offline};
@@ -736,14 +745,38 @@ void ui_task(void*) {
   }
 }
 
+void profile_catalog_task(void*) {
+  const esp_err_t result =
+      product_web_prepare_profile_catalog(&g_profile_catalog);
+  g_profile_catalog.release_scratch();
+  g_profile_catalog_initialization_complete.store(true);
+  ESP_LOGI(kTag, "heap after profile catalog: free=%u largest=%u",
+           static_cast<unsigned>(
+               heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+           static_cast<unsigned>(
+               heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+  if (result != ESP_OK) {
+    ESP_LOGE(kTag, "profile catalog unavailable: %s",
+             esp_err_to_name(result));
+  } else {
+    ESP_LOGI(kTag, "profile catalog ready");
+  }
+  g_profile_catalog_task_handle = nullptr;
+  xSemaphoreGive(g_profile_catalog_initialization_done);
+  vTaskDelete(nullptr);
+}
+
 class EspProductStartup final : public ProductStartupBackend {
  public:
   bool display() override {
     const bool ok = display_start(&g_ui) == ESP_OK;
+    display_ready_ = ok;
+    if (ok) apply_runtime_settings(g_device_settings_store.current());
     return ok;
   }
 
   bool config() override {
+    g_profile_catalog_initialization_complete.store(false);
     esp_err_t result = nvs_flash_init();
     if (result == ESP_ERR_NVS_NO_FREE_PAGES ||
         result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -751,23 +784,43 @@ class EspProductStartup final : public ProductStartupBackend {
       if (result == ESP_OK) result = nvs_flash_init();
     }
     if (result == ESP_OK) {
-      if (!g_profile_catalog_backend.start()) {
-        result = ESP_FAIL;
-      } else {
-        result = product_web_prepare_profile_catalog(&g_profile_catalog);
-      }
-    }
-    if (result == ESP_OK) {
       g_device_settings_store.load();
       const DeviceSettings settings = g_device_settings_store.current();
       g_settings.set_device_settings(settings);
-      apply_runtime_settings(settings);
       const esp_err_t pet_result = g_pet_store.start();
       if (pet_result == ESP_OK) {
         product_web_set_pet_store(&g_pet_store);
       } else {
         ESP_LOGW(kTag, "pet store unavailable: %s",
                  esp_err_to_name(pet_result));
+      }
+      g_profile_catalog_initialization_done = xSemaphoreCreateBinaryStatic(
+          &g_profile_catalog_initialization_done_storage);
+      if (g_profile_catalog_initialization_done == nullptr ||
+          !g_profile_catalog_backend.start() ||
+          !g_profile_catalog.reserve_scratch()) {
+        result = ESP_ERR_NO_MEM;
+        g_profile_catalog_initialization_complete.store(true);
+        ESP_LOGE(kTag, "profile catalog storage initialization failed");
+      } else {
+        const BaseType_t catalog_created =
+            xTaskCreate(profile_catalog_task, "profile-catalog-init", 32768,
+                        nullptr, tskIDLE_PRIORITY,
+                        &g_profile_catalog_task_handle);
+        if (catalog_created != pdPASS ||
+            g_profile_catalog_task_handle == nullptr) {
+          g_profile_catalog.release_scratch();
+          g_profile_catalog_initialization_complete.store(true);
+          result = ESP_ERR_NO_MEM;
+          ESP_LOGE(kTag, "profile catalog task initialization failed");
+        } else if (xSemaphoreTake(
+                       g_profile_catalog_initialization_done,
+                       portMAX_DELAY) != pdTRUE) {
+          result = ESP_ERR_TIMEOUT;
+          ESP_LOGE(kTag, "profile catalog initialization wait failed");
+        } else {
+          vTaskDelay(1);
+        }
       }
     }
     set_stage(BootStage::config, result);
@@ -828,8 +881,29 @@ class EspProductStartup final : public ProductStartupBackend {
   }
 
   bool web() override {
+    for (uint16_t attempt = 0; attempt < 80; ++attempt) {
+      const WifiState state = product_wifi_state();
+      if (state != WifiState::idle && state != WifiState::connecting &&
+          state != WifiState::candidate_connecting &&
+          state != WifiState::rollback_connecting) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    vTaskDelay(pdMS_TO_TICKS(250));
+    for (uint16_t attempt = 0;
+         attempt < 240 &&
+         !g_profile_catalog_initialization_complete.load();
+         ++attempt) {
+      vTaskDelay(pdMS_TO_TICKS(250));
+    }
     product_web_set_companion_snapshot_handler(companion_snapshot);
     product_web_set_companion_heartbeat_handler(companion_heartbeat);
+    ESP_LOGI(kTag, "heap before HTTPS: free=%u largest=%u",
+             static_cast<unsigned>(
+                 heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(
+                 heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
     const esp_err_t result = product_web_start();
     if (result == ESP_OK) {
       SemaphoreLock lock(g_ui_mutex);
@@ -868,8 +942,10 @@ class EspProductStartup final : public ProductStartupBackend {
       g_ui.set_stage_error(stage,
                            static_cast<uint16_t>(result < 0 ? -result : result));
     }
-    display_render_boot(g_ui);
+    if (display_ready_) display_render_boot(g_ui);
   }
+
+  bool display_ready_ = false;
 };
 }  // namespace
 

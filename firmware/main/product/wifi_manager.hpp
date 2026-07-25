@@ -8,6 +8,7 @@
 #include <string_view>
 
 inline constexpr uint64_t kWifiConnectTimeoutMs = 15000;
+inline constexpr uint8_t kWifiConnectAttemptLimit = 3;
 
 struct WifiCredentials {
   std::string ssid;
@@ -43,6 +44,7 @@ enum class WifiCommand : uint8_t {
   reconnect_previous,
   rollback_restored,
   rollback_failed,
+  retry_selected,
 };
 
 class WifiStateMachine {
@@ -57,7 +59,7 @@ class WifiStateMachine {
   void on_persisted();
   void connect_runtime(WifiCredentials credentials, uint64_t now_ms);
   WifiCommand on_connected();
-  void on_disconnected();
+  WifiCommand on_disconnected(uint64_t now_ms);
   [[nodiscard]] WifiState state() const { return state_; }
   [[nodiscard]] const std::optional<WifiCredentials>& selected() const {
     return selected_;
@@ -69,6 +71,7 @@ class WifiStateMachine {
   std::optional<WifiCredentials> previous_;
   WifiState state_ = WifiState::idle;
   uint64_t connect_started_ms_ = 0;
+  uint8_t connect_attempts_ = 0;
 };
 
 #ifdef ESP_PLATFORM

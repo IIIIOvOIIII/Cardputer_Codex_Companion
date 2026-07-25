@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -44,13 +45,19 @@ class EspProfileCatalogBackend final : public ProfileCatalogBackend {
   bool start();
   bool read(std::size_t offset, std::span<uint8_t> output) override;
   bool erase(std::size_t offset, std::size_t length) override;
-  bool write(
+ bool write(
       std::size_t offset,
       std::span<const uint8_t> input
   ) override;
 
  private:
-  const esp_partition_t* partition_ = nullptr;
+  bool submit_storage_command(uint8_t command);
+  bool do_read();
+  bool do_erase();
+  bool do_write();
+  static void storage_task(void* context);
+  struct Impl;
+  Impl* impl_ = nullptr;
 };
 #endif
 
@@ -82,6 +89,8 @@ class ProfileCatalogStore {
 
   explicit ProfileCatalogStore(ProfileCatalogBackend& backend);
 
+  bool reserve_scratch();
+  void release_scratch();
   ProfileCatalogLoadResult load(
       std::optional<std::string_view> legacy_json
   );
@@ -118,8 +127,10 @@ class ProfileCatalogStore {
   uint32_t sequence_ = 0;
   std::size_t active_bank_offset_ = kProfileCatalogBankAOffset;
   std::array<char, 9> active_id_{'S', 'A', 'F', 'E', '\0'};
+  std::unique_ptr<Profile> scratch_;
 
   std::optional<std::size_t> find(std::string_view id) const;
+  ProfileCatalogResult finish_transaction(ProfileCatalogResult result);
   ProfileCatalogResult commit(
       std::span<const Entry> next,
       std::optional<std::string_view> replacement_id,

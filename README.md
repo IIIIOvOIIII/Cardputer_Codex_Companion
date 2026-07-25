@@ -12,6 +12,10 @@
 - macOS Companion 使用真实 `codex app-server --listen stdio://` 获取会话，向副屏同步 title、cwd、状态、Approval 与 Input 数量。
 - 可由标准 US HID 表示的 ASCII 字符串直接通过 BLE HID 逐键发送；中文及其他 Unicode 字符串通过受保护 BLE GATT 分片发送，由 Companion 使用 `CGEvent.keyboardSetUnicodeString` 注入；不使用剪贴板或 Command‑V。
 - Profile 四层均参与运行：Keyboard/Codex 基础层分别为 0/1，按住 Fn 时分别切换到 2/3。
+- 主屏为 2–3 FPS 的 Codex 宠物；`Fn+;`/`Fn+.` 上下滚动，`Fn+,`/`Fn+/` 在 Pets、Device、Codex、Sync、Settings 五页间切换。
+- Device 显示版本及连接状态；Codex 显示活跃会话、Model、Fast、Thinking 和可用限额（缺失项隐藏）；Sync 显示 IP、心跳、宠物同步与当前 Profile。
+- Profile Catalog 支持不可删除的 SAFE 和最多四个自定义 Profile，使用双 bank 事务存储；Web 和设备端切换立即生效并跨重启保持。
+- Settings 使用裸 `; . , /` 选择和进入二级菜单，可切换 Profile、轮换 PIN、扫描/绑定 Wi‑Fi，并设置亮度、自动返回和宠物帧率。
 
 ## 刷写
 
@@ -42,6 +46,14 @@ dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
 5. 在 Web 中点击键位打开弹窗，把某个按键设为“中文字符串”并填入中文，或设为“组合键”后直接按下 `Alt+V` 这类组合键采集；非直通键会在键帽上显示真实用途，发布后即可使用。Settings 选项卡可修改 PIN 和 Wi‑Fi 信息。
 
 短按 G0/Home 在 Keyboard 与 Codex 模式间切换；长按两秒释放所有按键并进入 Safe Profile。
+
+从旧版本升级且需要保留 PIN、Wi‑Fi、Profile、宠物与 BLE 配对时，只写应用分区：
+
+```bash
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX \
+  --before default_reset --after hard_reset \
+  write_flash 0x20000 firmware/build/cardputer_codex_companion.bin
+```
 
 ## 构建与验证
 

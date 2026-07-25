@@ -10,18 +10,21 @@ WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
     selected_ = runtime;
     state_ = WifiState::connecting;
     connect_started_ms_ = now_ms;
+    connect_attempts_ = 1;
     return WifiCommand::connect_runtime;
   }
   selected_ = credentials_.load_private();
   if (selected_.has_value()) {
     state_ = WifiState::connecting;
     connect_started_ms_ = now_ms;
+    connect_attempts_ = 1;
     return WifiCommand::connect_private;
   }
   selected_ = runtime;
   if (selected_.has_value()) {
     state_ = WifiState::connecting;
     connect_started_ms_ = now_ms;
+    connect_attempts_ = 1;
     return WifiCommand::connect_runtime;
   }
   state_ = WifiState::provisioning;
@@ -39,6 +42,11 @@ WifiCommand WifiStateMachine::tick(uint64_t now_ms) {
   }
   if (state_ == WifiState::connecting &&
       now_ms - connect_started_ms_ >= kWifiConnectTimeoutMs) {
+    if (connect_attempts_ < kWifiConnectAttemptLimit) {
+      ++connect_attempts_;
+      connect_started_ms_ = now_ms;
+      return WifiCommand::retry_selected;
+    }
     state_ = WifiState::offline;
     return WifiCommand::stop_and_offline;
   }
@@ -90,11 +98,13 @@ void WifiStateMachine::connect_runtime(WifiCredentials credentials,
   selected_ = std::move(credentials);
   state_ = WifiState::connecting;
   connect_started_ms_ = now_ms;
+  connect_attempts_ = 1;
 }
 
 WifiCommand WifiStateMachine::on_connected() {
   const WifiState prior = state_;
   state_ = WifiState::online;
+  connect_attempts_ = 0;
   if (prior == WifiState::candidate_connecting) {
     return WifiCommand::persist_candidate;
   }
@@ -105,8 +115,15 @@ WifiCommand WifiStateMachine::on_connected() {
   return WifiCommand::none;
 }
 
-void WifiStateMachine::on_disconnected() {
-  state_ = WifiState::offline;
+WifiCommand WifiStateMachine::on_disconnected(uint64_t now_ms) {
+  if (!selected_.has_value()) {
+    state_ = WifiState::offline;
+    return WifiCommand::stop_and_offline;
+  }
+  state_ = WifiState::connecting;
+  connect_started_ms_ = now_ms;
+  connect_attempts_ = 1;
+  return WifiCommand::retry_selected;
 }
 
 #ifdef ESP_PLATFORM
@@ -329,8 +346,10 @@ void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
     publish_scan_results();
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED &&
              g_machine.state() == WifiState::online) {
-    g_machine.on_disconnected();
-    notify(WifiState::offline, nullptr);
+    const WifiCommand command = g_machine.on_disconnected(
+        static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+    notify(WifiState::connecting, nullptr);
+    if (command == WifiCommand::retry_selected) connect_selected();
   }
 }
 
@@ -339,7 +358,8 @@ void wifi_timeout_task(void*) {
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
     const WifiCommand command = g_machine.tick(now_ms);
-    if (command == WifiCommand::reconnect_previous) {
+    if (command == WifiCommand::reconnect_previous ||
+        command == WifiCommand::retry_selected) {
       esp_wifi_disconnect();
       connect_selected();
     } else if (command == WifiCommand::stop_and_offline ||

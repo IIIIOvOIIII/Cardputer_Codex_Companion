@@ -19,9 +19,13 @@ int main() {
   ProductController controller(startup);
   controller.start();
   assert(startup.calls.size() == 7);
-  for (uint8_t i = 0; i < startup.calls.size(); ++i) {
-    assert(static_cast<uint8_t>(startup.calls[i]) == i);
-  }
+  const std::array expected{
+      BootStage::display, BootStage::config, BootStage::keyboard,
+      BootStage::ble, BootStage::wifi, BootStage::web,
+      BootStage::companion,
+  };
+  assert(startup.calls == std::vector<BootStage>(
+                              expected.begin(), expected.end()));
   assert(controller.state(BootStage::display) == ServiceState::ok);
   assert(controller.state(BootStage::wifi) == ServiceState::offline);
   assert(controller.state(BootStage::web) == ServiceState::ok);

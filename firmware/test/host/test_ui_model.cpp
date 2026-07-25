@@ -126,7 +126,7 @@ int main() {
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
-  assert(joined.find("FW:1.0.29") != std::string::npos);
+  assert(joined.find("FW:1.0.30") != std::string::npos);
   assert(joined.find("PIN:") != std::string::npos);
   assert(joined.find("BLE:OK") != std::string::npos);
   assert(joined.find("WIFI:OFF") != std::string::npos);

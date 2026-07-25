@@ -4,11 +4,20 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "cJSON.h"
 
 namespace {
+void reset_profile(Profile& profile) {
+  profile.name.clear();
+  profile.revision = 1;
+  for (KeyBinding& binding : profile.bindings) {
+    binding.action = KeyAction{};
+  }
+}
+
 const char* action_name(ActionKind kind) {
   switch (kind) {
     case ActionKind::passthrough: return "passthrough";
@@ -262,7 +271,6 @@ ProfileCodecResult decode_profile(std::string_view json, Profile& output) {
   }
   cJSON* root = cJSON_ParseWithLength(json.data(), json.size());
   if (root == nullptr) return ProfileCodecResult::malformed;
-  Profile candidate;
   const cJSON* name = cJSON_GetObjectItemCaseSensitive(root, "name");
   const cJSON* revision = cJSON_GetObjectItemCaseSensitive(root, "revision");
   const cJSON* bindings = cJSON_GetObjectItemCaseSensitive(root, "bindings");
@@ -277,14 +285,15 @@ ProfileCodecResult decode_profile(std::string_view json, Profile& output) {
     cJSON_Delete(root);
     return ProfileCodecResult::malformed;
   }
-  candidate.name = name->valuestring;
-  candidate.revision = static_cast<uint32_t>(revision->valuedouble);
+  reset_profile(output);
+  output.name = name->valuestring;
+  output.revision = static_cast<uint32_t>(revision->valuedouble);
   bool valid = true;
-  for (std::size_t index = 0; valid && index < candidate.bindings.size();
+  for (std::size_t index = 0; valid && index < output.bindings.size();
        ++index) {
     const cJSON* item =
         cJSON_GetArrayItem(bindings, static_cast<int>(index));
-    KeyAction& action = candidate.bindings[index].action;
+    KeyAction& action = output.bindings[index].action;
     if (cJSON_IsNull(item)) {
       action = {};
       continue;
@@ -321,9 +330,9 @@ ProfileCodecResult decode_profile(std::string_view json, Profile& output) {
     }
   }
   cJSON_Delete(root);
-  if (!valid || validate_profile(candidate) != ProfileError::none) {
+  if (!valid || validate_profile(output) != ProfileError::none) {
+    reset_profile(output);
     return ProfileCodecResult::malformed;
   }
-  output = std::move(candidate);
   return ProfileCodecResult::ok;
 }
