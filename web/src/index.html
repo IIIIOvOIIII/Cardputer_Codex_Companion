@@ -35,7 +35,17 @@
 
     <section id="keyboard-view" class="panel">
       <div class="toolbar">
-        <label>Profile 名称 <input id="profile-name" maxlength="20" value="CODEX"></label>
+        <label>Profile
+          <select id="profile-select" aria-label="选择 Profile"></select>
+        </label>
+        <label>Profile 名称 <input id="profile-name" maxlength="20" value="CODEX" readonly></label>
+        <div class="profile-actions">
+          <button id="create-profile" type="button">新建</button>
+          <button id="clone-profile" type="button">克隆</button>
+          <button id="rename-profile" type="button">重命名</button>
+          <button id="activate-profile" class="primary" type="button">设为当前</button>
+          <button id="delete-profile" type="button">删除</button>
+        </div>
         <label>Layer
           <select id="layer">
             <option value="0">0 - Keyboard</option>
@@ -45,7 +55,7 @@
           </select>
         </label>
         <button id="reload" type="button">重新载入</button>
-        <button id="publish" class="primary" type="button">发布配置</button>
+        <button id="publish" class="primary" type="button">发布键盘配置</button>
       </div>
       <p class="hint">非直通按键会直接在键帽上显示真实用途。点击任意键位，在页面内弹窗中修改。</p>
       <div id="keyboard" aria-label="Cardputer 56-key layout"></div>

@@ -5,10 +5,11 @@
 #include <string_view>
 
 #include "product/profile.hpp"
+#include "product/profile_catalog.hpp"
 #include "product/pet_store.hpp"
 #include "product/product_types.hpp"
 
-enum class ProductHttpMethod : uint8_t { get, post, put };
+enum class ProductHttpMethod : uint8_t { get, post, put, delete_ };
 inline constexpr bool kProductWebUsesTls = true;
 inline constexpr std::size_t kProductWebPinLength = 8;
 
@@ -62,11 +63,15 @@ struct ProductWebRoute {
   bool requires_pairing;
 };
 
-inline constexpr std::array<ProductWebRoute, 12> kProductWebRoutes{{
+inline constexpr std::array<ProductWebRoute, 16> kProductWebRoutes{{
     {ProductHttpMethod::get, "/", false},
     {ProductHttpMethod::get, "/api/v1/status", false},
     {ProductHttpMethod::get, "/api/v1/profile", true},
     {ProductHttpMethod::put, "/api/v1/profile", true},
+    {ProductHttpMethod::delete_, "/api/v1/profile", true},
+    {ProductHttpMethod::get, "/api/v1/profiles", true},
+    {ProductHttpMethod::post, "/api/v1/profiles", true},
+    {ProductHttpMethod::post, "/api/v1/profile/activate", true},
     {ProductHttpMethod::post, "/api/v1/wifi", true},
     {ProductHttpMethod::post, "/api/v1/pin", true},
     {ProductHttpMethod::post, "/api/v1/companion/status", true},
@@ -92,6 +97,7 @@ void product_web_set_companion_snapshot_handler(
 void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler);
 void product_web_set_pet_store(PetStore* store);
+void product_web_set_profile_catalog(ProfileCatalogStore* catalog);
 bool product_web_action(uint8_t layer, uint8_t physical_key, KeyAction* action);
 bool product_web_profile_name(char* output, std::size_t output_size);
 void product_web_queue_codex_action(CodexAction action);

@@ -28,27 +28,32 @@ int main() {
   assert(product_web_companion_needs_snapshot(ServiceState::offline));
   assert(product_web_companion_needs_snapshot(ServiceState::starting));
   assert(!product_web_companion_needs_snapshot(ServiceState::ok));
-  assert(kProductWebRoutes.size() == 12);
+  assert(kProductWebRoutes.size() == 16);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");
   assert(kProductWebRoutes[2].path == "/api/v1/profile");
   assert(kProductWebRoutes[3].path == "/api/v1/profile");
-  assert(kProductWebRoutes[4].path == "/api/v1/wifi");
-  assert(kProductWebRoutes[5].path == "/api/v1/pin");
-  assert(kProductWebRoutes[6].path == "/api/v1/companion/status");
-  assert(kProductWebRoutes[7].path == "/api/v1/companion/action");
-  assert(kProductWebRoutes[8].path == "/api/v1/companion/pet/begin");
-  assert(kProductWebRoutes[9].path == "/api/v1/companion/pet/chunk");
-  assert(kProductWebRoutes[10].path == "/api/v1/companion/pet/commit");
-  assert(kProductWebRoutes[11].path == "/api/v1/companion/pet");
+  assert(kProductWebRoutes[4].path == "/api/v1/profile");
+  assert(kProductWebRoutes[4].method == ProductHttpMethod::delete_);
+  assert(kProductWebRoutes[5].path == "/api/v1/profiles");
+  assert(kProductWebRoutes[5].method == ProductHttpMethod::get);
+  assert(kProductWebRoutes[6].path == "/api/v1/profiles");
+  assert(kProductWebRoutes[6].method == ProductHttpMethod::post);
+  assert(kProductWebRoutes[7].path == "/api/v1/profile/activate");
+  assert(kProductWebRoutes[7].method == ProductHttpMethod::post);
+  assert(kProductWebRoutes[8].path == "/api/v1/wifi");
+  assert(kProductWebRoutes[9].path == "/api/v1/pin");
+  assert(kProductWebRoutes[10].path == "/api/v1/companion/status");
+  assert(kProductWebRoutes[11].path == "/api/v1/companion/action");
+  assert(kProductWebRoutes[12].path == "/api/v1/companion/pet/begin");
+  assert(kProductWebRoutes[13].path == "/api/v1/companion/pet/chunk");
+  assert(kProductWebRoutes[14].path == "/api/v1/companion/pet/commit");
+  assert(kProductWebRoutes[15].path == "/api/v1/companion/pet");
   assert(!kProductWebRoutes[0].requires_pairing);
   assert(!kProductWebRoutes[1].requires_pairing);
   assert(kProductWebRoutes[2].requires_pairing);
-  assert(kProductWebRoutes[6].requires_pairing);
-  assert(kProductWebRoutes[7].requires_pairing);
-  assert(kProductWebRoutes[8].requires_pairing);
-  assert(kProductWebRoutes[9].requires_pairing);
-  assert(kProductWebRoutes[10].requires_pairing);
-  assert(kProductWebRoutes[11].requires_pairing);
+  for (std::size_t index = 2; index < kProductWebRoutes.size(); ++index) {
+    assert(kProductWebRoutes[index].requires_pairing);
+  }
   return 0;
 }

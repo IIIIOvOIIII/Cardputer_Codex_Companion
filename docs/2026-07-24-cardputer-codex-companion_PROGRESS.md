@@ -391,3 +391,10 @@
 - Expected result: Mac 快照不改变会话状态；设备可解析并展示五页数据；SAFE 加四个自定义 Profile 使用 storage 末尾双 64 KiB bank，具备 CRC、断电恢复、旧配置迁移和 4 KiB 分块 I/O。
 - Result: Achieved — 只读遥测 live gate 确认没有创建 turn、没有改变 thread status 或 last turn；Swift 可执行测试与 release build 通过。固件 host 24 项基线保持通过，状态页顺序为 Pets/Device/Codex/Sync/Settings，Fast 紧跟 Model 且缺失限额不生成行。Profile codec 和 catalog 完成 RED/GREEN；目录测试、产品 Web 回归、ASan/UBSan 均通过，ESP-IDF 5.5.4 固件链接成功，应用占用 0x172c80，产品分区布局未变化。Profile 目录单次后端读写不超过 4096 bytes，失效的新 bank 会回退到上一有效序列。
 - Next step: 实现 PIN 鉴权的多 Profile Web API/UI，然后继续设备端滚动 Settings、Wi-Fi/PIN 迁移和运行时接线。
+
+## 2026-07-25 23:59 HKT
+
+- Current work: 完成 Task 4 的 PIN 鉴权多 Profile Web API、中文管理界面和浏览器静态冒烟。
+- Expected result: API 支持列表、创建/克隆、按 ID 读取/发布、激活和删除；旧无 ID 路由继续代表当前 Profile；Web 仅编辑选中 Profile，SAFE 和当前 Profile 不可删除。
+- Result: Achieved — 路由清单由 12 扩展为 16，新增 DELETE 与 `/api/v1/profiles`、`/api/v1/profile/activate`；ESP-IDF 编译通过。Web 源契约 7/7 和嵌入资源一致性通过。浏览器使用模拟 SAFE/CODING/REVIEW 数据验证：鉴权后默认选中当前 CODING、状态为 BLE/Wi-Fi/Mac 正常、Alt+V 映射真实显示、键位弹窗与 Settings 可见；800×900 视口下键盘按七列展示且工具栏可换行。冒烟临时页面已删除，未使用真实 PIN。
+- Next step: 实现设备端 Settings 状态机、版本化显示设置及其 host RED/GREEN。

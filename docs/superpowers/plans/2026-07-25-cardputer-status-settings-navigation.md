@@ -615,12 +615,12 @@ POST   /api/v1/profile/activate
 - Web state holds `profileCatalog`, `activeProfileID`,
   `selectedProfileID`, and one loaded `profile`.
 
-- [ ] **Step 1: Write failing route-manifest tests**
+- [x] **Step 1: Write failing route-manifest tests**
 
 Extend `test_product_web.cpp` to require `ProductHttpMethod::delete_`, sixteen
 routes, PIN protection on every catalog route, and exact compatibility aliases.
 
-- [ ] **Step 2: Run route RED**
+- [x] **Step 2: Run route RED**
 
 ```bash
 cmake --build build/product-host --target test_product_web -j
@@ -630,7 +630,7 @@ cmake --build build/product-host --target test_product_web -j
 Expected: compile or assertion failure because the manifest has twelve routes
 and no DELETE method.
 
-- [ ] **Step 3: Register the catalog routes and response contracts**
+- [x] **Step 3: Register the catalog routes and response contracts**
 
 Use these bounded response shapes:
 
@@ -652,13 +652,13 @@ Capacity returns HTTP 409 `profile_capacity`; catalog I/O failure returns HTTP
 All handlers hold the existing Profile mutex only around catalog/index access,
 never while sending the HTTP response.
 
-- [ ] **Step 4: Run route GREEN**
+- [x] **Step 4: Run route GREEN**
 
 Run the command from Step 2.
 
 Expected: `test_product_web` exits zero.
 
-- [ ] **Step 5: Write failing Web source-contract tests**
+- [x] **Step 5: Write failing Web source-contract tests**
 
 Create pytest assertions for:
 
@@ -671,7 +671,7 @@ Create pytest assertions for:
 - success/failure uses the existing in-page result modal;
 - Web login and Wi-Fi password inputs remain masked.
 
-- [ ] **Step 6: Run Web RED**
+- [x] **Step 6: Run Web RED**
 
 ```bash
 PYTHONPATH=. uv run pytest -q tests/product/test_web_profile_catalog.py
@@ -679,7 +679,7 @@ PYTHONPATH=. uv run pytest -q tests/product/test_web_profile_catalog.py
 
 Expected: failures for the missing controls and API calls.
 
-- [ ] **Step 7: Implement the Web catalog controls**
+- [x] **Step 7: Implement the Web catalog controls**
 
 Load the catalog after authentication, select the active Profile by default,
 and fetch only the selected full Profile. Keep all labels and error messages in
@@ -689,7 +689,7 @@ requested, show a failure dialog instructing the user to activate SAFE first.
 On create/clone/activate/delete, refresh the catalog and full Profile only after
 the device confirms success. Preserve the previous visible state on failure.
 
-- [ ] **Step 8: Regenerate and verify the embedded asset**
+- [x] **Step 8: Regenerate and verify the embedded asset**
 
 ```bash
 python3 scripts/build_web_assets.py
@@ -699,7 +699,7 @@ python3 scripts/build_web_assets.py --check
 
 Expected: pytest passes and the generated header exactly matches Web source.
 
-- [ ] **Step 9: Run a local static browser smoke**
+- [x] **Step 9: Run a local static browser smoke**
 
 Serve `web/src` locally, open the page in Chrome, and verify the login screen,
 Profile toolbar, key modal, result modal, Settings tab, and responsive

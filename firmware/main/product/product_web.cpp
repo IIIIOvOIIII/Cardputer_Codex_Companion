@@ -28,6 +28,7 @@ constexpr std::size_t kRequestLimit = 16384;
 constexpr char kPairingHeader[] = "X-Cardputer-Pairing";
 constexpr char kProductNvsNamespace[] = "product";
 constexpr char kProfileNvsKey[] = "profile";
+constexpr char kActiveProfileNvsKey[] = "active_profile";
 constexpr char kWebPinNvsKey[] = "web_pin";
 httpd_handle_t g_server = nullptr;
 std::array<char, 9> g_pairing_code{};
@@ -42,6 +43,7 @@ std::atomic<uint32_t> g_action_sequence{0};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
 PetStore* g_pet_store = nullptr;
+ProfileCatalogStore* g_profile_catalog = nullptr;
 
 class ProfileLock {
  public:
@@ -154,6 +156,83 @@ esp_err_t persist_profile(const char* json) {
   return result;
 }
 
+esp_err_t persist_active_profile(std::string_view id) {
+  nvs_handle_t handle;
+  esp_err_t result =
+      nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle);
+  if (result != ESP_OK) return result;
+  const std::string value(id);
+  result = nvs_set_str(handle, kActiveProfileNvsKey, value.c_str());
+  if (result == ESP_OK) result = nvs_commit(handle);
+  nvs_close(handle);
+  return result;
+}
+
+bool request_profile_id(httpd_req_t* request,
+                        std::array<char, 9>* output) {
+  if (request == nullptr || output == nullptr) return false;
+  const std::size_t query_length = httpd_req_get_url_query_len(request);
+  if (query_length == 0 || query_length > 64) return false;
+  std::array<char, 65> query{};
+  if (httpd_req_get_url_query_str(request, query.data(), query.size()) !=
+      ESP_OK) {
+    return false;
+  }
+  return httpd_query_key_value(query.data(), "id", output->data(),
+                               output->size()) == ESP_OK &&
+         output->front() != '\0';
+}
+
+std::string requested_or_active_profile_id(httpd_req_t* request) {
+  std::array<char, 9> requested{};
+  if (request_profile_id(request, &requested)) return requested.data();
+  return g_profile_catalog == nullptr
+             ? std::string()
+             : std::string(g_profile_catalog->active_id());
+}
+
+const char* catalog_error(ProfileCatalogResult result) {
+  switch (result) {
+    case ProfileCatalogResult::not_found: return "profile_not_found";
+    case ProfileCatalogResult::invalid: return "invalid_profile";
+    case ProfileCatalogResult::revision_conflict:
+      return "revision_conflict";
+    case ProfileCatalogResult::capacity: return "profile_capacity";
+    case ProfileCatalogResult::active_profile:
+      return "active_profile";
+    case ProfileCatalogResult::builtin_profile:
+      return "builtin_profile";
+    case ProfileCatalogResult::storage_error:
+      return "profile_catalog_failed";
+    case ProfileCatalogResult::ok: return "";
+  }
+  return "profile_catalog_failed";
+}
+
+const char* catalog_http_status(ProfileCatalogResult result) {
+  switch (result) {
+    case ProfileCatalogResult::not_found: return "404 Not Found";
+    case ProfileCatalogResult::revision_conflict:
+    case ProfileCatalogResult::capacity:
+    case ProfileCatalogResult::active_profile:
+    case ProfileCatalogResult::builtin_profile:
+      return "409 Conflict";
+    case ProfileCatalogResult::invalid: return "400 Bad Request";
+    case ProfileCatalogResult::storage_error:
+      return "500 Internal Server Error";
+    case ProfileCatalogResult::ok: return "200 OK";
+  }
+  return "500 Internal Server Error";
+}
+
+esp_err_t catalog_error_response(httpd_req_t* request,
+                                 ProfileCatalogResult result) {
+  char json[80]{};
+  std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}",
+                catalog_error(result));
+  return json_response(request, json, catalog_http_status(result));
+}
+
 void load_profile() {
   nvs_handle_t handle;
   if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) return;
@@ -260,12 +339,27 @@ esp_err_t status_handler(httpd_req_t* request) {
 
 esp_err_t get_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
-  ProfileLock lock;
-  if (!lock.locked()) return ESP_ERR_TIMEOUT;
   std::string json;
-  return encode_profile(g_profile, json) == ProfileCodecResult::ok
+  ProfileCatalogResult catalog_result = ProfileCatalogResult::ok;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    Profile selected;
+    if (g_profile_catalog == nullptr) {
+      selected = g_profile;
+    } else {
+      catalog_result =
+          g_profile_catalog->read(requested_or_active_profile_id(request),
+                                  selected);
+    }
+    if (catalog_result == ProfileCatalogResult::ok &&
+        encode_profile(selected, json) != ProfileCodecResult::ok) {
+      return ESP_ERR_NO_MEM;
+    }
+  }
+  return catalog_result == ProfileCatalogResult::ok
              ? json_response(request, json.c_str())
-             : ESP_ERR_NO_MEM;
+             : catalog_error_response(request, catalog_result);
 }
 
 esp_err_t put_profile_handler(httpd_req_t* request) {
@@ -276,27 +370,190 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
     return json_response(request, "{\"error\":\"invalid_profile\"}",
                          "400 Bad Request");
   }
-  ProfileLock lock;
-  if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  if (candidate->revision != g_profile.revision) {
-    return json_response(request, "{\"error\":\"revision_conflict\"}",
-                         "409 Conflict");
-  }
-  candidate->revision += 1;
   std::string json;
-  if (encode_profile(*candidate, json) != ProfileCodecResult::ok) {
-    return ESP_ERR_NO_MEM;
+  ProfileCatalogResult catalog_result = ProfileCatalogResult::ok;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    if (g_profile_catalog != nullptr) {
+      const std::string id = requested_or_active_profile_id(request);
+      catalog_result = g_profile_catalog->publish(
+          id, *candidate, candidate->revision);
+      if (catalog_result == ProfileCatalogResult::ok) {
+        Profile saved;
+        catalog_result = g_profile_catalog->read(id, saved);
+        if (catalog_result == ProfileCatalogResult::ok) {
+          if (id == g_profile_catalog->active_id()) g_profile = saved;
+          if (encode_profile(saved, json) != ProfileCodecResult::ok) {
+            return ESP_ERR_NO_MEM;
+          }
+        }
+      }
+    } else {
+      if (candidate->revision != g_profile.revision) {
+        catalog_result = ProfileCatalogResult::revision_conflict;
+      } else {
+        candidate->revision += 1;
+        if (encode_profile(*candidate, json) != ProfileCodecResult::ok) {
+          return ESP_ERR_NO_MEM;
+        }
+        const esp_err_t persisted = persist_profile(json.c_str());
+        if (product_web_profile_activation(persisted == ESP_OK) ==
+            ProductWebProfileActivation::keep_active) {
+          return json_response(
+              request, "{\"error\":\"profile_persist_failed\"}",
+              "500 Internal Server Error");
+        }
+        g_profile = std::move(*candidate);
+      }
+    }
   }
-  const esp_err_t persisted = persist_profile(json.c_str());
-  if (product_web_profile_activation(persisted == ESP_OK) ==
-      ProductWebProfileActivation::keep_active) {
-    return json_response(
-        request,
-        "{\"error\":\"profile_persist_failed\"}",
-        "500 Internal Server Error");
+  return catalog_result == ProfileCatalogResult::ok
+             ? json_response(request, json.c_str())
+             : catalog_error_response(request, catalog_result);
+}
+
+esp_err_t list_profiles_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_profile_catalog == nullptr) {
+    return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
+                         "503 Service Unavailable");
   }
-  g_profile = std::move(*candidate);
-  return json_response(request, json.c_str());
+  std::array<ProfileSummary, 5> summaries{};
+  std::size_t count = 0;
+  std::string active_id;
+  ProfileCatalogResult result = ProfileCatalogResult::ok;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    result = g_profile_catalog->list(summaries, &count);
+    active_id = g_profile_catalog->active_id();
+  }
+  if (result != ProfileCatalogResult::ok) {
+    return catalog_error_response(request, result);
+  }
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "active_id", active_id.c_str());
+  cJSON* profiles = cJSON_AddArrayToObject(root, "profiles");
+  for (std::size_t index = 0; index < count; ++index) {
+    cJSON* item = cJSON_CreateObject();
+    cJSON_AddStringToObject(item, "id", summaries[index].id.data());
+    cJSON_AddStringToObject(item, "name", summaries[index].name.data());
+    cJSON_AddNumberToObject(item, "revision", summaries[index].revision);
+    cJSON_AddBoolToObject(item, "builtin", summaries[index].builtin);
+    cJSON_AddItemToArray(profiles, item);
+  }
+  char* json = cJSON_PrintUnformatted(root);
+  const esp_err_t response =
+      json == nullptr ? ESP_ERR_NO_MEM : json_response(request, json);
+  cJSON_free(json);
+  cJSON_Delete(root);
+  return response;
+}
+
+esp_err_t create_profile_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_profile_catalog == nullptr) {
+    return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
+                         "503 Service Unavailable");
+  }
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* name =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "name");
+  const cJSON* clone =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "clone_id");
+  if (!cJSON_IsString(name) ||
+      (clone != nullptr && !cJSON_IsString(clone))) {
+    cJSON_Delete(root);
+    return json_response(request, "{\"error\":\"invalid_profile\"}",
+                         "400 Bad Request");
+  }
+  const std::string name_value(name->valuestring);
+  const std::optional<std::string> clone_value =
+      cJSON_IsString(clone)
+          ? std::optional<std::string>(clone->valuestring)
+          : std::nullopt;
+  cJSON_Delete(root);
+  std::array<char, 9> created{};
+  ProfileCatalogResult result;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    result = g_profile_catalog->create(
+        clone_value.has_value()
+            ? std::optional<std::string_view>(*clone_value)
+            : std::nullopt,
+        name_value, &created);
+  }
+  if (result != ProfileCatalogResult::ok) {
+    return catalog_error_response(request, result);
+  }
+  char json[40]{};
+  std::snprintf(json, sizeof(json), "{\"id\":\"%s\"}", created.data());
+  return json_response(request, json);
+}
+
+esp_err_t activate_profile_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_profile_catalog == nullptr) {
+    return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
+                         "503 Service Unavailable");
+  }
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* id =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "id");
+  const std::string requested = cJSON_IsString(id) ? id->valuestring : "";
+  cJSON_Delete(root);
+  if (requested.empty()) {
+    return json_response(request, "{\"error\":\"invalid_profile\"}",
+                         "400 Bad Request");
+  }
+  ProfileCatalogResult result;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    const std::string previous(g_profile_catalog->active_id());
+    result = g_profile_catalog->activate(requested);
+    Profile selected;
+    if (result == ProfileCatalogResult::ok) {
+      result = g_profile_catalog->read(requested, selected);
+    }
+    if (result == ProfileCatalogResult::ok &&
+        persist_active_profile(requested) != ESP_OK) {
+      g_profile_catalog->activate(previous);
+      result = ProfileCatalogResult::storage_error;
+    }
+    if (result == ProfileCatalogResult::ok) g_profile = std::move(selected);
+  }
+  return result == ProfileCatalogResult::ok
+             ? json_response(request, "{\"active\":true}")
+             : catalog_error_response(request, result);
+}
+
+esp_err_t delete_profile_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_profile_catalog == nullptr) {
+    return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
+                         "503 Service Unavailable");
+  }
+  std::array<char, 9> id{};
+  if (!request_profile_id(request, &id)) {
+    return json_response(request, "{\"error\":\"invalid_profile\"}",
+                         "400 Bad Request");
+  }
+  ProfileCatalogResult result;
+  {
+    ProfileLock lock;
+    if (!lock.locked()) return ESP_ERR_TIMEOUT;
+    result = g_profile_catalog->remove(id.data());
+  }
+  return result == ProfileCatalogResult::ok
+             ? json_response(request, "{\"deleted\":true}")
+             : catalog_error_response(request, result);
 }
 
 esp_err_t wifi_handler(httpd_req_t* request) {
@@ -577,13 +834,21 @@ esp_err_t product_web_start() {
   config.prvtkey_len = identity.private_key_length;
   result = httpd_ssl_start(&g_server, &config);
   if (result != ESP_OK) return result;
-  const std::array<httpd_uri_t, 12> routes{{
+  const std::array<httpd_uri_t, 16> routes{{
       {.uri = "/", .method = HTTP_GET, .handler = root_handler},
       {.uri = "/api/v1/status", .method = HTTP_GET, .handler = status_handler},
       {.uri = "/api/v1/profile", .method = HTTP_GET,
        .handler = get_profile_handler},
       {.uri = "/api/v1/profile", .method = HTTP_PUT,
        .handler = put_profile_handler},
+      {.uri = "/api/v1/profile", .method = HTTP_DELETE,
+       .handler = delete_profile_handler},
+      {.uri = "/api/v1/profiles", .method = HTTP_GET,
+       .handler = list_profiles_handler},
+      {.uri = "/api/v1/profiles", .method = HTTP_POST,
+       .handler = create_profile_handler},
+      {.uri = "/api/v1/profile/activate", .method = HTTP_POST,
+       .handler = activate_profile_handler},
       {.uri = "/api/v1/wifi", .method = HTTP_POST, .handler = wifi_handler},
       {.uri = "/api/v1/pin", .method = HTTP_POST, .handler = pin_handler},
       {.uri = "/api/v1/companion/status", .method = HTTP_POST,
@@ -629,6 +894,10 @@ void product_web_set_companion_heartbeat_handler(
 
 void product_web_set_pet_store(PetStore* store) {
   g_pet_store = store;
+}
+
+void product_web_set_profile_catalog(ProfileCatalogStore* catalog) {
+  g_profile_catalog = catalog;
 }
 
 bool product_web_action(uint8_t layer, uint8_t physical_key,
