@@ -251,3 +251,10 @@
 - Expected result: PIN 使用密码掩码且登录文案、按钮间距符合要求；保存映射或恢复直通后在页面内明确显示结果，成功约 1.5 秒自动关闭，失败保持至用户确认；完整发布门禁通过。
 - Result: Achieved and ready to merge — 静态 Web 回归先验证旧页面缺少掩码、结果窗口与新文案，随后通过；JavaScript 回归先验证缺少发布结果状态与失败回滚，随后通过。保存映射和恢复直通均等待 Profile PUT 成功后显示成功窗口，失败时恢复本地旧配置并保留错误窗口。完整发布门禁通过：Python 104/104、普通 host 21/21、ASan/UBSan 21/21、Web asset freshness、ESP-IDF 5.5.4 target build、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。1.0.27 应用镜像 SHA-256 为 `20e9d179083ba74f12cd6fd4e6b63f7e5378ac391504e7bfadb144c8dddcc3d3`；private full image SHA-256 为 `0973af231a741ea14154b8f25dcfa662dcc44283a46c27b0449a8f0cee2781ce`。
 - Next step: 提交发布候选并 fast-forward 合并到 `main`，在主分支重新执行发布门禁，然后 app-only 刷入当前 Cardputer 并验证 1.0.27 Web 标记与运行状态。
+
+## 2026-07-25 17:38 HKT
+
+- Current work: 将 Web 登录与键位结果反馈修复合并到 `main`，重新生成正式制品并部署到当前实机。
+- Expected result: 主分支、交付镜像和实机运行相同的 1.0.27；保留设备现有 PIN、Wi‑Fi、Profile 与 BLE bonds；HTTPS 页面和运行状态均能证明新版本生效。
+- Result: Achieved — 分支 fast-forward 合并至 `main` 提交 `e2dd179`。主分支完整发布门禁再次通过：Python 104/104、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor 及 private packaging。最终应用镜像 SHA-256 为 `a6be74c967f3a4ef1c3887bfea7ef0719db781ad24a5da8e80936506c626c31d`，private full image SHA-256 为 `e9f8bbd095f92fa819f761a51a3dc9a2ab5d8760f88e3eeeb318dd9ee618d67b`。应用镜像已 app-only 刷入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool 报告 `Hash of data verified`。实机状态 API 返回 version `1.0.27` 且 BLE/Wi‑Fi/Mac 均 `OK`；实机首页包含 `Codex Companion Login`、`请输入设备PIN码进行鉴权`、密码型 `login-pin` 与 `result-modal`。
+- Next step: 提交最终证据并交付主仓库 private full image；仓库无 remote，因此无 push 目标。
