@@ -75,13 +75,23 @@ def test_companion_only_posts_changed_snapshots():
     assert "Task.sleep(for: .seconds(2))" in main
 
 
-def test_companion_rate_limits_pet_synchronization():
+def test_companion_pet_sync_has_independent_serial_error_boundary():
     main = (
         ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
     ).read_text()
-    assert "nextPetSynchronization" in main
-    assert "now >= nextPetSynchronization" in main
-    assert "nextPetSynchronization = now.advanced(by: .seconds(30))" in main
+    due = main.index("if petSyncCadence.isDue(at: now)")
+    synchronize = main.index(
+        "await petSync.synchronize(client: bridge)",
+        due,
+    )
+    action_boundary = main.index("do {", synchronize)
+    action = main.index("let action = try await bridge.pollAction()", action_boundary)
+
+    assert due < synchronize < action_boundary < action
+    assert "petSyncCadence.record(" in main[due:action_boundary]
+    assert "nextPetSynchronization" not in main
+    assert "retry in 5 seconds" in main
+    assert "next check in 30 seconds" in main
 
 
 def test_cardputer_display_uses_larger_body_text():
