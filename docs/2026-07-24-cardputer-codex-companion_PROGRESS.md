@@ -363,3 +363,10 @@
 - Expected result: 主分支源码、交付镜像、Mac Companion 与实机运行版本完全同源；配置不丢失；BLE、Wi-Fi、Mac 状态在瞬时 HTTPS 故障后继续保持或自动恢复。
 - Result: Achieved — 主分支完整门禁重新通过：Python 118/118、普通 host 24/24、ASan/UBSan 24/24、ESP-IDF 5.5.4 target build、产品分区、120,649 bytes DIRAM headroom、Swift release/doctor 与 private packaging。最终应用镜像 1,514,416 bytes，SHA-256 `a81bf0eb50557e1b6cdb5b24be16dac864564ee56bb8757cd8a7fe60aab506b7`；private full image 1,645,488 bytes，SHA-256 `eeb9988758afba542278eab80ee656e553dd6875edc02b1e894e5781fc8e361e`。主分支应用镜像已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，写入 hash 和独立 `verify_flash` digest 均匹配。LaunchAgent PID 61270 运行主仓库 app；实机返回 version 1.0.29 且 BLE/Wi-Fi/Mac 全部 `OK`，约 38 秒复测期间一次 HTTPS 请求失败后后续采样自动恢复且 Mac 未掉线。鉴权复核保留 `SAFE` Profile revision 11、224 bindings 与 `bsod` 宠物；macOS 仍识别 `Cardputer Codex`。CO: Not required，属于本机与局域网开发设备变更。
 - Next step: 提交最终证据、清理已合并的 heartbeat worktree/branch，并交付主仓库 private full image；仓库无 remote，因此没有 push 目标。
+
+## 2026-07-25 23:17 HKT
+
+- Current work: 将用户批准的五页状态导航、多命名 Profile 和设备端设置交互固化为 1.0.30 设计规格。
+- Expected result: 规格明确页面顺序、方向键捕获、Codex Model/Thinking/Fast/限额数据源、缺失限额隐藏、多 Profile 事务存储、PIN Agent 迁移、Wi-Fi 试连回滚、显示设置、测试矩阵和不实施范围。
+- Result: Achieved for design — 采用扩展统一 Companion 快照，Fast 固定显示在 Model 下方，限额按明确 bucket identity 与 300/10080 分钟窗口识别且超过 120 秒隐藏；页面固定为 Pets/Device/Codex/Sync/Settings。设计使用 storage 分区末尾 128 KiB 建立双 64 KiB Profile Catalog bank，支持 SAFE 加四个自定义 Profile；设置页支持 Wi-Fi 扫描试连、PIN 五分钟 Agent 迁移、亮度、自动返回和 2.0/2.5/3.0 FPS。完整规格写入 `docs/superpowers/specs/2026-07-25-cardputer-status-settings-navigation-design.md`。
+- Next step: 用户审阅已落盘规格；批准后使用 writing-plans 生成测试先行的逐任务实施计划。
