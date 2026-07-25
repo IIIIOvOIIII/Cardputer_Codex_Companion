@@ -60,14 +60,17 @@ snapshot and heartbeat mechanisms remain unchanged.
 After authentication succeeds, each endpoint used exclusively by the Mac
 Companion refreshes liveness:
 
+- snapshot publication, including an authenticated request whose later
+  payload validation fails;
 - action polling;
 - pet status query;
 - pet upload begin;
 - pet upload chunk;
 - pet upload commit.
 
-Snapshot publication continues to refresh liveness through
-`CompanionProtocol::apply`.
+An accepted snapshot also refreshes the protocol timestamp through
+`CompanionProtocol::apply`; the earlier request heartbeat makes authenticated
+request activity explicit even when the snapshot payload is rejected.
 
 Unauthorized requests must never refresh the heartbeat. An authenticated
 request may refresh liveness before later payload validation because successful
@@ -130,4 +133,3 @@ Hardware acceptance must prove:
 5. the existing PIN, Wi-Fi, Profile, BLE bond, and pet cache survive the
    app-only update;
 6. no credential value is written to logs, tests, documentation, or commits.
-

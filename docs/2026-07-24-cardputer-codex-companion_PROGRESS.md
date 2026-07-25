@@ -335,3 +335,10 @@
 - Expected result: 区分 agent 进程退出、LAN 传输失败和固件 stale 误判；形成不增加 ESP32 HTTPS 并发且保留用户配置的修复边界。
 - Result: Achieved for diagnosis/design — LaunchAgent PID 24719 及其 `codex app-server` 子进程持续运行，日志继续产生宠物检查，设备也能自行恢复 `Mac OK`。固件仅允许 10 秒无心跳，但普通 curl 请求最长 5 秒、宠物事务最长 15 秒，近期还有 curl 35/28 短暂失败；同时鉴权成功的 30 秒宠物状态 GET 未刷新心跳。用户接受最多约 30 秒的真实离线检测延迟，并确认采用 30 秒 stale 窗口及所有鉴权 Companion 请求刷新心跳的方案。
 - Next step: 用户审阅 `docs/superpowers/specs/2026-07-25-companion-heartbeat-resilience-design.md`；批准后编写测试先行实施计划。
+
+## 2026-07-25 21:53 HKT
+
+- Current work: 将已批准的 Companion 心跳可靠性规格拆分为测试先行实现、1.0.29 发布、app-only 部署和真机稳定性验收步骤。
+- Expected result: 计划明确 30 秒边界测试、宠物状态鉴权后心跳契约、版本双来源、完整发布门禁、保留用户状态的刷写命令以及超过旧 10 秒窗口的真机验证。
+- Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-companion-heartbeat-resilience.md`，共四个独立任务；不新增 Mac 请求或 ESP32 并发，不修改 BLE/Profile/Web 鉴权/宠物格式，并明确未经鉴权及普通浏览器请求不得维持 Companion 在线。
+- Next step: 用户选择 Subagent-Driven 或 Inline Execution；执行开始时使用隔离 worktree，并按 Tasks 1–4 完成实现、发布和实机部署。
