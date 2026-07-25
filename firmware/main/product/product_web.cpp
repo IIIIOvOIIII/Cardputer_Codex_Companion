@@ -570,8 +570,13 @@ esp_err_t pin_handler(httpd_req_t* request) {
                              "400 Bad Request");
 }
 
+void note_companion_activity() {
+  if (g_heartbeat_handler != nullptr) g_heartbeat_handler();
+}
+
 esp_err_t companion_status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_activity();
   const std::string body = read_body(request);
   if (body.empty() || g_snapshot_handler == nullptr) {
     return json_response(request, "{\"error\":\"invalid_snapshot\"}",
@@ -583,9 +588,9 @@ esp_err_t companion_status_handler(httpd_req_t* request) {
 
 esp_err_t companion_action_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_activity();
   const bool needs_snapshot =
       product_web_companion_needs_snapshot(g_companion.load());
-  if (g_heartbeat_handler != nullptr) g_heartbeat_handler();
   const CodexAction action =
       g_pending_codex_action.exchange(CodexAction::none);
   const uint32_t sequence = g_action_sequence.load();
@@ -628,18 +633,15 @@ esp_err_t pet_status_response(httpd_req_t* request) {
   return result;
 }
 
-void note_companion_pet_activity() {
-  if (g_heartbeat_handler != nullptr) g_heartbeat_handler();
-}
-
 esp_err_t pet_status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_activity();
   return pet_status_response(request);
 }
 
 esp_err_t pet_begin_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
-  note_companion_pet_activity();
+  note_companion_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -692,7 +694,7 @@ esp_err_t pet_begin_handler(httpd_req_t* request) {
 
 esp_err_t pet_chunk_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
-  note_companion_pet_activity();
+  note_companion_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -750,7 +752,7 @@ esp_err_t pet_chunk_handler(httpd_req_t* request) {
 
 esp_err_t pet_commit_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
-  note_companion_pet_activity();
+  note_companion_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");

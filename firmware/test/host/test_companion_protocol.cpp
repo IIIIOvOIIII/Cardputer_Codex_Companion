@@ -16,8 +16,8 @@ int main() {
   assert(protocol.snapshot().pet_digest.size() == 64);
   assert(effective_pet_state(false, PetState::working) == PetState::working);
   assert(effective_pet_state(true, PetState::working) == PetState::waiting);
-  assert(!protocol.stale(10999));
-  assert(protocol.stale(11000));
+  assert(!protocol.stale(30999));
+  assert(protocol.stale(31000));
 
   assert(parse_codex_action("interrupt") == CodexAction::interrupt);
   assert(parse_codex_action("approve") == CodexAction::approve);
@@ -26,11 +26,11 @@ int main() {
          CompanionMessageResult::resync_required);
   const std::string restarted =
       R"({"type":"snapshot","sequence":1,"session_id":"s2","title":"restarted","cwd":"/tmp/Cardputer","state":"idle","approvals":0,"inputs":0})";
-  assert(protocol.apply(restarted, 12000) == CompanionMessageResult::snapshot);
+  assert(protocol.apply(restarted, 31000) == CompanionMessageResult::snapshot);
   assert(protocol.snapshot().sequence == 1);
   assert(protocol.snapshot().title == "restarted");
-  protocol.heartbeat(22000);
-  assert(!protocol.stale(31999));
-  assert(protocol.stale(32000));
+  protocol.heartbeat(42000);
+  assert(!protocol.stale(71999));
+  assert(protocol.stale(72000));
   return 0;
 }

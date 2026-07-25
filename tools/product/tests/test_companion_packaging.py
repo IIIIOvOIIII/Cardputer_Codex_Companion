@@ -233,9 +233,32 @@ def test_pet_sync_keeps_companion_online_and_closes_curl_pipes():
 
     assert "postSnapshotIfChanged" in main
     assert main.count("try await postSnapshotIfChanged") == 2
-    assert "note_companion_pet_activity();" in web
+    assert "note_companion_activity();" in web
     assert "try? output.fileHandleForReading.close()" in bridge
     assert "try? error.fileHandleForReading.close()" in bridge
+
+
+def test_authenticated_companion_handlers_refresh_heartbeat():
+    web = (ROOT / "firmware/main/product/product_web.cpp").read_text()
+    boundaries = (
+        (
+            "esp_err_t companion_status_handler",
+            "esp_err_t companion_action_handler",
+        ),
+        (
+            "esp_err_t companion_action_handler",
+            "esp_err_t pet_status_response",
+        ),
+        ("esp_err_t pet_status_handler", "esp_err_t pet_begin_handler"),
+        ("esp_err_t pet_begin_handler", "esp_err_t pet_chunk_handler"),
+        ("esp_err_t pet_chunk_handler", "esp_err_t pet_commit_handler"),
+        ("esp_err_t pet_commit_handler", "}  // namespace"),
+    )
+    for start, end in boundaries:
+        handler = web.split(start, 1)[1].split(end, 1)[0]
+        authorization = handler.index("authorized(request)")
+        activity = handler.index("note_companion_activity();")
+        assert authorization < activity
 
 
 def test_pet_frame_decode_does_not_allocate_from_runtime_heap():

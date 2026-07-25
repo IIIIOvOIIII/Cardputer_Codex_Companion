@@ -7,7 +7,7 @@
 #include "product/profile.hpp"
 #include "product/pet_bundle.hpp"
 
-inline constexpr uint64_t kCompanionStaleAfterMs = 10000;
+inline constexpr uint64_t kCompanionStaleAfterMs = 30000;
 
 struct CompanionSnapshot {
   uint64_t sequence = 0;
