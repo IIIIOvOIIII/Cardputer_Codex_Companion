@@ -480,6 +480,49 @@ func testPetSyncBacksOffFailedInputUntilSourceChanges() async throws {
     try expect(counter.read() == 2, "changed failed input retries transcode")
 }
 
+func testPetSyncCadence() throws {
+    let clock = ContinuousClock()
+    let started = clock.now
+    var cadence = PetSyncCadence()
+
+    try expect(cadence.isDue(at: started), "first pet sync is immediate")
+
+    cadence.record(
+        result: PetSyncResult(
+            petID: "rocky",
+            digest: String(repeating: "a", count: 64),
+            errorCode: nil
+        ),
+        at: started
+    )
+    try expect(
+        !cadence.isDue(at: started.advanced(by: .seconds(29))),
+        "successful pet sync waits 30 seconds"
+    )
+    try expect(
+        cadence.isDue(at: started.advanced(by: .seconds(30))),
+        "successful pet sync is due at 30 seconds"
+    )
+
+    let failedAt = started.advanced(by: .seconds(30))
+    cadence.record(
+        result: PetSyncResult(
+            petID: "rocky",
+            digest: String(repeating: "a", count: 64),
+            errorCode: "sync_failed"
+        ),
+        at: failedAt
+    )
+    try expect(
+        !cadence.isDue(at: failedAt.advanced(by: .seconds(4))),
+        "failed pet sync waits five seconds"
+    )
+    try expect(
+        cadence.isDue(at: failedAt.advanced(by: .seconds(5))),
+        "failed pet sync retries at five seconds"
+    )
+}
+
 @main
 struct ProductPetHarness {
     static func main() async throws {
@@ -494,6 +537,7 @@ struct ProductPetHarness {
         try testAtlasTranscodeCyclesVisibleFrames()
         try await testPetSyncCoordinator()
         try await testPetSyncBacksOffFailedInputUntilSourceChanges()
+        try testPetSyncCadence()
         print("product-pet-tests: PASS")
     }
 }
