@@ -342,3 +342,10 @@
 - Expected result: 计划明确 30 秒边界测试、宠物状态鉴权后心跳契约、版本双来源、完整发布门禁、保留用户状态的刷写命令以及超过旧 10 秒窗口的真机验证。
 - Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-companion-heartbeat-resilience.md`，共四个独立任务；不新增 Mac 请求或 ESP32 并发，不修改 BLE/Profile/Web 鉴权/宠物格式，并明确未经鉴权及普通浏览器请求不得维持 Companion 在线。
 - Next step: 用户选择 Subagent-Driven 或 Inline Execution；执行开始时使用隔离 worktree，并按 Tasks 1–4 完成实现、发布和实机部署。
+
+## 2026-07-25 22:00 HKT
+
+- Current work: 在隔离分支完成 Companion 心跳可靠性 TDD、1.0.29 版本升级和完整发布门禁。
+- Expected result: stale 边界由 10 秒调整为 30 秒；snapshot/action/pet status/begin/chunk/commit 均只在鉴权成功后刷新同一心跳；Mac 轮询频率和串行 HTTPS 架构不变；生成可 app-only 部署的 1.0.29 镜像。
+- Result: Achieved for implementation/release — 协议测试先因 30 秒边界缺失而 RED，路由契约先因缺少统一 `note_companion_activity()` 而 RED；GREEN 后所有 Companion 专用路由均在 `authorized(request)` 之后刷新心跳。版本测试分别对旧 1.0.28 编译/运行失败，升级双来源后转绿。完整门禁通过：Python 118/118、普通 host 24/24、ASan/UBSan 24/24、Web assets、ESP-IDF 5.5.4 target build、产品分区、120,649 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。应用镜像 1,514,416 bytes，SHA-256 `b54e7ba207ad99695c9680c45773b14ae06f4d72262ea5ac22cf1349beca5366`；private full image 1,645,488 bytes，SHA-256 `69d21266cae6097cf416e7d84b6f73a01dddb00e4043972bb6c995fd3fff86dc`。首次门禁仅因 worktree 缺少被忽略的 `.tools` 目录停止；链接主仓库既有工具链后原样重跑成功。
+- Next step: 提交发布证据，将 1.0.29 应用镜像 app-only 写入 `0x20000`，重载 Companion 并完成超过旧 10 秒窗口的真机在线稳定性验证。
