@@ -28,7 +28,7 @@ int main() {
   assert(product_web_companion_needs_snapshot(ServiceState::offline));
   assert(product_web_companion_needs_snapshot(ServiceState::starting));
   assert(!product_web_companion_needs_snapshot(ServiceState::ok));
-  assert(kProductWebRoutes.size() == 8);
+  assert(kProductWebRoutes.size() == 12);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");
   assert(kProductWebRoutes[2].path == "/api/v1/profile");
@@ -37,10 +37,18 @@ int main() {
   assert(kProductWebRoutes[5].path == "/api/v1/pin");
   assert(kProductWebRoutes[6].path == "/api/v1/companion/status");
   assert(kProductWebRoutes[7].path == "/api/v1/companion/action");
+  assert(kProductWebRoutes[8].path == "/api/v1/companion/pet/begin");
+  assert(kProductWebRoutes[9].path == "/api/v1/companion/pet/chunk");
+  assert(kProductWebRoutes[10].path == "/api/v1/companion/pet/commit");
+  assert(kProductWebRoutes[11].path == "/api/v1/companion/pet");
   assert(!kProductWebRoutes[0].requires_pairing);
   assert(!kProductWebRoutes[1].requires_pairing);
   assert(kProductWebRoutes[2].requires_pairing);
   assert(kProductWebRoutes[6].requires_pairing);
   assert(kProductWebRoutes[7].requires_pairing);
+  assert(kProductWebRoutes[8].requires_pairing);
+  assert(kProductWebRoutes[9].requires_pairing);
+  assert(kProductWebRoutes[10].requires_pairing);
+  assert(kProductWebRoutes[11].requires_pairing);
   return 0;
 }

@@ -250,3 +250,22 @@ add_executable(test_product_controller
 )
 target_include_directories(test_product_controller PRIVATE ../../main)
 add_test(NAME product_controller COMMAND test_product_controller)
+
+add_executable(test_pet_bundle
+  test_pet_bundle.cpp
+  ../../main/product/pet_bundle.cpp
+)
+target_include_directories(test_pet_bundle PRIVATE ../../main)
+target_link_libraries(test_pet_bundle PRIVATE OpenSSL::Crypto)
+add_test(NAME pet_bundle COMMAND test_pet_bundle)
+
+add_executable(test_pet_store test_pet_store.cpp)
+target_include_directories(test_pet_store PRIVATE ../../main)
+add_test(NAME pet_store COMMAND test_pet_store)
+
+add_executable(test_ui_navigation
+  test_ui_navigation.cpp
+  ../../main/product/ui_navigation.cpp
+)
+target_include_directories(test_ui_navigation PRIVATE ../../main)
+add_test(NAME ui_navigation COMMAND test_ui_navigation)

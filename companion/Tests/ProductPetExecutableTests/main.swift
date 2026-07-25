@@ -79,6 +79,37 @@ func testCustomTraversalRejected() throws {
     }
 }
 
+func testCustomSymlinkTraversalRejected() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pet = root.appending(path: "pets/local", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: pet, withIntermediateDirectories: true)
+    try Data("[tui]\npet = \"local\"\n".utf8)
+        .write(to: root.appending(path: "config.toml"))
+    let outside = root.appending(path: "outside.webp")
+    try Data().write(to: outside)
+    try FileManager.default.createSymbolicLink(
+        at: pet.appending(path: "spritesheet.webp"),
+        withDestinationURL: outside
+    )
+    try Data(
+        """
+        {"id":"local","spriteVersionNumber":2,
+         "spritesheetPath":"spritesheet.webp"}
+        """.utf8
+    ).write(to: pet.appending(path: "pet.json"))
+
+    let reader = PetSelectionReader(
+        environment: ["CODEX_HOME": root.path],
+        atlasDimensions: { _ in (1536, 2288) }
+    )
+    do {
+        _ = try reader.selectedSource()
+        throw HarnessError.failed("custom symlink traversal accepted")
+    } catch PetSelectionError.pathTraversal {
+    }
+}
+
 func testPetStatePriority() throws {
     try expect(
         PetState.resolve(sessionState: "failed", flags: []) == .failed,
@@ -295,6 +326,23 @@ actor FakePetDevice: PetDeviceClient {
     }
 }
 
+final class InvocationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func read() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 func testPetSyncCoordinator() async throws {
     let frame = [UInt16](repeating: 0x07e0, count: 96 * 104)
     let states = Dictionary(
@@ -329,17 +377,46 @@ func testPetSyncCoordinator() async throws {
     try expect(secondObservation.0 == 1, "matching digest skips upload")
 }
 
+func testPetSyncBacksOffFailedInputUntilSourceChanges() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sourceURL = root.appending(path: "source.webp")
+    try Data("broken-v1".utf8).write(to: sourceURL)
+    let source = PetSource(id: "fixture", atlasURL: sourceURL, atlasVersion: .v1)
+    let counter = InvocationCounter()
+    let coordinator = PetSyncCoordinator(
+        loadSource: { source },
+        transcode: { _ in
+            counter.increment()
+            throw PetSelectionError.invalidAtlas
+        }
+    )
+    let device = FakePetDevice()
+
+    let first = await coordinator.synchronize(client: device)
+    let second = await coordinator.synchronize(client: device)
+    try expect(first.errorCode == "source_invalid", "stable transcode error")
+    try expect(second.errorCode == "source_invalid", "cached transcode error")
+    try expect(counter.read() == 1, "unchanged failed input is not transcoded again")
+
+    try Data("broken-v2".utf8).write(to: sourceURL)
+    _ = await coordinator.synchronize(client: device)
+    try expect(counter.read() == 2, "changed failed input retries transcode")
+}
+
 @main
 struct ProductPetHarness {
     static func main() async throws {
         try testSelectionReader()
         try testCustomTraversalRejected()
+        try testCustomSymlinkTraversalRejected()
         try testPetStatePriority()
         try testSnapshotPetEquality()
         try testFrameEncoding()
         try testBundleWireFormat()
         try testAtlasTranscode()
         try await testPetSyncCoordinator()
+        try await testPetSyncBacksOffFailedInputUntilSourceChanges()
         print("product-pet-tests: PASS")
     }
 }

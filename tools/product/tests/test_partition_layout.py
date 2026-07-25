@@ -60,3 +60,17 @@ factory,app,factory,0x10000,1M,
     assert any("missing partition: otadata" in error for error in errors)
     assert any("unexpected partition: factory" in error for error in errors)
     assert any("phy_init offset" in error for error in errors)
+
+
+def test_pet_storage_partition_has_two_slot_capacity_and_headroom():
+    layout = {
+        partition.name: partition
+        for partition in partitions.parse_layout(PRODUCT_LAYOUT)
+    }
+    storage = layout["storage"]
+
+    assert storage.type == "data"
+    assert storage.subtype == "spiffs"
+    assert storage.offset == 0x620000
+    assert storage.size == 0x1E0000
+    assert storage.size >= 2 * (820 * 1024) + 256 * 1024

@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "product/profile.hpp"
+#include "product/pet_store.hpp"
 #include "product/product_types.hpp"
 
 enum class ProductHttpMethod : uint8_t { get, post, put };
@@ -61,7 +62,7 @@ struct ProductWebRoute {
   bool requires_pairing;
 };
 
-inline constexpr std::array<ProductWebRoute, 8> kProductWebRoutes{{
+inline constexpr std::array<ProductWebRoute, 12> kProductWebRoutes{{
     {ProductHttpMethod::get, "/", false},
     {ProductHttpMethod::get, "/api/v1/status", false},
     {ProductHttpMethod::get, "/api/v1/profile", true},
@@ -70,6 +71,10 @@ inline constexpr std::array<ProductWebRoute, 8> kProductWebRoutes{{
     {ProductHttpMethod::post, "/api/v1/pin", true},
     {ProductHttpMethod::post, "/api/v1/companion/status", true},
     {ProductHttpMethod::get, "/api/v1/companion/action", true},
+    {ProductHttpMethod::post, "/api/v1/companion/pet/begin", true},
+    {ProductHttpMethod::put, "/api/v1/companion/pet/chunk", true},
+    {ProductHttpMethod::post, "/api/v1/companion/pet/commit", true},
+    {ProductHttpMethod::get, "/api/v1/companion/pet", true},
 }};
 
 #ifdef ESP_PLATFORM
@@ -86,6 +91,7 @@ void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler);
 void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler);
+void product_web_set_pet_store(PetStore* store);
 bool product_web_action(uint8_t layer, uint8_t physical_key, KeyAction* action);
 bool product_web_profile_name(char* output, std::size_t output_size);
 void product_web_queue_codex_action(CodexAction action);

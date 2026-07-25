@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "product/profile.hpp"
+#include "product/pet_bundle.hpp"
 
 inline constexpr uint64_t kCompanionStaleAfterMs = 10000;
 
@@ -16,6 +17,9 @@ struct CompanionSnapshot {
   std::string state;
   uint8_t approvals = 0;
   uint8_t inputs = 0;
+  std::string pet_id;
+  std::string pet_digest;
+  PetState pet_state = PetState::idle;
 };
 
 enum class CompanionMessageResult : uint8_t {
@@ -40,3 +44,4 @@ class CompanionProtocol {
 
 CodexAction parse_codex_action(std::string_view value);
 std::string_view codex_action_name(CodexAction action);
+PetState effective_pet_state(bool companion_stale, PetState snapshot_state);

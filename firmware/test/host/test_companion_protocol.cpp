@@ -6,11 +6,16 @@
 int main() {
   CompanionProtocol protocol;
   const std::string snapshot =
-      R"({"type":"snapshot","sequence":7,"session_id":"s1","title":"agent-loop","cwd":"/tmp/Cardputer","state":"WAITING","approvals":2,"inputs":1})";
+      R"({"type":"snapshot","sequence":7,"session_id":"s1","title":"agent-loop","cwd":"/tmp/Cardputer","state":"WAITING","approvals":2,"inputs":1,"pet_id":"rocky","pet_digest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","pet_state":"waiting"})";
   assert(protocol.apply(snapshot, 1000) == CompanionMessageResult::snapshot);
   assert(protocol.snapshot().sequence == 7);
   assert(protocol.snapshot().title == "agent-loop");
   assert(protocol.snapshot().approvals == 2);
+  assert(protocol.snapshot().pet_id == "rocky");
+  assert(protocol.snapshot().pet_state == PetState::waiting);
+  assert(protocol.snapshot().pet_digest.size() == 64);
+  assert(effective_pet_state(false, PetState::working) == PetState::working);
+  assert(effective_pet_state(true, PetState::working) == PetState::waiting);
   assert(!protocol.stale(10999));
   assert(protocol.stale(11000));
 

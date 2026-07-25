@@ -23,6 +23,7 @@ void ProductController::start() {
 
 #ifdef ESP_PLATFORM
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <optional>
@@ -45,8 +46,10 @@ void ProductController::start() {
 #include "product/input_router.hpp"
 #include "product/keyboard_matrix.hpp"
 #include "product/macro_engine.hpp"
+#include "product/pet_store.hpp"
 #include "product/product_web.hpp"
 #include "product/ui_model.hpp"
+#include "product/ui_navigation.hpp"
 #include "product/wifi_manager.hpp"
 
 namespace {
@@ -60,13 +63,17 @@ struct MacroInvocation {
 
 UiModel g_ui;
 InputRouter g_input_router;
+UiNavigation g_ui_navigation;
 CompanionProtocol g_companion_protocol;
+PetStore g_pet_store;
 std::optional<KeyboardProbe> g_keyboard;
 std::array<bool, kPhysicalKeyCount> g_pressed{};
 StaticSemaphore_t g_ui_mutex_storage{};
 SemaphoreHandle_t g_ui_mutex = nullptr;
 StaticSemaphore_t g_input_mutex_storage{};
 SemaphoreHandle_t g_input_mutex = nullptr;
+StaticSemaphore_t g_companion_mutex_storage{};
+SemaphoreHandle_t g_companion_mutex = nullptr;
 StaticQueue_t g_macro_queue_storage{};
 std::array<uint8_t, kMacroQueueDepth * sizeof(MacroInvocation)>
     g_macro_queue_buffer{};
@@ -78,6 +85,7 @@ std::array<StackType_t, 4096> g_ui_task_stack{};
 ServiceState g_ble_state = ServiceState::offline;
 ServiceState g_wifi_state = ServiceState::offline;
 std::atomic<ServiceState> g_companion_state{ServiceState::offline};
+std::atomic<uint64_t> g_last_companion_ms{0};
 
 class SemaphoreLock {
  public:
@@ -220,6 +228,17 @@ void keyboard_event(const MatrixKeyEvent& event) {
     }
   }
 
+  const UiNavigationResult navigation = g_ui_navigation.on_key(
+      event.physical_key, event.pressed, g_pressed[kFnPhysicalKey]);
+  if (navigation.captured) {
+    if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+    if (navigation.action != UiNavAction::none) {
+      SemaphoreLock ui_lock(g_ui_mutex);
+      if (ui_lock.locked()) g_ui.navigate(navigation.action);
+    }
+    return;
+  }
+
   KeyAction action;
   const uint8_t layer = current_profile_layer_locked();
   const bool mapped =
@@ -291,12 +310,20 @@ void wifi_status_changed(WifiState state, const char* detail) {
 void companion_snapshot(std::string_view json) {
   const uint64_t now_ms =
       static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-  const CompanionMessageResult result =
-      g_companion_protocol.apply(json, now_ms);
+  CompanionMessageResult result = CompanionMessageResult::invalid;
+  CompanionSnapshot snapshot;
+  {
+    SemaphoreLock lock(g_companion_mutex);
+    if (!lock.locked()) return;
+    result = g_companion_protocol.apply(json, now_ms);
+    if (result == CompanionMessageResult::snapshot) {
+      snapshot = g_companion_protocol.snapshot();
+    }
+  }
   ESP_LOGI(kTag, "companion snapshot result=%u",
            static_cast<unsigned>(result));
   if (result != CompanionMessageResult::snapshot) return;
-  const CompanionSnapshot& snapshot = g_companion_protocol.snapshot();
+  g_last_companion_ms.store(now_ms);
   g_companion_state.store(ServiceState::ok);
   {
     SemaphoreLock lock(g_ui_mutex);
@@ -304,6 +331,11 @@ void companion_snapshot(std::string_view json) {
       g_ui.set_companion(ServiceState::ok);
       g_ui.set_session(snapshot.title, snapshot.cwd, snapshot.state,
                        snapshot.approvals, snapshot.inputs);
+      const PetStoreStatus pet = g_pet_store.status();
+      g_ui.set_pet(
+          snapshot.pet_id.empty() ? pet.pet_id : snapshot.pet_id,
+          snapshot.pet_digest.empty() ? pet.digest : snapshot.pet_digest,
+          snapshot.pet_state, pet.last_result);
     }
   }
   update_web_status();
@@ -313,13 +345,21 @@ void companion_heartbeat() {
   if (g_companion_state.load() != ServiceState::ok) return;
   const uint64_t now_ms =
       static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  SemaphoreLock lock(g_companion_mutex);
+  if (!lock.locked()) return;
   g_companion_protocol.heartbeat(now_ms);
+  g_last_companion_ms.store(now_ms);
 }
 
 void ui_task(void*) {
   bool long_press_handled = false;
   TickType_t wake = xTaskGetTickCount();
   uint32_t rendered_revision = UINT32_MAX;
+  uint64_t next_frame_ms = 0;
+  uint8_t frame_index = 0;
+  PetState rendered_pet_state = PetState::idle;
+  std::string last_pet_digest;
+  uint64_t last_pet_sync_ms = 0;
   while (true) {
     M5.update();
     if (!long_press_handled && M5.BtnA.pressedFor(2000)) {
@@ -333,17 +373,33 @@ void ui_task(void*) {
 
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-    if (g_companion_state.load() == ServiceState::ok &&
-        g_companion_protocol.stale(now_ms)) {
+    bool companion_stale = false;
+    {
+      SemaphoreLock lock(g_companion_mutex);
+      companion_stale =
+          lock.locked() && g_companion_protocol.stale(now_ms);
+    }
+    if (g_companion_state.load() == ServiceState::ok && companion_stale) {
       g_companion_state.store(ServiceState::offline);
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
         g_ui.set_companion(ServiceState::offline);
         g_ui.set_session("NO ACTIVE CODEX", "-", "STALE", 0, 0);
+        const PetStoreStatus pet = g_pet_store.status();
+        g_ui.set_pet(pet.pet_id, pet.digest, PetState::waiting,
+                     pet.last_result);
       }
       update_web_status();
     }
 
+    const PetStoreStatus pet_status = g_pet_store.status();
+    if (!pet_status.digest.empty() &&
+        pet_status.digest != last_pet_digest) {
+      last_pet_digest = pet_status.digest;
+      last_pet_sync_ms = now_ms;
+    }
+    UiPage current_page = UiPage::pet;
+    PetState current_pet_state = PetState::waiting;
     {
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
@@ -353,12 +409,52 @@ void ui_task(void*) {
           g_ui.set_profile(profile_name.data());
         }
         g_ui.set_web(product_wifi_ipv4(), product_web_pairing_code());
+        g_ui.set_pet_storage(
+            static_cast<uint32_t>(pet_status.storage_used),
+            pet_status.format_version);
+        const uint64_t last_companion = g_last_companion_ms.load();
+        g_ui.set_heartbeat_age(
+            last_companion == 0 || now_ms < last_companion
+                ? 0
+                : static_cast<uint32_t>(
+                      std::min<uint64_t>(
+                          (now_ms - last_companion) / 1000, UINT32_MAX)));
+        g_ui.set_pet_sync_age(
+            last_pet_sync_ms == 0 || now_ms < last_pet_sync_ms
+                ? 0
+                : static_cast<uint32_t>(
+                      std::min<uint64_t>(
+                          (now_ms - last_pet_sync_ms) / 1000, UINT32_MAX)));
+        if (!pet_status.pet_id.empty() &&
+            g_companion_state.load() != ServiceState::ok) {
+          g_ui.set_pet(pet_status.pet_id, pet_status.digest,
+                       PetState::waiting, pet_status.last_result);
+        }
+        current_page = g_ui.page();
+        current_pet_state =
+            effective_pet_state(
+                g_companion_state.load() != ServiceState::ok,
+                g_ui.pet_state());
         const uint32_t revision = g_ui.revision();
         if (revision != rendered_revision) {
-          display_render_runtime(g_ui);
+          display_render_page(g_ui);
           rendered_revision = revision;
         }
       }
+    }
+    if (current_page == UiPage::pet && now_ms >= next_frame_ms) {
+      if (current_pet_state != rendered_pet_state) {
+        frame_index = 0;
+        rendered_pet_state = current_pet_state;
+      }
+      if (!display_render_pet_frame(
+              g_pet_store, current_pet_state, frame_index)) {
+        display_render_placeholder(current_pet_state);
+      }
+      frame_index = static_cast<uint8_t>((frame_index + 1) % 8);
+      next_frame_ms =
+          now_ms > next_frame_ms + 800 ? now_ms + 400 : next_frame_ms + 400;
+      if (next_frame_ms == 400) next_frame_ms = now_ms + 400;
     }
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(200));
   }
@@ -377,6 +473,15 @@ class EspProductStartup final : public ProductStartupBackend {
         result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       result = nvs_flash_erase();
       if (result == ESP_OK) result = nvs_flash_init();
+    }
+    if (result == ESP_OK) {
+      const esp_err_t pet_result = g_pet_store.start();
+      if (pet_result == ESP_OK) {
+        product_web_set_pet_store(&g_pet_store);
+      } else {
+        ESP_LOGW(kTag, "pet store unavailable: %s",
+                 esp_err_to_name(pet_result));
+      }
     }
     set_stage(BootStage::config, result);
     return result == ESP_OK;
@@ -477,7 +582,10 @@ class EspProductStartup final : public ProductStartupBackend {
 void product_runtime_start() {
   g_ui_mutex = xSemaphoreCreateMutexStatic(&g_ui_mutex_storage);
   g_input_mutex = xSemaphoreCreateMutexStatic(&g_input_mutex_storage);
-  if (g_ui_mutex == nullptr || g_input_mutex == nullptr) {
+  g_companion_mutex =
+      xSemaphoreCreateMutexStatic(&g_companion_mutex_storage);
+  if (g_ui_mutex == nullptr || g_input_mutex == nullptr ||
+      g_companion_mutex == nullptr) {
     ESP_LOGE(kTag, "runtime mutex initialization failed");
     return;
   }

@@ -5,6 +5,7 @@
 
 int main() {
   UiModel model;
+  assert(model.page() == UiPage::pet);
   assert(model.revision() == 0);
   assert(model.boot_line(BootStage::display) == "DISPLAY ...");
   model.set_profile("SAFE");
@@ -49,5 +50,30 @@ int main() {
   assert(page.find("agent-loop") != std::string::npos);
   assert(page.find("WAITING A:2 I:1") != std::string::npos);
   assert(page.find("Cardputer_Codex_Companion") == std::string::npos);
+
+  model.navigate(UiNavAction::next_page);
+  assert(model.page() == UiPage::connection);
+  model.navigate(UiNavAction::next_page);
+  assert(model.page() == UiPage::session);
+  model.navigate(UiNavAction::next_page);
+  assert(model.page() == UiPage::device);
+  model.navigate(UiNavAction::next_page);
+  assert(model.page() == UiPage::pet);
+  model.navigate(UiNavAction::previous_page);
+  assert(model.page() == UiPage::device);
+
+  model.set_pet("rocky", "0123456789abcdef", PetState::working, "ok");
+  model.set_pet_storage(25772, 1);
+  const UiPageContent device = model.page_content();
+  assert(device.count >= 5);
+  std::string joined;
+  for (uint8_t index = 0; index < device.count; ++index) {
+    joined.append(device.lines[index]).push_back('\n');
+  }
+  assert(joined.find("FW:1.0.28") != std::string::npos);
+  assert(joined.find("PET:rocky") != std::string::npos);
+  assert(joined.find("FMT:1") != std::string::npos);
+  model.navigate(UiNavAction::scroll_down);
+  assert(model.scroll_offset() <= device.count);
   return 0;
 }

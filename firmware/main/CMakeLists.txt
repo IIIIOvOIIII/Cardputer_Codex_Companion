@@ -52,6 +52,7 @@ idf_component_register(
         "probe/web_guard.cpp"
         "probe/web_handlers.cpp"
         "product/ui_model.cpp"
+        "product/ui_navigation.cpp"
         "product/display.cpp"
         "product/keyboard_matrix.cpp"
         "product/input_router.cpp"
@@ -63,6 +64,8 @@ idf_component_register(
         "product/device_identity.cpp"
         "product/companion_protocol.cpp"
         "product/product_controller.cpp"
+        "product/pet_bundle.cpp"
+        "product/pet_store.cpp"
     INCLUDE_DIRS
         "."
         "probe"
@@ -85,6 +88,7 @@ idf_component_register(
         mbedtls
         nvs_flash
         spi_flash
+        spiffs
         m5unified
     WHOLE_ARCHIVE
 )

@@ -1,0 +1,28 @@
+#include <cassert>
+
+#include "product/ui_navigation.hpp"
+
+int main() {
+  UiNavigation navigation;
+  auto result = navigation.on_key(39, true, false);
+  assert(!result.captured);
+
+  result = navigation.on_key(39, true, true);
+  assert(result.captured);
+  assert(result.action == UiNavAction::scroll_up);
+  result = navigation.on_key(39, false, false);
+  assert(result.captured);
+  assert(result.action == UiNavAction::none);
+
+  assert(navigation.on_key(52, true, true).action ==
+         UiNavAction::previous_page);
+  assert(navigation.on_key(52, false, true).captured);
+  assert(navigation.on_key(53, true, true).action ==
+         UiNavAction::scroll_down);
+  assert(navigation.on_key(53, false, true).captured);
+  assert(navigation.on_key(54, true, true).action ==
+         UiNavAction::next_page);
+  assert(navigation.on_key(54, false, false).captured);
+  assert(!navigation.on_key(15, true, true).captured);
+  return 0;
+}

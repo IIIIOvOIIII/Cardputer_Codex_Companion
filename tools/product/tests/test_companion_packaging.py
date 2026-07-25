@@ -97,3 +97,64 @@ def test_ble_watchdog_and_keyboard_use_atomic_link_snapshot():
     assert "std::atomic<bool> g_hid_gap_connected" in ble
     assert "std::atomic<uint64_t> g_hid_state_changed_ms" in ble
     assert "return g_hid_ready.load();" in ble
+
+
+def test_pet_renderer_uses_one_bounded_buffer_and_partial_push():
+    display = (ROOT / "firmware/main/product/display.cpp").read_text()
+    assert "std::array<uint16_t, 96 * 104> g_pet_frame" in display
+    assert "constexpr int32_t kPetWidth = 96" in display
+    assert "constexpr int32_t kPetHeight = 104" in display
+    frame_body = display.split("bool display_render_pet_frame", 1)[1]
+    frame_body = frame_body.split("void display_render_placeholder", 1)[0]
+    assert "pushImage(kPetX, kPetY, kPetWidth, kPetHeight" in frame_body
+    assert "fillScreen" not in frame_body
+
+
+def test_companion_contains_pet_transcoder_without_selected_pet_assets():
+    package = (ROOT / "companion/Package.swift").read_text()
+    sources = "\n".join(
+        path.read_text()
+        for path in (ROOT / "companion/Sources").rglob("*.swift")
+    )
+    assert 'name: "ProductPet"' in package
+    assert "PetTranscoder" in sources
+    assert "rocky-spritesheet" not in sources
+
+
+def test_release_scripts_do_not_package_codex_or_cached_pet_state():
+    forbidden = (
+        ".codex/config.toml",
+        ".codex/cache/tui-pets",
+        ".codex/pets",
+        "slot-a.ccpt",
+        "slot-b.ccpt",
+        "upload.tmp",
+        "pet.json",
+        "spritesheet.webp",
+    )
+    scripts = "\n".join(
+        path.read_text()
+        for path in (
+            ROOT / "scripts/package_product_firmware.sh",
+            ROOT / "scripts/package_private_firmware.sh",
+            ROOT / "scripts/build_companion.sh",
+        )
+    )
+    for marker in forbidden:
+        assert marker not in scripts
+
+
+def test_pet_storage_worker_runs_below_keyboard_and_ui_tasks():
+    store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
+    controller = (
+        ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text()
+    keyboard = (
+        ROOT / "firmware/main/product/keyboard_matrix.cpp"
+    ).read_text()
+    assert 'upload_task, "product-pet-upload"' in store
+    assert "tskIDLE_PRIORITY, impl_->upload_task_stack.data()" in store
+    assert 'ui_task, "product-ui"' in controller
+    assert "tskIDLE_PRIORITY + 1" in controller
+    assert 'scanner_task, "scanner"' in keyboard
+    assert "tskIDLE_PRIORITY + 3" in keyboard

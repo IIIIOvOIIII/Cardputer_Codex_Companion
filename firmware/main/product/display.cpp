@@ -1,5 +1,6 @@
 #include "product/display.hpp"
 
+#include <algorithm>
 #include <array>
 
 #include "M5Unified.h"
@@ -10,6 +11,11 @@ constexpr uint32_t kForeground = 0xe7edf5;
 constexpr uint32_t kAccent = 0x4fd1c5;
 constexpr uint8_t kDisplayTitleTextSize = 1;
 constexpr uint8_t kDisplayBodyTextSize = 2;
+constexpr int32_t kPetX = 72;
+constexpr int32_t kPetY = 20;
+constexpr int32_t kPetWidth = 96;
+constexpr int32_t kPetHeight = 104;
+std::array<uint16_t, 96 * 104> g_pet_frame{};
 
 void begin_page(const char* title) {
   M5.Display.startWrite();
@@ -22,6 +28,36 @@ void begin_page(const char* title) {
   M5.Display.setTextColor(kForeground, kBackground);
   M5.Display.setTextSize(kDisplayBodyTextSize);
   M5.Display.setCursor(6, 20);
+}
+
+const char* pet_state_name(PetState state) {
+  switch (state) {
+    case PetState::idle: return "IDLE";
+    case PetState::working: return "WORKING";
+    case PetState::waiting: return "WAITING";
+    case PetState::review: return "REVIEW";
+    case PetState::failed: return "FAILED";
+  }
+  return "IDLE";
+}
+
+const char* page_title(UiPage page) {
+  switch (page) {
+    case UiPage::pet: return "PET";
+    case UiPage::connection: return "CONNECTION";
+    case UiPage::session: return "SESSION";
+    case UiPage::device: return "DEVICE";
+  }
+  return "PET";
+}
+
+void draw_page_dots(UiPage active) {
+  constexpr int centers[] = {105, 115, 125, 135};
+  for (int index = 0; index < 4; ++index) {
+    const uint32_t color =
+        index == static_cast<int>(active) ? kAccent : 0x39505a;
+    M5.Display.fillCircle(centers[index], 131, 2, color);
+  }
 }
 }  // namespace
 
@@ -40,7 +76,19 @@ esp_err_t display_start(UiModel* model) {
 }
 
 void display_render_boot(const UiModel& model) {
-  begin_page(kProductBootTitle.data());
+  M5.Display.startWrite();
+  M5.Display.fillScreen(kBackground);
+  M5.Display.setTextColor(kAccent, kBackground);
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(6, 3);
+  M5.Display.print("Cardputer Codex Companion");
+  M5.Display.setCursor(6, 13);
+  M5.Display.printf("v%.*s", static_cast<int>(kProductVersion.size()),
+                    kProductVersion.data());
+  M5.Display.drawFastHLine(6, 24, 228, kAccent);
+  M5.Display.setTextColor(kForeground, kBackground);
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(6, 27);
   constexpr std::array stages{
       BootStage::display, BootStage::config, BootStage::keyboard,
       BootStage::ble, BootStage::wifi, BootStage::web,
@@ -52,8 +100,60 @@ void display_render_boot(const UiModel& model) {
   M5.Display.endWrite();
 }
 
-void display_render_runtime(const UiModel& model) {
-  begin_page("CODEX REMOTE");
-  M5.Display.print(model.runtime_text().c_str());
+void display_render_page(const UiModel& model) {
+  if (model.page() == UiPage::pet) {
+    M5.Display.startWrite();
+    M5.Display.fillScreen(kBackground);
+    M5.Display.fillRect(0, 0, 240, 18, 0x0d1820);
+    M5.Display.setTextColor(kAccent, 0x0d1820);
+    M5.Display.setTextSize(1);
+    M5.Display.setCursor(5, 5);
+    const PetState effective =
+        model.companion() == ServiceState::ok
+            ? model.pet_state()
+            : PetState::waiting;
+    M5.Display.print(pet_state_name(effective));
+    M5.Display.setTextColor(kForeground, 0x0d1820);
+    M5.Display.setCursor(141, 5);
+    M5.Display.printf(
+        "B:%s W:%s M:%s",
+        model.ble() == ServiceState::ok ? "+" : "-",
+        model.wifi() == ServiceState::ok ? "+" : "-",
+        model.companion() == ServiceState::ok ? "+" : "-");
+    draw_page_dots(model.page());
+    M5.Display.endWrite();
+    display_render_placeholder(effective);
+    return;
+  }
+  begin_page(page_title(model.page()));
+  const UiPageContent content = model.page_content();
+  const uint8_t end = std::min<uint8_t>(
+      content.count, model.scroll_offset() + 6);
+  for (uint8_t index = model.scroll_offset(); index < end; ++index) {
+    M5.Display.println(content.lines[index].c_str());
+  }
+  draw_page_dots(model.page());
+  M5.Display.endWrite();
+}
+
+bool display_render_pet_frame(PetStore& store, PetState state,
+                              uint8_t frame_index) {
+  if (!store.decode(state, frame_index, g_pet_frame)) return false;
+  M5.Display.startWrite();
+  M5.Display.pushImage(kPetX, kPetY, kPetWidth, kPetHeight,
+                       g_pet_frame.data());
+  M5.Display.endWrite();
+  return true;
+}
+
+void display_render_placeholder(PetState state) {
+  M5.Display.startWrite();
+  M5.Display.fillRect(kPetX, kPetY, kPetWidth, kPetHeight, kBackground);
+  const uint32_t color =
+      state == PetState::failed ? 0xff6b6b : kAccent;
+  M5.Display.fillRoundRect(kPetX + 25, kPetY + 28, 46, 46, 12, color);
+  M5.Display.fillCircle(kPetX + 40, kPetY + 47, 3, kBackground);
+  M5.Display.fillCircle(kPetX + 56, kPetY + 47, 3, kBackground);
+  M5.Display.drawFastHLine(kPetX + 41, kPetY + 61, 14, kBackground);
   M5.Display.endWrite();
 }

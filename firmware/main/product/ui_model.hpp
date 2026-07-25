@@ -6,6 +6,15 @@
 #include <string_view>
 
 #include "product/product_types.hpp"
+#include "product/pet_bundle.hpp"
+#include "product/ui_navigation.hpp"
+
+enum class UiPage : uint8_t { pet, connection, session, device };
+
+struct UiPageContent {
+  std::array<std::string, 12> lines{};
+  uint8_t count = 0;
+};
 
 struct BootStageStatus {
   ServiceState state = ServiceState::starting;
@@ -26,8 +35,21 @@ class UiModel {
   void set_web(std::string_view ipv4, std::string_view pairing_code);
   void set_session(std::string_view title, std::string_view cwd,
                    std::string_view state, uint8_t approvals, uint8_t inputs);
+  void set_pet(std::string_view id, std::string_view digest,
+               PetState state, std::string_view sync_result);
+  void set_pet_storage(uint32_t used_bytes, uint16_t format_version);
+  void set_heartbeat_age(uint32_t seconds);
+  void set_pet_sync_age(uint32_t seconds);
+  void navigate(UiNavAction action);
   [[nodiscard]] uint32_t revision() const { return revision_; }
   [[nodiscard]] std::string runtime_text() const;
+  [[nodiscard]] UiPage page() const { return page_; }
+  [[nodiscard]] uint8_t scroll_offset() const { return scroll_offset_; }
+  [[nodiscard]] UiPageContent page_content() const;
+  [[nodiscard]] PetState pet_state() const { return pet_state_; }
+  [[nodiscard]] ServiceState ble() const { return ble_; }
+  [[nodiscard]] ServiceState wifi() const { return wifi_; }
+  [[nodiscard]] ServiceState companion() const { return companion_; }
 
  private:
   static constexpr std::size_t stage_index(BootStage stage) {
@@ -47,5 +69,15 @@ class UiModel {
   std::string session_state_ = "OFFLINE";
   uint8_t approvals_ = 0;
   uint8_t inputs_ = 0;
+  UiPage page_ = UiPage::pet;
+  uint8_t scroll_offset_ = 0;
+  std::string pet_id_ = "-";
+  std::string pet_digest_ = "-";
+  PetState pet_state_ = PetState::idle;
+  std::string pet_sync_result_ = "none";
+  uint32_t pet_storage_used_ = 0;
+  uint16_t pet_format_version_ = 0;
+  uint32_t heartbeat_age_seconds_ = 0;
+  uint32_t pet_sync_age_seconds_ = 0;
   uint32_t revision_ = 0;
 };

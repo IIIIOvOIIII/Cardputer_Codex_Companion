@@ -94,6 +94,8 @@ public actor PetSyncCoordinator {
     private let transcode: Transcode
     private var cachedInputDigest = ""
     private var cachedBundle: PetBundle?
+    private var failedInputDigest = ""
+    private var failedInputErrorCode: String?
     private var lastSuccess = PetSyncResult(
         petID: "",
         digest: "",
@@ -119,13 +121,34 @@ public actor PetSyncCoordinator {
         do {
             let source = try loadSource()
             let inputDigest = try sourceInputDigest(source)
+            if inputDigest == failedInputDigest,
+               let failedInputErrorCode {
+                return PetSyncResult(
+                    petID: lastSuccess.petID,
+                    digest: lastSuccess.digest,
+                    errorCode: failedInputErrorCode
+                )
+            }
             let bundle: PetBundle
             if inputDigest == cachedInputDigest, let cachedBundle {
                 bundle = cachedBundle
             } else {
-                bundle = try transcode(source)
+                do {
+                    bundle = try transcode(source)
+                } catch {
+                    let errorCode = stableErrorCode(error)
+                    failedInputDigest = inputDigest
+                    failedInputErrorCode = errorCode
+                    return PetSyncResult(
+                        petID: lastSuccess.petID,
+                        digest: lastSuccess.digest,
+                        errorCode: errorCode
+                    )
+                }
                 cachedInputDigest = inputDigest
                 cachedBundle = bundle
+                failedInputDigest = ""
+                failedInputErrorCode = nil
             }
 
             var status = try await client.petStatus()

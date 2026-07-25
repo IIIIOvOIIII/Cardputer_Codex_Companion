@@ -207,10 +207,17 @@ public struct PetSelectionReader {
     }
 
     private func customSource(id: String, home: URL) throws -> PetSource {
-        let petDirectory = home
+        let petsDirectory = home
             .appending(path: "pets", directoryHint: .isDirectory)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let petDirectory = petsDirectory
             .appending(path: id, directoryHint: .isDirectory)
             .standardizedFileURL
+            .resolvingSymlinksInPath()
+        guard isDescendant(petDirectory, of: petsDirectory) else {
+            throw PetSelectionError.pathTraversal
+        }
         let manifestURL = petDirectory.appending(path: "pet.json")
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(
@@ -232,10 +239,8 @@ public struct PetSelectionReader {
         let atlasURL = petDirectory
             .appending(path: manifest.spritesheetPath)
             .standardizedFileURL
-        let prefix = petDirectory.path.hasSuffix("/")
-            ? petDirectory.path
-            : petDirectory.path + "/"
-        guard atlasURL.path.hasPrefix(prefix) else {
+            .resolvingSymlinksInPath()
+        guard isDescendant(atlasURL, of: petDirectory) else {
             throw PetSelectionError.pathTraversal
         }
         guard fileManager.fileExists(atPath: atlasURL.path),
@@ -247,6 +252,13 @@ public struct PetSelectionReader {
             throw PetSelectionError.invalidAtlas
         }
         return PetSource(id: id, atlasURL: atlasURL, atlasVersion: version)
+    }
+
+    private func isDescendant(_ candidate: URL, of directory: URL) -> Bool {
+        let prefix = directory.path.hasSuffix("/")
+            ? directory.path
+            : directory.path + "/"
+        return candidate.path.hasPrefix(prefix)
     }
 
     public static func readDimensions(_ url: URL) throws -> (Int, Int) {

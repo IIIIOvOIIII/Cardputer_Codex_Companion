@@ -272,3 +272,10 @@
 - Expected result: 计划覆盖 Swift 宠物发现/转码、CCPT 跨端格式、SPIFFS 双槽事务、PIN 鉴权上传、会话状态、Fn 本地导航、局部动画渲染、完整发布门禁与 app-only 真机部署，且无待定接口或占位步骤。
 - Result: Achieved — 计划写入 `docs/superpowers/plans/2026-07-25-cardputer-pet-ui.md`，共九个逐项提交任务；明确 132-byte CCPT 头、五状态/四十帧、raw/RLE 编码、两类 SHA-256、820 KiB 上限、12 条 Web 路由、两槽掉电回退、19,968-byte 帧缓冲、400 ms 局部刷新、Pet/Connection/Session/Device 页面和保留普通标点的 Fn 捕获规则。自审覆盖已批准规格、接口签名、RED/GREEN 命令、发布私有数据边界和实机验收。
 - Next step: 由用户选择 Subagent-Driven 或 Inline Execution；实施开始时先创建隔离 worktree，再按 Tasks 1–9 执行。
+
+## 2026-07-25 18:45 HKT
+
+- Current work: 在隔离 worktree `feat/cardputer-pet-ui` 中完成 1.0.28 宠物发现/转码、CCPT 缓存协议、低优先级事务上传、状态页和 Fn 标点导航的首个目标构建。
+- Expected result: Mac Companion 能安全发现并转码当前 Codex 宠物；固件能在 SPIFFS 双槽中验证和缓存 40 帧宠物包，以 400 ms 局部刷新显示；`Fn+; , . /` 仅在设备内导航且不进入 HID；上传工作不抢占键盘、BLE 或 UI。
+- Result: Achieved for implementation/build milestone — Swift 可执行测试覆盖选择解析、目录及 symlink 越界拒绝、状态优先级、确定性 CCPT、行 RLE、五行转码、8 KiB 分块、重复同步跳过和失败输入退避；固件新增 CCPT 全量校验/解码、SPIFFS A/B 槽、PIN 鉴权上传 API、专用 `tskIDLE_PRIORITY` 上传任务、Pet/Connection/Session/Device 页面、局部帧缓冲与导航捕获。Python 109/109、host C++ 24/24 和 Swift pet harness 均通过；ESP-IDF 目标构建通过，应用约 1.47 MiB，应用分区剩余 51%。
+- Next step: 提交实现里程碑，运行 ASan/UBSan 和完整 release gate，生成 1.0.28 generic/private 镜像与 Companion app，然后执行 app-only 实机刷写和持久化/动画验收。

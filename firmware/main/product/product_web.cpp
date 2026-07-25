@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -38,6 +39,7 @@ std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
 std::atomic<uint32_t> g_action_sequence{0};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
+PetStore* g_pet_store = nullptr;
 
 class ProfileLock {
  public:
@@ -141,6 +143,36 @@ std::string read_body(httpd_req_t* request) {
     received += static_cast<std::size_t>(count);
   }
   return body;
+}
+
+bool read_header(httpd_req_t* request, const char* name,
+                 std::string* output) {
+  const std::size_t length = httpd_req_get_hdr_value_len(request, name);
+  if (length == 0 || length > 128) return false;
+  std::string value(length + 1, '\0');
+  if (httpd_req_get_hdr_value_str(request, name, value.data(),
+                                  value.size()) != ESP_OK) {
+    return false;
+  }
+  value.resize(length);
+  *output = std::move(value);
+  return true;
+}
+
+bool parse_sha256(std::string_view text, std::array<uint8_t, 32>* output) {
+  if (text.size() != 64 || output == nullptr) return false;
+  auto nibble = [](char value) -> int {
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    return -1;
+  };
+  for (std::size_t index = 0; index < output->size(); ++index) {
+    const int high = nibble(text[index * 2]);
+    const int low = nibble(text[index * 2 + 1]);
+    if (high < 0 || low < 0) return false;
+    (*output)[index] = static_cast<uint8_t>((high << 4) | low);
+  }
+  return true;
 }
 
 cJSON* action_json(ActionKind kind, uint8_t modifiers,
@@ -550,6 +582,181 @@ esp_err_t companion_action_handler(httpd_req_t* request) {
                 needs_snapshot ? "true" : "false");
   return json_response(request, json);
 }
+
+esp_err_t pet_status_response(httpd_req_t* request) {
+  if (g_pet_store == nullptr) {
+    return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
+                         "503 Service Unavailable");
+  }
+  const PetStoreStatus status = g_pet_store->status();
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "pet_id", status.pet_id.c_str());
+  cJSON_AddStringToObject(root, "digest", status.digest.c_str());
+  cJSON_AddNumberToObject(root, "format_version", status.format_version);
+  cJSON_AddNumberToObject(root, "storage_used", status.storage_used);
+  cJSON* transaction = cJSON_AddObjectToObject(root, "transaction");
+  cJSON_AddBoolToObject(transaction, "active", status.transaction.active);
+  cJSON_AddStringToObject(transaction, "id",
+                          status.transaction.transaction_id.c_str());
+  cJSON_AddNumberToObject(transaction, "received",
+                          status.transaction.received);
+  cJSON_AddNumberToObject(transaction, "expected",
+                          status.transaction.expected);
+  cJSON_AddStringToObject(root, "last_result", status.last_result.c_str());
+  char* json = cJSON_PrintUnformatted(root);
+  const esp_err_t result =
+      json == nullptr ? ESP_ERR_NO_MEM : json_response(request, json);
+  cJSON_free(json);
+  cJSON_Delete(root);
+  return result;
+}
+
+esp_err_t pet_status_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  return pet_status_response(request);
+}
+
+esp_err_t pet_begin_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_pet_store == nullptr) {
+    return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
+                         "503 Service Unavailable");
+  }
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* pet_id =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "pet_id");
+  const cJSON* format =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "format_version");
+  const cJSON* length =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "length");
+  const cJSON* sha =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "sha256");
+  PetUploadBegin begin;
+  const bool parsed =
+      cJSON_IsString(pet_id) && cJSON_IsNumber(format) &&
+      cJSON_IsNumber(length) && cJSON_IsString(sha) &&
+      length->valuedouble >= 1 &&
+      length->valuedouble <= kPetBundleMaximumBytes &&
+      parse_sha256(sha->valuestring, &begin.upload_digest);
+  if (parsed) {
+    begin.pet_id = pet_id->valuestring;
+    begin.format_version = static_cast<uint16_t>(format->valueint);
+    begin.length = static_cast<std::size_t>(length->valuedouble);
+  }
+  cJSON_Delete(root);
+  if (!parsed) {
+    return json_response(request, "{\"error\":\"invalid_request\"}",
+                         "400 Bad Request");
+  }
+  PetUploadStatus status;
+  const esp_err_t result = g_pet_store->begin(begin, &status);
+  if (result == ESP_ERR_INVALID_STATE) {
+    return json_response(request, "{\"error\":\"upload_in_progress\"}",
+                         "409 Conflict");
+  }
+  if (result != ESP_OK) {
+    return json_response(request, "{\"error\":\"pet_store_failed\"}",
+                         "500 Internal Server Error");
+  }
+  char json[96]{};
+  std::snprintf(json, sizeof(json),
+                "{\"transaction_id\":\"%s\",\"received\":%lu}",
+                status.transaction_id.c_str(),
+                static_cast<unsigned long>(status.received));
+  return json_response(request, json);
+}
+
+esp_err_t pet_chunk_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_pet_store == nullptr) {
+    return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
+                         "503 Service Unavailable");
+  }
+  if (request->content_len <= 0 || request->content_len > 8192) {
+    return json_response(request, "{\"error\":\"chunk_too_large\"}",
+                         "413 Payload Too Large");
+  }
+  std::string transaction;
+  std::string offset_text;
+  std::string digest_text;
+  std::array<uint8_t, 32> digest{};
+  if (!read_header(request, "X-Pet-Transaction", &transaction) ||
+      !read_header(request, "X-Pet-Offset", &offset_text) ||
+      !read_header(request, "X-Pet-Chunk-SHA256", &digest_text) ||
+      !parse_sha256(digest_text, &digest)) {
+    return json_response(request, "{\"error\":\"invalid_request\"}",
+                         "400 Bad Request");
+  }
+  char* end = nullptr;
+  const unsigned long long offset =
+      std::strtoull(offset_text.c_str(), &end, 10);
+  if (end == nullptr || *end != '\0') {
+    return json_response(request, "{\"error\":\"invalid_offset\"}",
+                         "400 Bad Request");
+  }
+  const std::string body = read_body(request);
+  if (body.size() != static_cast<std::size_t>(request->content_len)) {
+    return json_response(request, "{\"error\":\"invalid_request\"}",
+                         "400 Bad Request");
+  }
+  const auto bytes = std::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(body.data()), body.size());
+  const esp_err_t result = g_pet_store->append(
+      transaction, static_cast<std::size_t>(offset), bytes, digest);
+  if (result == ESP_ERR_INVALID_STATE) {
+    return json_response(request, "{\"error\":\"transaction_mismatch\"}",
+                         "409 Conflict");
+  }
+  if (result == ESP_ERR_INVALID_SIZE) {
+    return json_response(request, "{\"error\":\"invalid_offset\"}",
+                         "400 Bad Request");
+  }
+  if (result == ESP_ERR_INVALID_CRC) {
+    return json_response(request, "{\"error\":\"invalid_digest\"}",
+                         "400 Bad Request");
+  }
+  if (result != ESP_OK) {
+    return json_response(request, "{\"error\":\"pet_store_failed\"}",
+                         "500 Internal Server Error");
+  }
+  return json_response(request, "{\"accepted\":true}");
+}
+
+esp_err_t pet_commit_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (g_pet_store == nullptr) {
+    return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
+                         "503 Service Unavailable");
+  }
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* transaction =
+      root == nullptr ? nullptr : cJSON_GetObjectItem(root, "transaction_id");
+  const std::string id =
+      cJSON_IsString(transaction) ? transaction->valuestring : "";
+  cJSON_Delete(root);
+  if (id.empty()) {
+    return json_response(request, "{\"error\":\"invalid_request\"}",
+                         "400 Bad Request");
+  }
+  const esp_err_t result = g_pet_store->commit(id);
+  if (result == ESP_ERR_INVALID_STATE) {
+    return json_response(request, "{\"error\":\"transaction_mismatch\"}",
+                         "409 Conflict");
+  }
+  if (result == ESP_ERR_INVALID_CRC) {
+    return json_response(request, "{\"error\":\"invalid_bundle\"}",
+                         "400 Bad Request");
+  }
+  if (result != ESP_OK) {
+    return json_response(request, "{\"error\":\"pet_store_failed\"}",
+                         "500 Internal Server Error");
+  }
+  return pet_status_response(request);
+}
 }  // namespace
 
 esp_err_t product_web_start() {
@@ -573,7 +780,7 @@ esp_err_t product_web_start() {
   config.prvtkey_len = identity.private_key_length;
   result = httpd_ssl_start(&g_server, &config);
   if (result != ESP_OK) return result;
-  const std::array<httpd_uri_t, 8> routes{{
+  const std::array<httpd_uri_t, 12> routes{{
       {.uri = "/", .method = HTTP_GET, .handler = root_handler},
       {.uri = "/api/v1/status", .method = HTTP_GET, .handler = status_handler},
       {.uri = "/api/v1/profile", .method = HTTP_GET,
@@ -586,6 +793,14 @@ esp_err_t product_web_start() {
        .handler = companion_status_handler},
       {.uri = "/api/v1/companion/action", .method = HTTP_GET,
        .handler = companion_action_handler},
+      {.uri = "/api/v1/companion/pet/begin", .method = HTTP_POST,
+       .handler = pet_begin_handler},
+      {.uri = "/api/v1/companion/pet/chunk", .method = HTTP_PUT,
+       .handler = pet_chunk_handler},
+      {.uri = "/api/v1/companion/pet/commit", .method = HTTP_POST,
+       .handler = pet_commit_handler},
+      {.uri = "/api/v1/companion/pet", .method = HTTP_GET,
+       .handler = pet_status_handler},
   }};
   for (const auto& route : routes) {
     result = httpd_register_uri_handler(g_server, &route);
@@ -613,6 +828,10 @@ void product_web_set_companion_snapshot_handler(
 void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler) {
   g_heartbeat_handler = handler;
+}
+
+void product_web_set_pet_store(PetStore* store) {
+  g_pet_store = store;
 }
 
 bool product_web_action(uint8_t layer, uint8_t physical_key,
