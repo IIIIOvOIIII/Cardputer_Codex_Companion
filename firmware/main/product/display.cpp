@@ -140,8 +140,11 @@ bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
   if (!store.decode(state, frame_index, g_pet_frame)) return false;
   M5.Display.startWrite();
+  const bool previous_swap = M5.Display.getSwapBytes();
+  M5.Display.setSwapBytes(true);
   M5.Display.pushImage(kPetX, kPetY, kPetWidth, kPetHeight,
                        g_pet_frame.data());
+  M5.Display.setSwapBytes(previous_swap);
   M5.Display.endWrite();
   return true;
 }

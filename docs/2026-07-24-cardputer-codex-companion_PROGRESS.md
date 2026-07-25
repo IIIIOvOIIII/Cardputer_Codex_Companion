@@ -279,3 +279,10 @@
 - Expected result: Mac Companion 能安全发现并转码当前 Codex 宠物；固件能在 SPIFFS 双槽中验证和缓存 40 帧宠物包，以 400 ms 局部刷新显示；`Fn+; , . /` 仅在设备内导航且不进入 HID；上传工作不抢占键盘、BLE 或 UI。
 - Result: Achieved for implementation/build milestone — Swift 可执行测试覆盖选择解析、目录及 symlink 越界拒绝、状态优先级、确定性 CCPT、行 RLE、五行转码、8 KiB 分块、重复同步跳过和失败输入退避；固件新增 CCPT 全量校验/解码、SPIFFS A/B 槽、PIN 鉴权上传 API、专用 `tskIDLE_PRIORITY` 上传任务、Pet/Connection/Session/Device 页面、局部帧缓冲与导航捕获。Python 109/109、host C++ 24/24 和 Swift pet harness 均通过；ESP-IDF 目标构建通过，应用约 1.47 MiB，应用分区剩余 51%。
 - Next step: 提交实现里程碑，运行 ASan/UBSan 和完整 release gate，生成 1.0.28 generic/private 镜像与 Companion app，然后执行 app-only 实机刷写和持久化/动画验收。
+
+## 2026-07-25 19:26 HKT
+
+- Current work: 根据实机照片排查 1.0.28 宠物画面的颜色失真、矩形底色不一致和空帧闪烁。
+- Expected result: 从 Codex WebP 图集、Swift RGB565 转码、CCPT 解码到 M5GFX `pushImage` 的整条像素链建立可复现证据，再以失败测试锁定最小修复。
+- Result: Root cause established — M5GFX 的 `uint16_t*` 图像入口默认按 byte-swapped RGB565 解释，而 CCPT 解码输出的是 native RGB565 数值，导致颜色与转码背景一起错位；页面背景是 RGB888 `0x05080d`，转码器虽量化到正确 RGB565，但经过错误字节序后显示为黄绿色矩形。真实 `rocky-spritesheet-v4.webp` 的 idle/waiting/working/review 行仅有前 6 个非透明单元，第 7、8 列 alpha 全零；当前固定轮播八列，因此每轮必出现两个纯背景帧。设备运行 1.0.28，BLE/Wi-Fi 正常，Mac agent 当前未加载，串口为 `/dev/cu.usbmodem21201`。
+- Next step: 先为 native RGB565 显示约定、透明背景一致性和空单元循环替换补 RED 回归，再修改转码和显示路径；随后重建、app-only 刷入并重新同步宠物包做实机验证。

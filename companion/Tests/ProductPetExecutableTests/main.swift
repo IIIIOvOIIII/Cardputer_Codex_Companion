@@ -261,6 +261,82 @@ func testAtlasTranscode() throws {
     }
 }
 
+func testAtlasTranscodeCyclesVisibleFrames() throws {
+    let width = 1536
+    let height = 1872
+    var pixels = Data(repeating: 0, count: width * height * 4)
+    let selectedRows = [0, 5, 6, 7, 8]
+    pixels.withUnsafeMutableBytes { raw in
+        let bytes = raw.bindMemory(to: UInt8.self)
+        for row in selectedRows {
+            for column in 0..<6 {
+                let originX = column * PetAtlas.cellWidth + 72
+                let originY = row * PetAtlas.cellHeight + 80
+                for y in originY..<(originY + 16) {
+                    for x in originX..<(originX + 16) {
+                        let offset = (y * width + x) * 4
+                        bytes[offset] = UInt8(20 + column * 25)
+                        bytes[offset + 1] = UInt8(40 + row * 10)
+                        bytes[offset + 2] = 180
+                        bytes[offset + 3] = 255
+                    }
+                }
+            }
+        }
+    }
+    guard let provider = CGDataProvider(data: pixels as CFData),
+          let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(
+                rawValue: CGImageAlphaInfo.last.rawValue
+            ),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+          ) else {
+        throw HarnessError.failed("create sparse atlas fixture")
+    }
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let atlas = root.appending(path: "sparse-atlas.png")
+    guard let destination = CGImageDestinationCreateWithURL(
+        atlas as CFURL,
+        "public.png" as CFString,
+        1,
+        nil
+    ) else {
+        throw HarnessError.failed("create sparse image destination")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    try expect(CGImageDestinationFinalize(destination), "write sparse atlas fixture")
+
+    let bundle = try PetTranscoder().transcode(
+        PetSource(id: "sparse", atlasURL: atlas, atlasVersion: .v1)
+    )
+    for state in PetState.allCases {
+        try expect(
+            bundle.framePayload(state: state, frame: 6) ==
+                bundle.framePayload(state: state, frame: 0),
+            "\(state.rawValue) frame 6 cycles to visible frame 0"
+        )
+        try expect(
+            bundle.framePayload(state: state, frame: 7) ==
+                bundle.framePayload(state: state, frame: 1),
+            "\(state.rawValue) frame 7 cycles to visible frame 1"
+        )
+        try expect(
+            bundle.firstPixel(state: state, frame: 0) == 0x0041,
+            "\(state.rawValue) transparent pixels use display background"
+        )
+    }
+}
+
 actor FakePetDevice: PetDeviceClient {
     var digest = ""
     var transaction = DevicePetTransaction(
@@ -415,6 +491,7 @@ struct ProductPetHarness {
         try testFrameEncoding()
         try testBundleWireFormat()
         try testAtlasTranscode()
+        try testAtlasTranscodeCyclesVisibleFrames()
         try await testPetSyncCoordinator()
         try await testPetSyncBacksOffFailedInputUntilSourceChanges()
         print("product-pet-tests: PASS")
@@ -431,5 +508,28 @@ private extension Data {
             (UInt32(self[offset + 1]) << 8) |
             (UInt32(self[offset + 2]) << 16) |
             (UInt32(self[offset + 3]) << 24)
+    }
+}
+
+private extension PetBundle {
+    func frameRecordOffset(state: PetState, frame: Int) -> Int {
+        let stateIndex = PetState.allCases.firstIndex(of: state)!
+        return 172 + (stateIndex * 8 + frame) * 16
+    }
+
+    func framePayload(state: PetState, frame: Int) -> Data {
+        let record = frameRecordOffset(state: state, frame: frame)
+        let offset = Int(data.uint32LE(at: record + 4))
+        let length = Int(data.uint32LE(at: record + 8))
+        return data.subdata(in: offset..<(offset + length))
+    }
+
+    func firstPixel(state: PetState, frame: Int) -> UInt16 {
+        let record = frameRecordOffset(state: state, frame: frame)
+        let offset = Int(data.uint32LE(at: record + 4))
+        if data[record] == PetFrameEncoding.rawRGB565.rawValue {
+            return data.uint16LE(at: offset)
+        }
+        return data.uint16LE(at: offset + 4)
     }
 }

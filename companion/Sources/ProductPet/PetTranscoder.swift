@@ -11,6 +11,11 @@ public enum PetTranscoderError: Error {
 }
 
 public struct PetTranscoder {
+    private struct RenderedFrame {
+        let pixels: [UInt16]
+        let isVisible: Bool
+    }
+
     private static let stateRows: [PetState: Int] = [
         .idle: 0,
         .working: 7,
@@ -45,8 +50,14 @@ public struct PetTranscoder {
             guard let row = Self.stateRows[state] else {
                 throw PetTranscoderError.invalidAtlas
             }
-            states[state] = try (0..<8).map { column in
+            let visibleFrames = try (0..<8).compactMap { column in
                 try renderFrame(image: image, column: column, row: row)
+            }.filter(\.isVisible)
+            guard !visibleFrames.isEmpty else {
+                throw PetTranscoderError.invalidAtlas
+            }
+            states[state] = (0..<8).map {
+                visibleFrames[$0 % visibleFrames.count].pixels
             }
         }
         return try PetBundleEncoder.encode(petID: source.id, frames: states)
@@ -56,7 +67,7 @@ public struct PetTranscoder {
         image: CGImage,
         column: Int,
         row: Int
-    ) throws -> [UInt16] {
+    ) throws -> RenderedFrame {
         let sourceRect = CGRect(
             x: column * PetAtlas.cellWidth,
             y: row * PetAtlas.cellHeight,
@@ -81,18 +92,7 @@ public struct PetTranscoder {
         ) else {
             throw PetTranscoderError.context
         }
-        let red = CGFloat((backgroundRGB888 >> 16) & 0xff) / 255
-        let green = CGFloat((backgroundRGB888 >> 8) & 0xff) / 255
-        let blue = CGFloat(backgroundRGB888 & 0xff) / 255
-        context.setFillColor(
-            CGColor(
-                red: red,
-                green: green,
-                blue: blue,
-                alpha: 1
-            )
-        )
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
         context.interpolationQuality = .none
         let scale = min(
             CGFloat(width) / CGFloat(cropped.width),
@@ -108,11 +108,22 @@ public struct PetTranscoder {
             height: drawHeight
         )
         context.draw(cropped, in: drawRect)
-        return stride(from: 0, to: rgba.count, by: 4).map { offset in
-            let r = UInt16(rgba[offset])
-            let g = UInt16(rgba[offset + 1])
-            let b = UInt16(rgba[offset + 2])
+        let backgroundRed = UInt16((backgroundRGB888 >> 16) & 0xff)
+        let backgroundGreen = UInt16((backgroundRGB888 >> 8) & 0xff)
+        let backgroundBlue = UInt16(backgroundRGB888 & 0xff)
+        var isVisible = false
+        let pixels = stride(from: 0, to: rgba.count, by: 4).map { offset in
+            let alpha = UInt16(rgba[offset + 3])
+            isVisible = isVisible || alpha != 0
+            let inverseAlpha = 255 - alpha
+            let r = UInt16(rgba[offset]) +
+                (backgroundRed * inverseAlpha + 127) / 255
+            let g = UInt16(rgba[offset + 1]) +
+                (backgroundGreen * inverseAlpha + 127) / 255
+            let b = UInt16(rgba[offset + 2]) +
+                (backgroundBlue * inverseAlpha + 127) / 255
             return ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)
         }
+        return RenderedFrame(pixels: pixels, isVisible: isVisible)
     }
 }

@@ -110,6 +110,15 @@ def test_pet_renderer_uses_one_bounded_buffer_and_partial_push():
     assert "fillScreen" not in frame_body
 
 
+def test_pet_renderer_declares_native_rgb565_byte_order():
+    display = (ROOT / "firmware/main/product/display.cpp").read_text()
+    frame_body = display.split("bool display_render_pet_frame", 1)[1]
+    frame_body = frame_body.split("void display_render_placeholder", 1)[0]
+    assert "getSwapBytes()" in frame_body
+    assert "setSwapBytes(true)" in frame_body
+    assert "setSwapBytes(previous_swap)" in frame_body
+
+
 def test_companion_contains_pet_transcoder_without_selected_pet_assets():
     package = (ROOT / "companion/Package.swift").read_text()
     sources = "\n".join(
