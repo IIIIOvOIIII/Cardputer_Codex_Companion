@@ -244,3 +244,10 @@
 - Expected result: 规格与计划无占位符、接口命名一致，覆盖保存及恢复直通的成功/失败窗口、PIN 掩码、指定文案、样式、生成资源、完整门禁与 app-only 实机刷写。
 - Result: Achieved — 设计提交为 `c1e8d5f`；实施计划写入 `docs/superpowers/plans/2026-07-25-web-key-result-login-polish.md`，明确了 RED/GREEN 命令、具体 HTML/CSS/JavaScript、版本双来源、发布门禁和实机验证步骤。
 - Next step: 用户选择 inline execution 后，按计划执行 Tasks 1–3。
+
+## 2026-07-25 17:34 HKT
+
+- Current work: 在隔离 worktree 中完成 Web 登录界面、键位发布结果窗口与 1.0.27 发布候选。
+- Expected result: PIN 使用密码掩码且登录文案、按钮间距符合要求；保存映射或恢复直通后在页面内明确显示结果，成功约 1.5 秒自动关闭，失败保持至用户确认；完整发布门禁通过。
+- Result: Achieved and ready to merge — 静态 Web 回归先验证旧页面缺少掩码、结果窗口与新文案，随后通过；JavaScript 回归先验证缺少发布结果状态与失败回滚，随后通过。保存映射和恢复直通均等待 Profile PUT 成功后显示成功窗口，失败时恢复本地旧配置并保留错误窗口。完整发布门禁通过：Python 104/104、普通 host 21/21、ASan/UBSan 21/21、Web asset freshness、ESP-IDF 5.5.4 target build、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。1.0.27 应用镜像 SHA-256 为 `20e9d179083ba74f12cd6fd4e6b63f7e5378ac391504e7bfadb144c8dddcc3d3`；private full image SHA-256 为 `0973af231a741ea14154b8f25dcfa662dcc44283a46c27b0449a8f0cee2781ce`。
+- Next step: 提交发布候选并 fast-forward 合并到 `main`，在主分支重新执行发布门禁，然后 app-only 刷入当前 Cardputer 并验证 1.0.27 Web 标记与运行状态。
