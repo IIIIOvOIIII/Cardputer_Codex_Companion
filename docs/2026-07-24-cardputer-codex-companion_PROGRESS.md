@@ -258,3 +258,10 @@
 - Expected result: 主分支、交付镜像和实机运行相同的 1.0.27；保留设备现有 PIN、Wi‑Fi、Profile 与 BLE bonds；HTTPS 页面和运行状态均能证明新版本生效。
 - Result: Achieved — 分支 fast-forward 合并至 `main` 提交 `e2dd179`。主分支完整发布门禁再次通过：Python 104/104、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor 及 private packaging。最终应用镜像 SHA-256 为 `a6be74c967f3a4ef1c3887bfea7ef0719db781ad24a5da8e80936506c626c31d`，private full image SHA-256 为 `e9f8bbd095f92fa819f761a51a3dc9a2ab5d8760f88e3eeeb318dd9ee618d67b`。应用镜像已 app-only 刷入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool 报告 `Hash of data verified`。实机状态 API 返回 version `1.0.27` 且 BLE/Wi‑Fi/Mac 均 `OK`；实机首页包含 `Codex Companion Login`、`请输入设备PIN码进行鉴权`、密码型 `login-pin` 与 `result-modal`。
 - Next step: 提交最终证据并交付主仓库 private full image；仓库无 remote，因此无 push 目标。
+
+## 2026-07-25 18:07 HKT
+
+- Current work: 规划 Cardputer 1.0.28 宠物主界面、只读状态页、Fn 方向导航及 Mac Companion 宠物同步。
+- Expected result: 明确宠物来源、状态联动、设备缓存、资源格式、分段上传、页面布局、键盘兼容、错误回退和实机验收，实施前不修改固件或 Companion。
+- Result: Achieved for design — 用户选择跟随桌面端当前宠物、状态联动、布局 C、启动页和详情页显示版本、多个只读页面、左右换页/上下滚动、Fn+标点导航以及离线继续播放最后缓存宠物。选定 Companion 转码 + 设备 SPIFFS 缓存架构；完整规格写入 `docs/superpowers/specs/2026-07-25-cardputer-pet-ui-design.md`。
+- Next step: 用户审阅已落盘规格；批准后生成测试先行的逐任务实施计划。
