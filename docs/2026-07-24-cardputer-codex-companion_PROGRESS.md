@@ -230,3 +230,10 @@
 - Expected result: 主分支、LaunchAgent、实机运行固件和交付制品来自同一份源代码；完整门禁、BLE 失败快速恢复、Mac 在线和中文 Profile 持久化均有新鲜证据。
 - Result: Achieved — 主分支完整门禁通过：Python 103/103、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 目标构建、产品分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging 与 secret exclusion。主分支应用镜像 app-only 刷入 `0x20000`，esptool 报告 `Hash of data verified`；LaunchAgent 已切换到主仓库 app。最终重启实测在 `ENC_CHANGE status=13` 后立即 terminate，约 0.75 秒重新连接、加密并恢复 `HID keyboard ready=1`，随后无 panic/reboot/TLS allocator 错误。状态 API 返回 version `1.0.25` 且 BLE/Wi-Fi/Mac 全部 `OK`；Profile revision 4 的 F 键中文字符串仍精确读回。最终 private full image 为 1,618,912 bytes，SHA-256 `12e0554ddca105dd252ed720ec7ded08add773009a9d5742a2d0f16084752db3`。
 - Next step: 交付主仓库 `dist/private/cardputer_codex_companion-private-full.bin`；当前仓库无 remote，故没有可执行的 push。
+
+## 2026-07-25 09:30 HKT
+
+- Current work: 修复 Web Profile 中组合键和 ASCII 字符串执行后不输出的问题，并准备 1.0.26 实机部署。
+- Expected result: 组合键完全经 BLE HID 执行且具有可被主机观察到的按下保持时间；可表示的 ASCII 字符串逐键走 HID、不依赖 Mac Agent；中文及其他 Unicode 仍走原生 Unicode Agent 通道。
+- Result: Achieved — 回归测试先复现了组合键按下/释放之间无间隔，以及 ASCII 字符串被无条件发送到当前未获辅助功能权限的 Mac Agent。组合键现按“按下、保持 30 ms、释放”直接走 BLE HID；可表示的 US-HID ASCII 字符串逐键走 HID（每键按下 30 ms、释放 10 ms），中文及其他 Unicode 整串保留 GATT/Companion 路径；测试覆盖大小写、Shift 标点和通道隔离。完整发布门禁通过：Python 103/103、普通 host 21/21、ASan/UBSan 21/21、ESP-IDF 5.5.4 target build、分区、140,921 bytes DIRAM headroom、Swift release/doctor、generic/private packaging。1.0.26 应用镜像 1,488,848 bytes，SHA-256 `4f4ea3fcbe414b048d9939d7292f0d76958a49d28ed51224945a4972cefe9024`；private full image 1,619,920 bytes，SHA-256 `82ce7c8339be6afddf2c1ff675586d7a1396612bb3acfef0666c79036fd086f4`。应用镜像已刷入 `/dev/cu.usbmodem21201` 的 `0x20000`，esptool hash verified；HTTPS 状态返回 `version=1.0.26`、BLE/Wi-Fi/Mac 均 `OK`，Profile revision 6 和 V 键 `hihihi` 配置保持不变。
+- Next step: 用户在任意 Mac 文本框按 V 验证现有 `hihihi` 映射，并将任意键设为组合键做实体输入复验；中文等 Unicode 仍需在 macOS 辅助功能中授权 `CardputerCompanion.app`。

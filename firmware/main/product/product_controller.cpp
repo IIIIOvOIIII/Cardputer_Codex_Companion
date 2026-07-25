@@ -123,6 +123,10 @@ class ProductMacroSink final : public MacroSink {
     }
   }
 
+  void delay_hid(uint16_t delay_ms) override {
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+  }
+
   bool send_text(uint32_t operation_id, std::string_view text) override {
     const auto bytes = std::span<const uint8_t>(
         reinterpret_cast<const uint8_t*>(text.data()), text.size());

@@ -10,6 +10,7 @@ class MacroSink {
  public:
   virtual ~MacroSink() = default;
   virtual void send_hid(const HidReport& report) = 0;
+  virtual void delay_hid(uint16_t delay_ms) = 0;
   virtual bool send_text(uint32_t operation_id, std::string_view text) = 0;
   virtual void device_action(DeviceAction action) = 0;
   virtual bool codex_action(CodexAction action) = 0;

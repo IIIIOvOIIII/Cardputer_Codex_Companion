@@ -10,7 +10,7 @@
 - 在 `https://设备IP/` 提供 56 键、四层 Profile 编辑器，支持透传、HID 组合键、UTF‑8/中文字符串、最多 16 步输入序列、设备动作和 Codex 动作。
 - Web 首次启动生成并持久化设备 P‑256 HTTPS 身份；进入控制台前必须先输入屏幕显示的八位 PIN，Settings 中可修改 PIN 和 Wi‑Fi。
 - macOS Companion 使用真实 `codex app-server --listen stdio://` 获取会话，向副屏同步 title、cwd、状态、Approval 与 Input 数量。
-- 中文字符串通过受保护 BLE GATT 分片发送，由 Companion 使用 `CGEvent.keyboardSetUnicodeString` 注入；不使用剪贴板或 Command‑V。
+- 可由标准 US HID 表示的 ASCII 字符串直接通过 BLE HID 逐键发送；中文及其他 Unicode 字符串通过受保护 BLE GATT 分片发送，由 Companion 使用 `CGEvent.keyboardSetUnicodeString` 注入；不使用剪贴板或 Command‑V。
 - Profile 四层均参与运行：Keyboard/Codex 基础层分别为 0/1，按住 Fn 时分别切换到 2/3。
 
 ## 刷写
@@ -27,7 +27,7 @@ python -m esptool --chip esp32s3 -b 460800 \
 
 ## 首次使用
 
-1. 开机后屏幕应立即出现 `CARDPUTER CODEX 1.0.19` 启动页。
+1. 开机后屏幕应立即出现当前版本的 `CARDPUTER CODEX` 启动页。
 2. 在 macOS 蓝牙设置中连接 `Cardputer Codex`；若系统保留了旧的 `nimble`/`Cardputer Codex` 配对记录，先删除旧设备后重新连接。
 3. Wi‑Fi 连通后，屏幕显示设备 IP 和八位 Web PIN。浏览器访问 `https://设备IP/`；设备证书是首次启动生成的自签名证书，首次访问需要确认。页面首先显示 PIN 鉴权屏，PIN 正确后才进入键盘配置。
 4. 构建并启动 Mac Companion：

@@ -5,6 +5,164 @@
 #include "freertos/task.h"
 #endif
 
+namespace {
+constexpr uint16_t kHidPressDurationMs = 30;
+constexpr uint16_t kHidReleaseDurationMs = 10;
+constexpr uint8_t kLeftShiftModifier = 0x02;
+
+bool ascii_hid_report(char character, HidReport* report) {
+  if (report == nullptr) return false;
+  *report = HidReport{};
+
+  if (character >= 'a' && character <= 'z') {
+    report->keys[0] = static_cast<uint8_t>(0x04 + character - 'a');
+    return true;
+  }
+  if (character >= 'A' && character <= 'Z') {
+    report->modifiers = kLeftShiftModifier;
+    report->keys[0] = static_cast<uint8_t>(0x04 + character - 'A');
+    return true;
+  }
+  if (character >= '1' && character <= '9') {
+    report->keys[0] = static_cast<uint8_t>(0x1e + character - '1');
+    return true;
+  }
+  if (character == '0') {
+    report->keys[0] = 0x27;
+    return true;
+  }
+
+  switch (character) {
+    case '\n':
+    case '\r':
+      report->keys[0] = 0x28;
+      break;
+    case '\b':
+      report->keys[0] = 0x2a;
+      break;
+    case '\t':
+      report->keys[0] = 0x2b;
+      break;
+    case ' ':
+      report->keys[0] = 0x2c;
+      break;
+    case '-':
+    case '_':
+      report->keys[0] = 0x2d;
+      break;
+    case '=':
+    case '+':
+      report->keys[0] = 0x2e;
+      break;
+    case '[':
+    case '{':
+      report->keys[0] = 0x2f;
+      break;
+    case ']':
+    case '}':
+      report->keys[0] = 0x30;
+      break;
+    case '\\':
+    case '|':
+      report->keys[0] = 0x31;
+      break;
+    case ';':
+    case ':':
+      report->keys[0] = 0x33;
+      break;
+    case '\'':
+    case '"':
+      report->keys[0] = 0x34;
+      break;
+    case '`':
+    case '~':
+      report->keys[0] = 0x35;
+      break;
+    case ',':
+    case '<':
+      report->keys[0] = 0x36;
+      break;
+    case '.':
+    case '>':
+      report->keys[0] = 0x37;
+      break;
+    case '/':
+    case '?':
+      report->keys[0] = 0x38;
+      break;
+    case '!':
+      report->keys[0] = 0x1e;
+      break;
+    case '@':
+      report->keys[0] = 0x1f;
+      break;
+    case '#':
+      report->keys[0] = 0x20;
+      break;
+    case '$':
+      report->keys[0] = 0x21;
+      break;
+    case '%':
+      report->keys[0] = 0x22;
+      break;
+    case '^':
+      report->keys[0] = 0x23;
+      break;
+    case '&':
+      report->keys[0] = 0x24;
+      break;
+    case '*':
+      report->keys[0] = 0x25;
+      break;
+    case '(':
+      report->keys[0] = 0x26;
+      break;
+    case ')':
+      report->keys[0] = 0x27;
+      break;
+    default:
+      return false;
+  }
+
+  switch (character) {
+    case '_':
+    case '+':
+    case '{':
+    case '}':
+    case '|':
+    case ':':
+    case '"':
+    case '~':
+    case '<':
+    case '>':
+    case '?':
+    case '!':
+    case '@':
+    case '#':
+    case '$':
+    case '%':
+    case '^':
+    case '&':
+    case '*':
+    case '(':
+    case ')':
+      report->modifiers = kLeftShiftModifier;
+      break;
+    default:
+      break;
+  }
+  return true;
+}
+
+bool is_hid_text(std::string_view text) {
+  for (const char character : text) {
+    HidReport report;
+    if (!ascii_hid_report(character, &report)) return false;
+  }
+  return true;
+}
+}  // namespace
+
 void MacroEngine::release_all() {
   sink_.send_hid(HidReport{});
 }
@@ -27,6 +185,7 @@ MacroResult MacroEngine::execute_leaf(
         report.keys[index] = usages[index];
       }
       sink_.send_hid(report);
+      sink_.delay_hid(kHidPressDurationMs);
       release_all();
       return MacroResult::ok;
     }
@@ -34,6 +193,17 @@ MacroResult MacroEngine::execute_leaf(
       if (text.empty() || text.size() > kMaxTextUtf8Bytes) {
         release_all();
         return MacroResult::invalid;
+      }
+      if (is_hid_text(text)) {
+        for (const char character : text) {
+          HidReport report;
+          ascii_hid_report(character, &report);
+          sink_.send_hid(report);
+          sink_.delay_hid(kHidPressDurationMs);
+          release_all();
+          sink_.delay_hid(kHidReleaseDurationMs);
+        }
+        return MacroResult::ok;
       }
       if (!sink_.send_text(next_operation_id_++, text)) {
         release_all();
