@@ -12,11 +12,21 @@ enum LANBridgeError: Error {
 
 final class LANBridge: @unchecked Sendable, PetDeviceClient {
     private let baseURL: URL
-    private let pairingCode: String
+    private let pairingLock = NSLock()
+    private var pairingCode: String
 
     init(baseURL: URL, pairingCode: String) {
         self.baseURL = baseURL
         self.pairingCode = pairingCode
+    }
+
+    func updatePairing(_ pairing: String, revision: UInt32) {
+        guard PairingConfigWriter.validPairing(pairing) else {
+            return
+        }
+        pairingLock.lock()
+        pairingCode = pairing
+        pairingLock.unlock()
     }
 
     func post(_ snapshot: CompanionSnapshot) async throws {
@@ -200,6 +210,9 @@ final class LANBridge: @unchecked Sendable, PetDeviceClient {
         hasBody: Bool,
         timeout: Int
     ) -> String {
+        pairingLock.lock()
+        let pairing = pairingCode
+        pairingLock.unlock()
         var lines = [
             "silent",
             "show-error",
@@ -209,7 +222,7 @@ final class LANBridge: @unchecked Sendable, PetDeviceClient {
             "max-time = \(timeout)",
             "request = \(curlQuote(method))",
             "url = \(curlQuote(baseURL.appending(path: path).absoluteString))",
-            "header = \(curlQuote("X-Cardputer-Pairing: \(pairingCode)"))",
+            "header = \(curlQuote("X-Cardputer-Pairing: \(pairing)"))",
             "write-out = \(curlQuote("\n%{http_code}"))",
         ]
         for key in headers.keys.sorted() {

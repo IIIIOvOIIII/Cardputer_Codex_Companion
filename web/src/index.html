@@ -68,7 +68,10 @@
           <p class="hint">PIN 必须是 8 位数字。保存后，后续 Web 请求立即使用新 PIN。</p>
           <form id="change-pin">
             <label>新 PIN
-              <input id="new-pin" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="例如 12345678">
+              <input id="new-pin" type="password" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="8 位数字">
+            </label>
+            <label>确认新 PIN
+              <input id="confirm-pin" type="password" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="再次输入">
             </label>
             <button class="primary" type="submit">保存 PIN</button>
           </form>

@@ -209,3 +209,81 @@ let staleCache = try staleReader.read(
 try expect(staleCache.limits.isEmpty, "stale cache hidden")
 
 print("Codex telemetry reader tests passed")
+
+let actionWithMigration = try JSONDecoder().decode(
+    RemoteActionEnvelope.self,
+    from: Data(
+        """
+        {"sequence":8,"action":"none","needs_snapshot":false,
+         "next_pairing":"87654321","pin_revision":8}
+        """.utf8
+    )
+)
+try expect(
+    actionWithMigration.pairingMigration == PairingMigration(
+        nextPairing: "87654321",
+        pinRevision: 8
+    ),
+    "action migration"
+)
+let actionWithoutMigration = try JSONDecoder().decode(
+    RemoteActionEnvelope.self,
+    from: Data(
+        #"{"sequence":9,"action":"none","needs_snapshot":false}"#.utf8
+    )
+)
+try expect(actionWithoutMigration.pairingMigration == nil, "optional migration")
+
+let configDirectory = FileManager.default.temporaryDirectory
+    .appending(path: "cardputer-config-\(UUID().uuidString)")
+try FileManager.default.createDirectory(
+    at: configDirectory,
+    withIntermediateDirectories: false
+)
+defer { try? FileManager.default.removeItem(at: configDirectory) }
+let configURL = configDirectory.appending(path: "config.json")
+try Data(
+    """
+    {"device":"https://192.168.1.2","pairing":"12345678",
+     "pin_revision":7,"unrelated":{"kept":true}}
+    """.utf8
+).write(to: configURL)
+try PairingConfigWriter.persist(
+    PairingMigration(nextPairing: "87654321", pinRevision: 8),
+    to: configURL
+)
+var configObject = try JSONSerialization.jsonObject(
+    with: Data(contentsOf: configURL)
+) as! [String: Any]
+try expect(configObject["pairing"] as? String == "87654321", "pairing update")
+try expect(configObject["pin_revision"] as? Int == 8, "revision update")
+try expect(
+    (configObject["unrelated"] as? [String: Bool])?["kept"] == true,
+    "unrelated config retained"
+)
+let permissions = try FileManager.default.attributesOfItem(
+    atPath: configURL.path
+)[.posixPermissions] as! NSNumber
+try expect(permissions.intValue == 0o600, "config mode")
+try PairingConfigWriter.persist(
+    PairingMigration(nextPairing: "11111111", pinRevision: 8),
+    to: configURL
+)
+configObject = try JSONSerialization.jsonObject(
+    with: Data(contentsOf: configURL)
+) as! [String: Any]
+try expect(configObject["pairing"] as? String == "87654321", "old revision ignored")
+do {
+    try PairingConfigWriter.persist(
+        PairingMigration(nextPairing: "１２３４５６７８", pinRevision: 9),
+        to: configURL
+    )
+    throw TestFailure.assertion("unicode pairing accepted")
+} catch PairingConfigWriterError.invalidPairing {
+}
+let siblings = try FileManager.default.contentsOfDirectory(
+    atPath: configDirectory.path
+)
+try expect(siblings == ["config.json"], "temporary file cleaned")
+
+print("pairing migration tests passed")

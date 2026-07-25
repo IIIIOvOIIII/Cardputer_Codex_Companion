@@ -61,6 +61,24 @@ final class CompanionDTOTests: XCTestCase {
             from: data
         )
         XCTAssertTrue(value.needsSnapshot)
+        XCTAssertNil(value.pairingMigration)
+    }
+
+    func testRemoteActionDecodesPairingMigration() throws {
+        let data = Data(
+            """
+            {"sequence":8,"action":"none","needs_snapshot":false,
+             "next_pairing":"87654321","pin_revision":8}
+            """.utf8
+        )
+        let value = try JSONDecoder().decode(
+            RemoteActionEnvelope.self,
+            from: data
+        )
+        XCTAssertEqual(
+            value.pairingMigration,
+            PairingMigration(nextPairing: "87654321", pinRevision: 8)
+        )
     }
 
     func testSnapshotEncodesCodexTelemetryWithStableKeys() throws {

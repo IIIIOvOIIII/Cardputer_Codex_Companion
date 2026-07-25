@@ -189,9 +189,23 @@ public struct RemoteActionEnvelope: Codable, Sendable {
     public let sequence: UInt64
     public let action: RemoteAction
     public let needsSnapshot: Bool
+    public let nextPairing: String?
+    public let pinRevision: UInt32?
 
     enum CodingKeys: String, CodingKey {
         case sequence, action
         case needsSnapshot = "needs_snapshot"
+        case nextPairing = "next_pairing"
+        case pinRevision = "pin_revision"
+    }
+
+    public var pairingMigration: PairingMigration? {
+        guard let nextPairing, let pinRevision else {
+            return nil
+        }
+        return PairingMigration(
+            nextPairing: nextPairing,
+            pinRevision: pinRevision
+        )
     }
 }

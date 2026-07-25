@@ -301,3 +301,10 @@ add_executable(test_settings_menu
 )
 target_include_directories(test_settings_menu PRIVATE ../../main)
 add_test(NAME settings_menu COMMAND test_settings_menu)
+
+add_executable(test_pin_rotation
+  test_pin_rotation.cpp
+  ../../main/product/pin_rotation.cpp
+)
+target_include_directories(test_pin_rotation PRIVATE ../../main)
+add_test(NAME pin_rotation COMMAND test_pin_rotation)

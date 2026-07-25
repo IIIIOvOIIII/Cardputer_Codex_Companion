@@ -412,3 +412,10 @@
 - Expected result: 有 override 标记时 runtime 凭据优先，否则 private 引导配置优先；候选在 GOT_IP 前不改变 NVS；15 秒超时回连旧网络；扫描去重并返回最强的最多 12 项。
 - Result: Achieved — 纯状态机 RED/GREEN 覆盖候选、持久化命令、回滚和 override 优先级。ESP 适配器仅在候选 GOT_IP 后将 SSID、密码和 `override=1` 一次提交；提交失败或超时切回原凭据，private `wifi_cfg` 不写入。扫描使用非阻塞 `esp_wifi_scan_start(..., false)`、SCAN_DONE 事件、精确 SSID 去重和 RSSI 降序。Wi-Fi host 测试通过，ESP-IDF 固件编译通过，应用大小 0x178420。
 - Next step: 实现 PIN current/previous 五分钟授权及 Mac Agent 凭据迁移。
+
+## 2026-07-26 00:11 HKT
+
+- Current work: 完成 Task 7 的 PIN 五分钟窄授权、revision 持久化和 Mac Agent 配置迁移。
+- Expected result: 旧 PIN 仅能在 300 秒内访问 Companion action；新 PIN 的任一成功请求立即撤销 grace；Agent 原子更新 JSON、保留无关键及 0600 权限，并拒绝旧 revision 与非 ASCII 数字。
+- Result: Achieved — 固件 PIN RED/GREEN 覆盖 299999/300000 ms 边界、current/previous 路由范围、提前撤销和 revision；Web PIN 表单改为两次掩码输入和页内结果提示。Action 只在旧 PIN grace 鉴权时返回迁移字段。Swift 可执行测试覆盖有/无迁移、旧 revision、无关键保留、同目录临时文件、原子 rename、0600 和 Unicode 数字拒绝；本机 XCTest 模块不可用，因此同步保留 XCTest 源并使用仓库既有可执行 harness 验证。Swift release、鉴权相关 host 测试及 ESP-IDF 构建均通过，应用大小 0x178c70。
+- Next step: 在 controller 中完成 Profile Catalog、Settings、Wi-Fi、PIN、显示参数和输入优先级的运行时接线。

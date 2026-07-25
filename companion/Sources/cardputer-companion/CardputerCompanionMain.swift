@@ -58,6 +58,7 @@ struct CardputerCompanionMain {
         )
         let clock = ContinuousClock()
         var petSyncCadence = PetSyncCadence()
+        var pinRevision = configuration.pinRevision
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
         while !Task.isCancelled {
             let now = clock.now
@@ -86,6 +87,29 @@ struct CardputerCompanionMain {
             }
             do {
                 let action = try await bridge.pollAction()
+                if let migration = action.pairingMigration,
+                   migration.pinRevision > pinRevision {
+                    if let configURL = configuration.configURL {
+                        try PairingConfigWriter.persist(
+                            migration,
+                            to: configURL
+                        )
+                    } else {
+                        FileHandle.standardError.write(
+                            Data(
+                                (
+                                    "pairing migration is process-only; " +
+                                        "update the command-line config\n"
+                                ).utf8
+                            )
+                        )
+                    }
+                    bridge.updatePairing(
+                        migration.nextPairing,
+                        revision: migration.pinRevision
+                    )
+                    pinRevision = migration.pinRevision
+                }
                 if action.needsSnapshot {
                     lastPostedSnapshot = nil
                 }

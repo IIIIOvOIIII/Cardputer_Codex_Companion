@@ -1,4 +1,5 @@
 import Foundation
+import ProductContracts
 
 enum ConfigurationError: Error {
     case usage
@@ -9,6 +10,12 @@ enum ConfigurationError: Error {
 struct CompanionConfigFile: Decodable {
     let device: String
     let pairing: String
+    let pinRevision: UInt32?
+
+    enum CodingKeys: String, CodingKey {
+        case device, pairing
+        case pinRevision = "pin_revision"
+    }
 }
 
 struct Configuration {
@@ -21,20 +28,26 @@ struct Configuration {
     let command: Command
     let deviceURL: URL?
     let pairingCode: String?
+    let configURL: URL?
+    let pinRevision: UInt32
 
     static func parse(_ arguments: [String]) throws -> Configuration {
         if arguments == ["--version"] {
             return Configuration(
                 command: .version,
                 deviceURL: nil,
-                pairingCode: nil
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
             )
         }
         if arguments == ["doctor"] {
             return Configuration(
                 command: .doctor,
                 deviceURL: nil,
-                pairingCode: nil
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
             )
         }
         guard arguments.first == "run" else {
@@ -43,6 +56,7 @@ struct Configuration {
         var deviceValue: String?
         var pairing: String?
         var configFile: URL?
+        var pinRevision: UInt32 = 0
         var index = 1
         while index < arguments.count {
             guard index + 1 < arguments.count else {
@@ -71,20 +85,22 @@ struct Configuration {
             )
             deviceValue = config.device
             pairing = config.pairing
+            pinRevision = config.pinRevision ?? 0
         }
         let device = deviceValue.flatMap(URL.init(string:))
         guard let device, isLANDeviceURL(device) else {
             throw ConfigurationError.invalidDeviceURL
         }
         guard let pairing,
-              pairing.count == 8,
-              pairing.allSatisfy(\.isNumber) else {
+              PairingConfigWriter.validPairing(pairing) else {
             throw ConfigurationError.invalidPairingCode
         }
         return Configuration(
             command: .run,
             deviceURL: device,
-            pairingCode: pairing
+            pairingCode: pairing,
+            configURL: configFile,
+            pinRevision: pinRevision
         )
     }
 

@@ -13,6 +13,7 @@
 #include "cJSON.h"
 #include "esp_https_server.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
@@ -20,6 +21,7 @@
 #include "product/device_identity.hpp"
 #include "product/profile.hpp"
 #include "product/profile_codec.hpp"
+#include "product/pin_rotation.hpp"
 #include "product/web_assets.hpp"
 #include "product/wifi_manager.hpp"
 
@@ -30,6 +32,7 @@ constexpr char kProductNvsNamespace[] = "product";
 constexpr char kProfileNvsKey[] = "profile";
 constexpr char kActiveProfileNvsKey[] = "active_profile";
 constexpr char kWebPinNvsKey[] = "web_pin";
+constexpr char kWebPinRevisionNvsKey[] = "web_pin_rev";
 httpd_handle_t g_server = nullptr;
 std::array<char, 9> g_pairing_code{};
 Profile g_profile = safe_profile();
@@ -44,6 +47,7 @@ ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
 PetStore* g_pet_store = nullptr;
 ProfileCatalogStore* g_profile_catalog = nullptr;
+PinRotationState g_pin_rotation;
 
 class ProfileLock {
  public:
@@ -60,14 +64,24 @@ class ProfileLock {
   bool locked_ = false;
 };
 
-bool authorized(httpd_req_t* request) {
+PinAuthorization authorize_request(
+    httpd_req_t* request,
+    bool companion_action = false
+) {
   const size_t length = httpd_req_get_hdr_value_len(request, kPairingHeader);
-  if (length != kProductWebPinLength) return false;
+  if (length != kProductWebPinLength) return PinAuthorization::denied;
   std::array<char, 9> supplied{};
-  return httpd_req_get_hdr_value_str(request, kPairingHeader, supplied.data(),
-                                     supplied.size()) == ESP_OK &&
-         std::memcmp(supplied.data(), g_pairing_code.data(),
-                     kProductWebPinLength) == 0;
+  if (httpd_req_get_hdr_value_str(request, kPairingHeader, supplied.data(),
+                                  supplied.size()) != ESP_OK) {
+    return PinAuthorization::denied;
+  }
+  return g_pin_rotation.authorize(
+      supplied.data(), companion_action,
+      static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+}
+
+bool authorized(httpd_req_t* request) {
+  return authorize_request(request) == PinAuthorization::current;
 }
 
 esp_err_t json_response(httpd_req_t* request, const char* json,
@@ -271,11 +285,13 @@ void load_pairing_code() {
   std::array<char, kProductWebPinLength + 1> stored{};
   bool stored_found = false;
   bool stored_valid = false;
+  uint32_t revision = 0;
   if (open_result == ESP_OK) {
     size_t size = stored.size();
     stored_found =
         nvs_get_str(handle, kWebPinNvsKey, stored.data(), &size) == ESP_OK;
     stored_valid = stored_found && product_web_pin_is_valid(stored.data());
+    nvs_get_u32(handle, kWebPinRevisionNvsKey, &revision);
   }
 
   switch (product_web_pin_load_action(open_result == ESP_OK,
@@ -295,6 +311,7 @@ void load_pairing_code() {
       generate_pairing_code();
       break;
   }
+  g_pin_rotation.set_current(g_pairing_code.data(), revision);
   if (open_result == ESP_OK) nvs_close(handle);
 }
 
@@ -305,10 +322,22 @@ esp_err_t persist_pairing_code(std::string_view pin) {
       nvs_open(kProductNvsNamespace, NVS_READWRITE, &handle);
   if (result != ESP_OK) return result;
   const std::string pin_copy(pin);
+  const std::string old_pin(g_pairing_code.data());
+  const uint32_t next_revision = g_pin_rotation.revision() + 1;
   result = nvs_set_str(handle, kWebPinNvsKey, pin_copy.c_str());
+  if (result == ESP_OK) {
+    result = nvs_set_u32(handle, kWebPinRevisionNvsKey, next_revision);
+  }
   if (result == ESP_OK) result = nvs_commit(handle);
   nvs_close(handle);
-  if (result == ESP_OK) set_pairing_code(pin);
+  if (result == ESP_OK) {
+    if (!g_pin_rotation.rotate(
+            old_pin, pin,
+            static_cast<uint64_t>(esp_timer_get_time()) / 1000)) {
+      return ESP_ERR_INVALID_STATE;
+    }
+    set_pairing_code(pin);
+  }
   return result;
 }
 
@@ -614,7 +643,11 @@ esp_err_t companion_status_handler(httpd_req_t* request) {
 }
 
 esp_err_t companion_action_handler(httpd_req_t* request) {
-  if (!authorized(request)) return reject_pairing(request);
+  const PinAuthorization authorization =
+      authorize_request(request, true);
+  if (authorization == PinAuthorization::denied) {
+    return reject_pairing(request);
+  }
   note_companion_activity();
   const bool needs_snapshot =
       product_web_companion_needs_snapshot(g_companion.load());
@@ -622,14 +655,25 @@ esp_err_t companion_action_handler(httpd_req_t* request) {
       g_pending_codex_action.exchange(CodexAction::none);
   const uint32_t sequence = g_action_sequence.load();
   const std::string_view name = codex_action_name(action);
-  char json[128]{};
-  std::snprintf(json, sizeof(json),
-                "{\"sequence\":%lu,\"action\":\"%.*s\","
-                "\"needs_snapshot\":%s}",
-                static_cast<unsigned long>(sequence),
-                static_cast<int>(name.size()), name.data(),
-                needs_snapshot ? "true" : "false");
-  return json_response(request, json);
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddNumberToObject(root, "sequence", sequence);
+  cJSON_AddStringToObject(root, "action", std::string(name).c_str());
+  cJSON_AddBoolToObject(root, "needs_snapshot", needs_snapshot);
+  if (authorization == PinAuthorization::previous_companion_action) {
+    const auto next = g_pin_rotation.next_pairing();
+    if (next.has_value()) {
+      cJSON_AddStringToObject(root, "next_pairing",
+                              std::string(*next).c_str());
+      cJSON_AddNumberToObject(root, "pin_revision",
+                              g_pin_rotation.revision());
+    }
+  }
+  char* json = cJSON_PrintUnformatted(root);
+  const esp_err_t result =
+      json == nullptr ? ESP_ERR_NO_MEM : json_response(request, json);
+  cJSON_free(json);
+  cJSON_Delete(root);
+  return result;
 }
 
 esp_err_t pet_status_response(httpd_req_t* request) {

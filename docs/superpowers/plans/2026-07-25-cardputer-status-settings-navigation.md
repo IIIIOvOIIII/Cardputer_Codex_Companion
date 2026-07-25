@@ -1045,7 +1045,7 @@ and `pin_revision`; no other route accepts the previous PIN. A successful
 request authenticated with the new PIN revokes the previous PIN immediately.
 Neither PIN is logged.
 
-- [ ] **Step 1: Write firmware RED tests for the grace window**
+- [x] **Step 1: Write firmware RED tests for the grace window**
 
 Cover:
 
@@ -1058,7 +1058,7 @@ Cover:
 - the revision increments once and survives `restore()`;
 - `next_pairing()` exists only while migration is pending.
 
-- [ ] **Step 2: Run firmware PIN RED**
+- [x] **Step 2: Run firmware PIN RED**
 
 ```bash
 cmake -S firmware/test/host -B build/product-host
@@ -1069,7 +1069,7 @@ cmake --build build/product-host --target test_pin_rotation -j
 Expected: the target or assertions fail because `PinRotationState` does not
 exist.
 
-- [ ] **Step 3: Implement PIN rotation and Web confirmation**
+- [x] **Step 3: Implement PIN rotation and Web confirmation**
 
 Use constant-time equality at the HTTP authorization boundary. In the
 Settings backend, require two matching eight-digit entries before calling
@@ -1081,13 +1081,13 @@ existing authenticated page/modal behavior and show the existing in-page
 success or failure notice. Never return either PIN from a general settings or
 status endpoint.
 
-- [ ] **Step 4: Run firmware PIN GREEN**
+- [x] **Step 4: Run firmware PIN GREEN**
 
 Run the command from Step 2.
 
 Expected: executable exits zero.
 
-- [ ] **Step 5: Write Swift RED tests**
+- [x] **Step 5: Write Swift RED tests**
 
 Add fixtures for an action envelope with and without:
 
@@ -1106,7 +1106,7 @@ Test that `PairingConfigWriter`:
 - leaves the resulting file at mode `0600`;
 - rejects a pairing value that is not exactly eight ASCII digits.
 
-- [ ] **Step 6: Run Swift RED**
+- [x] **Step 6: Run Swift RED**
 
 ```bash
 cd companion
@@ -1116,7 +1116,7 @@ swift test --filter ProductContractsTests
 Expected: compile or assertions fail because the migration DTO and writer do
 not exist.
 
-- [ ] **Step 7: Implement Agent migration**
+- [x] **Step 7: Implement Agent migration**
 
 Decode the optional migration fields in `RemoteActionEnvelope`. Preserve the
 source config URL and local `pin_revision` in `Configuration`. Make
@@ -1136,7 +1136,7 @@ memory for the process lifetime and emit a PIN-free warning. A device reboot
 during this non-durable migration requires manual config repair, as documented
 in the approved boundary.
 
-- [ ] **Step 8: Run Swift GREEN and the combined auth checks**
+- [x] **Step 8: Run Swift GREEN and the combined auth checks**
 
 ```bash
 cd companion
