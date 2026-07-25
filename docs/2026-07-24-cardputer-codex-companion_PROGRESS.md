@@ -370,3 +370,10 @@
 - Expected result: 规格明确页面顺序、方向键捕获、Codex Model/Thinking/Fast/限额数据源、缺失限额隐藏、多 Profile 事务存储、PIN Agent 迁移、Wi-Fi 试连回滚、显示设置、测试矩阵和不实施范围。
 - Result: Achieved for design — 采用扩展统一 Companion 快照，Fast 固定显示在 Model 下方，限额按明确 bucket identity 与 300/10080 分钟窗口识别且超过 120 秒隐藏；页面固定为 Pets/Device/Codex/Sync/Settings。设计使用 storage 分区末尾 128 KiB 建立双 64 KiB Profile Catalog bank，支持 SAFE 加四个自定义 Profile；设置页支持 Wi-Fi 扫描试连、PIN 五分钟 Agent 迁移、亮度、自动返回和 2.0/2.5/3.0 FPS。完整规格写入 `docs/superpowers/specs/2026-07-25-cardputer-status-settings-navigation-design.md`。
 - Next step: 用户审阅已落盘规格；批准后使用 writing-plans 生成测试先行的逐任务实施计划。
+
+## 2026-07-25 23:28 HKT
+
+- Current work: 将已批准的 1.0.30 五页状态与设备设置规格拆分为可直接执行的测试先行计划。
+- Expected result: 明确 Swift app-server 遥测、固件可选字段解析、双 bank Profile Catalog、Web 多 Profile、设备端滚动设置、Wi-Fi 试连回滚、PIN Agent 迁移、运行时接线、版本发布及实机验收的文件、接口、RED/GREEN 命令和提交边界。
+- Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-cardputer-status-settings-navigation.md`，共九个顺序任务。计划固定统一鉴权快照、Fast 紧跟 Model、不可用限额隐藏、SAFE 加四个自定义 Profile、五分钟 PIN 迁移和 app-only `0x20000` 部署，并包含完整 release gate、实机矩阵与 30 分钟 soak。自检同时移除了不存在的刷写验证脚本引用，改用当前 esptool 的 `verify_flash`。
+- Next step: 选择 Subagent-Driven 或 Inline Execution；执行时从隔离 `feat/status-settings-navigation` worktree 开始，按 Tasks 1–9 完成实现、1.0.30 发布和实机部署。
