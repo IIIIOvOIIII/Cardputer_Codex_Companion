@@ -307,3 +307,10 @@
 - Expected result: 建立当前 Mac 选择、设备缓存、Companion 日志和主循环控制流之间的证据链；形成用户确认的 30 秒内同步设计。
 - Result: Achieved for diagnosis/design — Mac 当前选择和 Cardputer 最终缓存均为 `seedy`，设备摘要为 `42c04b6256f2...`，证明选择解析、转码、上传、提交与缓存链路可用；Companion 日志持续出现 curl 35 连接重置和 curl 28 超时。根因是 30 秒 pet check 位于 action/snapshot 共用 `do` 块末端，任一前置请求失败都会跳过该轮宠物检查，使实际延迟无上限。用户确认采用串行独立节拍：宠物同步到期时优先执行，成功后 30 秒复查，失败后 5 秒重试，且与 action/snapshot 使用独立错误边界。
 - Next step: 用户审阅 `docs/superpowers/specs/2026-07-25-cardputer-pet-sync-reliability-design.md`；批准后编写测试先行实施计划。
+
+## 2026-07-25 20:28 HKT
+
+- Current work: 将已批准的宠物同步可靠性规格拆分为测试先行实施、发布和隔离 HIL 切换验收步骤。
+- Expected result: 计划包含明确文件、接口、RED/GREEN 命令、串行网络约束、LaunchAgent 部署、30 秒传播测量和用户配置隔离恢复。
+- Result: Achieved — 实施计划写入 `docs/superpowers/plans/2026-07-25-cardputer-pet-sync-reliability.md`，共三个独立任务：纯 `ContinuousClock` 节拍器、主循环错误边界重构、完整发布与隔离 `CODEX_HOME` 实机切换。计划不修改 CCPT、固件协议或用户实际 Codex 配置，并明确禁止并发 Cardputer HTTPS 请求和凭据日志。
+- Next step: 用户选择 Subagent-Driven 或 Inline Execution；随后在隔离 worktree 中按计划执行。
