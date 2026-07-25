@@ -78,16 +78,21 @@ def test_web_ui_uses_chinese_action_labels_and_key_modal() -> None:
     assert "Alt+V" in html
 
 
-def test_key_editor_saves_and_publishes_with_inline_errors() -> None:
+def test_key_editor_publishes_with_result_dialog_and_rollback() -> None:
     html = Path("web/src/index.html").read_text()
     script = Path("web/src/app.js").read_text()
 
-    assert 'id="key-save-error"' in html
     assert ">保存并发布</button>" in html
-    assert "function readEditorAction()" in script
-    assert "async function applyEditor(event)" in script
+    assert "let resultTimer=0" in script
+    assert "function showResult(kind,message)" in script
+    assert '$("result-message").textContent=message' in script
+    assert "resultTimer=setTimeout(closeResult,1500)" in script
+    assert 'showResult("success","键位配置已发布到设备")' in script
+    assert 'showResult("error",`修改失败：${error.message}`)' in script
+    assert "profile.bindings[index]=previous" in script
+    assert "async function restorePassthrough()" in script
     assert "await publishProfile(false)" in script
-    assert '$("key-save-error").textContent=error.message' in script
+    assert '$("delete-mapping").onclick=restorePassthrough' in script
 
 
 def test_generated_asset_header_is_current() -> None:
