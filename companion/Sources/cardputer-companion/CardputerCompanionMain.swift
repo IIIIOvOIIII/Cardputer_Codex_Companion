@@ -56,6 +56,8 @@ struct CardputerCompanionMain {
             digest: "",
             errorCode: nil
         )
+        let clock = ContinuousClock()
+        var nextPetSynchronization = clock.now
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
         while !Task.isCancelled {
             do {
@@ -74,11 +76,15 @@ struct CardputerCompanionMain {
                     lastPosted: &lastPostedSnapshot,
                     wireSequence: &wireSequence
                 )
-                synchronizedPet = await petSync.synchronize(client: bridge)
-                if let errorCode = synchronizedPet.errorCode {
-                    FileHandle.standardError.write(
-                        Data("pet sync warning: \(errorCode)\n".utf8)
-                    )
+                let now = clock.now
+                if now >= nextPetSynchronization {
+                    nextPetSynchronization = now.advanced(by: .seconds(30))
+                    synchronizedPet = await petSync.synchronize(client: bridge)
+                    if let errorCode = synchronizedPet.errorCode {
+                        FileHandle.standardError.write(
+                            Data("pet sync warning: \(errorCode)\n".utf8)
+                        )
+                    }
                 }
                 currentSnapshot = try adapter.snapshot().withPet(
                     id: synchronizedPet.petID,

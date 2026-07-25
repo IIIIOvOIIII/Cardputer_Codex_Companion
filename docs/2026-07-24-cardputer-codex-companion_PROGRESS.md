@@ -286,3 +286,10 @@
 - Expected result: 从 Codex WebP 图集、Swift RGB565 转码、CCPT 解码到 M5GFX `pushImage` 的整条像素链建立可复现证据，再以失败测试锁定最小修复。
 - Result: Root cause established — M5GFX 的 `uint16_t*` 图像入口默认按 byte-swapped RGB565 解释，而 CCPT 解码输出的是 native RGB565 数值，导致颜色与转码背景一起错位；页面背景是 RGB888 `0x05080d`，转码器虽量化到正确 RGB565，但经过错误字节序后显示为黄绿色矩形。真实 `rocky-spritesheet-v4.webp` 的 idle/waiting/working/review 行仅有前 6 个非透明单元，第 7、8 列 alpha 全零；当前固定轮播八列，因此每轮必出现两个纯背景帧。设备运行 1.0.28，BLE/Wi-Fi 正常，Mac agent 当前未加载，串口为 `/dev/cu.usbmodem21201`。
 - Next step: 先为 native RGB565 显示约定、透明背景一致性和空单元循环替换补 RED 回归，再修改转码和显示路径；随后重建、app-only 刷入并重新同步宠物包做实机验证。
+
+## 2026-07-25 19:43 HKT
+
+- Current work: 完成宠物颜色/空帧修复的发布门禁、app-only 实机刷写、新 rocky 包同步与重启缓存验证，并处理 HIL 中发现的 HTTPS 竞争。
+- Expected result: 设备以 native RGB565 显示正确颜色；透明背景与页面一致；八帧循环均来自可见源单元；宠物包跨重启保持；Mac agent 不持续挤占设备 HTTPS。
+- Result: Partial, visual code path and persistence achieved — 新测试先分别因空列被编码和缺少 M5GFX byte-order 声明失败，修复后通过；完整门禁通过 Python 116/116、host 24/24、ASan/UBSan 24/24、ESP-IDF 目标构建、Swift release 和私有打包。应用镜像已从 `0x20000` 写入并 hash verified。新 rocky 包摘要为 `476d93d7f7e3...`，大小 471,624 bytes，事务完成；硬复位后状态为 `cached`、事务 inactive，证明 raw A/B 槽持久化有效。串口确认 1.0.28 稳定启动、BLE ready、Wi-Fi/HTTPS 正常且无 panic/reboot。HIL 同时证明 agent 每 2 秒重复 pet GET 会与动作轮询共同造成 HTTPS 连接竞争；新增 RED/GREEN 回归后，pet 同步频率限制为 30 秒，动作/会话仍保持 2 秒。
+- Next step: 重建并加载节流后的 Companion，连续验证 Mac 在线与 Web 状态可访问；提交补丁后合并到 `main`，在主分支重跑完整发布门禁、重刷同源应用镜像并交付最终 private full image。

@@ -75,6 +75,15 @@ def test_companion_only_posts_changed_snapshots():
     assert "Task.sleep(for: .seconds(2))" in main
 
 
+def test_companion_rate_limits_pet_synchronization():
+    main = (
+        ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
+    ).read_text()
+    assert "nextPetSynchronization" in main
+    assert "now >= nextPetSynchronization" in main
+    assert "nextPetSynchronization = now.advanced(by: .seconds(30))" in main
+
+
 def test_cardputer_display_uses_larger_body_text():
     display = (ROOT / "firmware/main/product/display.cpp").read_text()
     assert "kDisplayBodyTextSize = 2" in display
