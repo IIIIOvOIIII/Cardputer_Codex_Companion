@@ -158,3 +158,68 @@ def test_pet_storage_worker_runs_below_keyboard_and_ui_tasks():
     assert "tskIDLE_PRIORITY + 1" in controller
     assert 'scanner_task, "scanner"' in keyboard
     assert "tskIDLE_PRIORITY + 3" in keyboard
+
+
+def test_pet_storage_worker_uses_declared_static_stack_depth():
+    store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
+    header = (ROOT / "firmware/main/product/pet_store.hpp").read_text()
+
+    assert "std::array<StackType_t, 8192> upload_task_stack" in store
+    assert "impl_->upload_task_stack.size(),\n      this" in store
+    assert "sizeof(impl_->upload_task_stack)" not in store
+    assert "do_initialize" in header
+    assert "case kCommandInitialize:" in store
+
+
+def test_pet_storage_uses_raw_transactional_slots():
+    store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
+
+    assert "esp_partition_erase_range" in store
+    assert "esp_partition_write" in store
+    assert "PartitionSource" in store
+    assert "esp_vfs_spiffs_register" not in store
+    assert "std::fopen" not in store
+
+
+def test_pet_chunk_body_has_single_owned_allocation():
+    web = (ROOT / "firmware/main/product/product_web.cpp").read_text()
+    store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
+    chunk_handler = web.split("esp_err_t pet_chunk_handler", 1)[1].split(
+        "esp_err_t pet_commit_handler", 1
+    )[0]
+
+    assert "read_binary_body(request" in chunk_handler
+    assert "append_owned(" in chunk_handler
+    assert "std::move(body)" in chunk_handler
+    assert "command_chunk.assign(" not in store
+
+
+def test_pet_sync_keeps_companion_online_and_closes_curl_pipes():
+    main = (
+        ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
+    ).read_text()
+    bridge = (
+        ROOT / "companion/Sources/cardputer-companion/LANBridge.swift"
+    ).read_text()
+    web = (ROOT / "firmware/main/product/product_web.cpp").read_text()
+
+    assert "postSnapshotIfChanged" in main
+    assert main.count("try await postSnapshotIfChanged") == 2
+    assert "note_companion_pet_activity();" in web
+    assert "try? output.fileHandleForReading.close()" in bridge
+    assert "try? error.fileHandleForReading.close()" in bridge
+
+
+def test_pet_frame_decode_does_not_allocate_from_runtime_heap():
+    bundle = (ROOT / "firmware/main/product/pet_bundle.cpp").read_text()
+    decode = bundle.split("PetBundleError decode_pet_frame", 1)[1]
+
+    assert "std::vector<uint8_t>" not in decode
+    assert "std::array<uint8_t, kPetFrameWidth * 2>" in decode
+
+
+def test_pet_digest_uses_bounded_worker_stack():
+    bundle = (ROOT / "firmware/main/product/pet_bundle.cpp").read_text()
+    digest = bundle.split("source_digest(", 1)[1].split("}  // namespace", 1)[0]
+
+    assert "std::array<uint8_t, 1024> buffer" in digest

@@ -6,10 +6,9 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
-#include <vector>
 
+#include "esp_partition.h"
 #include "esp_random.h"
-#include "esp_spiffs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -19,19 +18,18 @@
 
 namespace {
 constexpr char kPartition[] = "storage";
-constexpr char kMount[] = "/pet";
-constexpr char kSlotA[] = "/pet/slot-a.ccpt";
-constexpr char kSlotB[] = "/pet/slot-b.ccpt";
-constexpr char kUpload[] = "/pet/upload.tmp";
 constexpr char kNamespace[] = "product";
 constexpr char kSlotKey[] = "pet_slot";
 constexpr char kDigestKey[] = "pet_digest";
+constexpr std::size_t kSlotCapacity = 0xe0000;
+constexpr std::size_t kEraseBlock = 0x1000;
 constexpr uint8_t kCommandBegin = 1;
 constexpr uint8_t kCommandAppend = 2;
 constexpr uint8_t kCommandCommit = 3;
+constexpr uint8_t kCommandInitialize = 4;
 
-const char* slot_path(PetSlot slot) {
-  return slot == PetSlot::a ? kSlotA : kSlotB;
+std::size_t slot_offset(PetSlot slot) {
+  return slot == PetSlot::b ? kSlotCapacity : 0;
 }
 
 std::string hex(std::span<const uint8_t> bytes) {
@@ -44,33 +42,27 @@ std::string hex(std::span<const uint8_t> bytes) {
   return output;
 }
 
-class FileSource final : public PetByteSource {
+class PartitionSource final : public PetByteSource {
  public:
-  explicit FileSource(const char* path) : file_(std::fopen(path, "rb")) {
-    if (file_ != nullptr) {
-      std::fseek(file_, 0, SEEK_END);
-      const long size = std::ftell(file_);
-      size_ = size > 0 ? static_cast<std::size_t>(size) : 0;
-      std::fseek(file_, 0, SEEK_SET);
-    }
+  PartitionSource(const esp_partition_t* partition, std::size_t base,
+                  std::size_t size)
+      : partition_(partition), base_(base), size_(size) {}
+  bool valid() const {
+    return partition_ != nullptr && base_ <= partition_->size &&
+           size_ <= partition_->size - base_;
   }
-  ~FileSource() override {
-    if (file_ != nullptr) std::fclose(file_);
-  }
-  bool valid() const { return file_ != nullptr; }
   std::size_t size() const override { return size_; }
   bool read(std::size_t offset, std::span<uint8_t> output) const override {
-    if (file_ == nullptr || offset > size_ || output.size() > size_ - offset) {
+    if (!valid() || offset > size_ || output.size() > size_ - offset) {
       return false;
     }
-    if (std::fseek(file_, static_cast<long>(offset), SEEK_SET) != 0) {
-      return false;
-    }
-    return std::fread(output.data(), 1, output.size(), file_) == output.size();
+    return esp_partition_read(partition_, base_ + offset, output.data(),
+                              output.size()) == ESP_OK;
   }
 
  private:
-  mutable FILE* file_ = nullptr;
+  const esp_partition_t* partition_ = nullptr;
+  std::size_t base_ = 0;
   std::size_t size_ = 0;
 };
 
@@ -90,8 +82,30 @@ class Lock {
   bool locked_ = false;
 };
 
-bool validate_slot(const char* path, PetBundleMetadata* metadata) {
-  FileSource source(path);
+std::size_t stored_bundle_size(const esp_partition_t* partition,
+                               PetSlot slot) {
+  std::array<uint8_t, 12> header{};
+  if (partition == nullptr ||
+      esp_partition_read(partition, slot_offset(slot), header.data(),
+                         header.size()) != ESP_OK ||
+      std::memcmp(header.data(), "CCPT", 4) != 0) {
+    return 0;
+  }
+  const std::size_t size =
+      static_cast<std::size_t>(header[8]) |
+      (static_cast<std::size_t>(header[9]) << 8) |
+      (static_cast<std::size_t>(header[10]) << 16) |
+      (static_cast<std::size_t>(header[11]) << 24);
+  return size > 0 && size <= kPetBundleMaximumBytes &&
+                 size <= kSlotCapacity
+             ? size
+             : 0;
+}
+
+bool validate_slot(const esp_partition_t* partition, PetSlot slot,
+                   std::size_t size, PetBundleMetadata* metadata) {
+  if (size == 0) return false;
+  PartitionSource source(partition, slot_offset(slot), size);
   return source.valid() &&
          validate_pet_bundle(source, std::nullopt, metadata) ==
              PetBundleError::none;
@@ -124,21 +138,22 @@ struct PetStore::Impl {
   std::array<uint8_t, 1> command_queue_buffer{};
   QueueHandle_t command_queue = nullptr;
   StaticTask_t upload_task_storage{};
-  std::array<StackType_t, 4096> upload_task_stack{};
+  std::array<StackType_t, 8192> upload_task_stack{};
   TaskHandle_t upload_task_handle = nullptr;
   std::atomic<bool> command_active{false};
   PetUploadBegin command_begin;
   PetUploadStatus command_status;
   std::string command_transaction;
   std::size_t command_offset = 0;
-  std::vector<uint8_t> command_chunk;
+  std::unique_ptr<uint8_t[]> command_chunk;
+  std::size_t command_chunk_size = 0;
   std::array<uint8_t, 32> command_digest{};
   esp_err_t command_result = ESP_FAIL;
+  const esp_partition_t* partition = nullptr;
   PetSlot active_slot = PetSlot::none;
   PetBundleMetadata active_metadata;
   std::size_t active_size = 0;
   PetStoreStatus public_status;
-  FILE* upload_file = nullptr;
   PetUploadBegin upload_begin;
   std::size_t received = 0;
   std::string transaction_id;
@@ -162,43 +177,13 @@ esp_err_t PetStore::start() {
       impl->completion == nullptr || impl->command_queue == nullptr) {
     return ESP_ERR_NO_MEM;
   }
-  const esp_vfs_spiffs_conf_t config{
-      .base_path = kMount,
-      .partition_label = kPartition,
-      .max_files = 5,
-      .format_if_mount_failed = true,
-  };
-  esp_err_t result = esp_vfs_spiffs_register(&config);
-  if (result != ESP_OK) return result;
+  impl->partition = esp_partition_find_first(
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, kPartition);
+  if (impl->partition == nullptr ||
+      impl->partition->size < 2 * kSlotCapacity) {
+    return ESP_ERR_NOT_FOUND;
+  }
 
-  uint8_t selected_raw = static_cast<uint8_t>(PetSlot::none);
-  nvs_handle_t handle;
-  if (nvs_open(kNamespace, NVS_READONLY, &handle) == ESP_OK) {
-    nvs_get_u8(handle, kSlotKey, &selected_raw);
-    nvs_close(handle);
-  }
-  PetBundleMetadata slot_a;
-  PetBundleMetadata slot_b;
-  const bool a_valid = validate_slot(kSlotA, &slot_a);
-  const bool b_valid = validate_slot(kSlotB, &slot_b);
-  const PetSlot selected =
-      selected_raw <= 1 ? static_cast<PetSlot>(selected_raw) : PetSlot::none;
-  impl->active_slot = select_boot_pet_slot(selected, a_valid, b_valid);
-  if (impl->active_slot != PetSlot::none) {
-    impl->active_metadata =
-        impl->active_slot == PetSlot::a ? slot_a : slot_b;
-    FileSource active(slot_path(impl->active_slot));
-    impl->active_size = active.size();
-    impl->public_status.pet_id = impl->active_metadata.pet_id;
-    impl->public_status.digest = hex(impl->active_metadata.content_digest);
-    impl->public_status.format_version =
-        impl->active_metadata.schema_version;
-    impl->public_status.storage_used = impl->active_size;
-    impl->public_status.last_result = "cached";
-    if (impl->active_slot != selected) {
-      persist_slot(impl->active_slot, impl->active_metadata.content_digest);
-    }
-  }
   impl_ = impl.release();
   impl_->upload_task_handle = xTaskCreateStatic(
       upload_task, "product-pet-upload", impl_->upload_task_stack.size(),
@@ -208,6 +193,53 @@ esp_err_t PetStore::start() {
     delete impl_;
     impl_ = nullptr;
     return ESP_ERR_NO_MEM;
+  }
+  const esp_err_t initialized = submit_upload_command(kCommandInitialize);
+  if (initialized != ESP_OK) {
+    vTaskDelete(impl_->upload_task_handle);
+    delete impl_;
+    impl_ = nullptr;
+  }
+  return initialized;
+}
+
+esp_err_t PetStore::do_initialize() {
+  if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
+  Lock lock(impl_->mutex);
+  if (!lock.locked()) return ESP_ERR_TIMEOUT;
+  uint8_t selected_raw = static_cast<uint8_t>(PetSlot::none);
+  nvs_handle_t handle;
+  if (nvs_open(kNamespace, NVS_READONLY, &handle) == ESP_OK) {
+    nvs_get_u8(handle, kSlotKey, &selected_raw);
+    nvs_close(handle);
+  }
+  PetBundleMetadata slot_a;
+  PetBundleMetadata slot_b;
+  const std::size_t slot_a_size =
+      stored_bundle_size(impl_->partition, PetSlot::a);
+  const std::size_t slot_b_size =
+      stored_bundle_size(impl_->partition, PetSlot::b);
+  const bool a_valid =
+      validate_slot(impl_->partition, PetSlot::a, slot_a_size, &slot_a);
+  const bool b_valid =
+      validate_slot(impl_->partition, PetSlot::b, slot_b_size, &slot_b);
+  const PetSlot selected =
+      selected_raw <= 1 ? static_cast<PetSlot>(selected_raw) : PetSlot::none;
+  impl_->active_slot = select_boot_pet_slot(selected, a_valid, b_valid);
+  if (impl_->active_slot == PetSlot::none) return ESP_OK;
+  impl_->active_metadata =
+      impl_->active_slot == PetSlot::a ? slot_a : slot_b;
+  impl_->active_size =
+      impl_->active_slot == PetSlot::a ? slot_a_size : slot_b_size;
+  impl_->public_status.pet_id = impl_->active_metadata.pet_id;
+  impl_->public_status.digest = hex(impl_->active_metadata.content_digest);
+  impl_->public_status.format_version =
+      impl_->active_metadata.schema_version;
+  impl_->public_status.storage_used = impl_->active_size;
+  impl_->public_status.last_result = "cached";
+  if (impl_->active_slot != selected) {
+    return persist_slot(impl_->active_slot,
+                        impl_->active_metadata.content_digest);
   }
   return ESP_OK;
 }
@@ -230,16 +262,20 @@ esp_err_t PetStore::do_begin(const PetUploadBegin& request,
   if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
   Lock lock(impl_->mutex);
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  if (impl_->upload_file != nullptr) return ESP_ERR_INVALID_STATE;
+  if (impl_->public_status.transaction.active) {
+    return ESP_ERR_INVALID_STATE;
+  }
   if (request.pet_id.empty() || request.pet_id.size() > 64 ||
       request.format_version != 1 || request.length == 0 ||
       request.length > kPetBundleMaximumBytes) {
     return ESP_ERR_INVALID_ARG;
   }
-  std::remove(slot_path(inactive_pet_slot(impl_->active_slot)));
-  std::remove(kUpload);
-  impl_->upload_file = std::fopen(kUpload, "wb");
-  if (impl_->upload_file == nullptr) return ESP_FAIL;
+  const PetSlot target = inactive_pet_slot(impl_->active_slot);
+  const std::size_t erase_length =
+      (request.length + kEraseBlock - 1) & ~(kEraseBlock - 1);
+  const esp_err_t erased = esp_partition_erase_range(
+      impl_->partition, slot_offset(target), erase_length);
+  if (erased != ESP_OK) return erased;
   char transaction[17]{};
   std::snprintf(transaction, sizeof(transaction), "%08lx%08lx",
                 static_cast<unsigned long>(esp_random()),
@@ -264,12 +300,29 @@ esp_err_t PetStore::append(
     std::span<const uint8_t> chunk,
     std::span<const uint8_t, 32> chunk_digest) {
   if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
-  if (chunk.size() > 8192) return ESP_ERR_INVALID_ARG;
+  if (chunk.empty() || chunk.size() > 8192) return ESP_ERR_INVALID_ARG;
+  auto owned =
+      std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[chunk.size()]);
+  if (owned == nullptr) return ESP_ERR_NO_MEM;
+  std::copy(chunk.begin(), chunk.end(), owned.get());
+  return append_owned(transaction_id, offset, std::move(owned), chunk.size(),
+                      chunk_digest);
+}
+
+esp_err_t PetStore::append_owned(
+    std::string_view transaction_id, std::size_t offset,
+    std::unique_ptr<uint8_t[]> chunk, std::size_t chunk_size,
+    std::span<const uint8_t, 32> chunk_digest) {
+  if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
+  if (chunk == nullptr || chunk_size == 0 || chunk_size > 8192) {
+    return ESP_ERR_INVALID_ARG;
+  }
   Lock lock(impl_->command_mutex);
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
   impl_->command_transaction.assign(transaction_id);
   impl_->command_offset = offset;
-  impl_->command_chunk.assign(chunk.begin(), chunk.end());
+  impl_->command_chunk = std::move(chunk);
+  impl_->command_chunk_size = chunk_size;
   std::copy(chunk_digest.begin(), chunk_digest.end(),
             impl_->command_digest.begin());
   return submit_upload_command(kCommandAppend);
@@ -282,7 +335,7 @@ esp_err_t PetStore::do_append(
   if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
   Lock lock(impl_->mutex);
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  if (impl_->upload_file == nullptr ||
+  if (!impl_->public_status.transaction.active ||
       transaction_id != impl_->transaction_id) {
     return ESP_ERR_INVALID_STATE;
   }
@@ -302,11 +355,11 @@ esp_err_t PetStore::do_append(
     return ESP_OK;
   }
   if (offset != impl_->received) return ESP_ERR_INVALID_SIZE;
-  if (std::fwrite(chunk.data(), 1, chunk.size(), impl_->upload_file) !=
-      chunk.size()) {
-    return ESP_FAIL;
-  }
-  std::fflush(impl_->upload_file);
+  const PetSlot target = inactive_pet_slot(impl_->active_slot);
+  const esp_err_t written = esp_partition_write(
+      impl_->partition, slot_offset(target) + offset, chunk.data(),
+      chunk.size());
+  if (written != ESP_OK) return written;
   impl_->previous_offset = offset;
   impl_->previous_length = chunk.size();
   impl_->previous_digest = actual;
@@ -327,36 +380,29 @@ esp_err_t PetStore::do_commit(std::string_view transaction_id) {
   if (impl_ == nullptr) return ESP_ERR_INVALID_STATE;
   Lock lock(impl_->mutex);
   if (!lock.locked()) return ESP_ERR_TIMEOUT;
-  if (impl_->upload_file == nullptr ||
+  if (!impl_->public_status.transaction.active ||
       transaction_id != impl_->transaction_id ||
       impl_->received != impl_->upload_begin.length) {
     return ESP_ERR_INVALID_STATE;
   }
-  std::fclose(impl_->upload_file);
-  impl_->upload_file = nullptr;
-  FileSource source(kUpload);
+  const PetSlot next = inactive_pet_slot(impl_->active_slot);
+  PartitionSource source(impl_->partition, slot_offset(next),
+                         impl_->received);
   PetBundleMetadata metadata;
   const PetBundleError valid = validate_pet_bundle(
       source, impl_->upload_begin.upload_digest, &metadata);
   if (valid != PetBundleError::none ||
       metadata.pet_id != impl_->upload_begin.pet_id ||
       metadata.schema_version != impl_->upload_begin.format_version) {
-    std::remove(kUpload);
     impl_->public_status.transaction = {};
+    impl_->transaction_id.clear();
     impl_->public_status.last_result = "invalid_bundle";
     return ESP_ERR_INVALID_CRC;
-  }
-  const PetSlot next = inactive_pet_slot(impl_->active_slot);
-  const char* next_path = slot_path(next);
-  std::remove(next_path);
-  if (std::rename(kUpload, next_path) != 0) {
-    impl_->public_status.transaction = {};
-    impl_->public_status.last_result = "rename_failed";
-    return ESP_FAIL;
   }
   const esp_err_t persisted = persist_slot(next, metadata.content_digest);
   if (persisted != ESP_OK) {
     impl_->public_status.transaction = {};
+    impl_->transaction_id.clear();
     impl_->public_status.last_result = "nvs_failed";
     return persisted;
   }
@@ -368,6 +414,7 @@ esp_err_t PetStore::do_commit(std::string_view transaction_id) {
   impl_->public_status.format_version = metadata.schema_version;
   impl_->public_status.storage_used = impl_->active_size;
   impl_->public_status.transaction = {};
+  impl_->transaction_id.clear();
   impl_->public_status.last_result = "ok";
   return ESP_OK;
 }
@@ -398,6 +445,9 @@ void PetStore::upload_task(void* context) {
     }
     esp_err_t result = ESP_ERR_INVALID_ARG;
     switch (command) {
+      case kCommandInitialize:
+        result = store->do_initialize();
+        break;
       case kCommandBegin:
         result = store->do_begin(store->impl_->command_begin,
                                  &store->impl_->command_status);
@@ -406,7 +456,9 @@ void PetStore::upload_task(void* context) {
         result = store->do_append(
             store->impl_->command_transaction,
             store->impl_->command_offset,
-            store->impl_->command_chunk,
+            std::span<const uint8_t>(
+                store->impl_->command_chunk.get(),
+                store->impl_->command_chunk_size),
             store->impl_->command_digest);
         break;
       case kCommandCommit:
@@ -415,7 +467,8 @@ void PetStore::upload_task(void* context) {
       default:
         break;
     }
-    std::vector<uint8_t>().swap(store->impl_->command_chunk);
+    store->impl_->command_chunk.reset();
+    store->impl_->command_chunk_size = 0;
     store->impl_->command_result = result;
     xSemaphoreGive(store->impl_->completion);
     store->impl_->command_active.store(false);
@@ -434,7 +487,8 @@ bool PetStore::decode(
   if (impl_ == nullptr) return false;
   Lock lock(impl_->mutex);
   if (!lock.locked() || impl_->active_slot == PetSlot::none) return false;
-  FileSource source(slot_path(impl_->active_slot));
+  PartitionSource source(impl_->partition, slot_offset(impl_->active_slot),
+                         impl_->active_size);
   return source.valid() &&
          decode_pet_frame(source, impl_->active_metadata, state, frame,
                           output) == PetBundleError::none;

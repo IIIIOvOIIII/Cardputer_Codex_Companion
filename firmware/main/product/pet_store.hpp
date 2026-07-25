@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,6 +64,10 @@ class PetStore {
   esp_err_t append(std::string_view transaction_id, std::size_t offset,
                    std::span<const uint8_t> chunk,
                    std::span<const uint8_t, 32> chunk_digest);
+  esp_err_t append_owned(std::string_view transaction_id, std::size_t offset,
+                         std::unique_ptr<uint8_t[]> chunk,
+                         std::size_t chunk_size,
+                         std::span<const uint8_t, 32> chunk_digest);
   esp_err_t commit(std::string_view transaction_id);
   [[nodiscard]] PetStoreStatus status() const;
   bool decode(PetState state, uint8_t frame,
@@ -70,6 +75,7 @@ class PetStore {
 
  private:
   esp_err_t submit_upload_command(uint8_t command);
+  esp_err_t do_initialize();
   esp_err_t do_begin(const PetUploadBegin& request, PetUploadStatus* output);
   esp_err_t do_append(std::string_view transaction_id, std::size_t offset,
                       std::span<const uint8_t> chunk,

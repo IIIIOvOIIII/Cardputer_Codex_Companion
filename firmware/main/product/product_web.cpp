@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <string>
 
 #include "cJSON.h"
@@ -139,6 +140,22 @@ std::string read_body(httpd_req_t* request) {
   while (received < body.size()) {
     const int count = httpd_req_recv(
         request, body.data() + received, body.size() - received);
+    if (count <= 0) return {};
+    received += static_cast<std::size_t>(count);
+  }
+  return body;
+}
+
+std::unique_ptr<uint8_t[]> read_binary_body(httpd_req_t* request,
+                                            std::size_t length) {
+  auto body = std::unique_ptr<uint8_t[]>(
+      new (std::nothrow) uint8_t[length]);
+  if (body == nullptr) return {};
+  std::size_t received = 0;
+  while (received < length) {
+    const int count = httpd_req_recv(
+        request, reinterpret_cast<char*>(body.get() + received),
+        length - received);
     if (count <= 0) return {};
     received += static_cast<std::size_t>(count);
   }
@@ -611,6 +628,10 @@ esp_err_t pet_status_response(httpd_req_t* request) {
   return result;
 }
 
+void note_companion_pet_activity() {
+  if (g_heartbeat_handler != nullptr) g_heartbeat_handler();
+}
+
 esp_err_t pet_status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   return pet_status_response(request);
@@ -618,6 +639,7 @@ esp_err_t pet_status_handler(httpd_req_t* request) {
 
 esp_err_t pet_begin_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_pet_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -670,6 +692,7 @@ esp_err_t pet_begin_handler(httpd_req_t* request) {
 
 esp_err_t pet_chunk_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_pet_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -696,15 +719,16 @@ esp_err_t pet_chunk_handler(httpd_req_t* request) {
     return json_response(request, "{\"error\":\"invalid_offset\"}",
                          "400 Bad Request");
   }
-  const std::string body = read_body(request);
-  if (body.size() != static_cast<std::size_t>(request->content_len)) {
+  const std::size_t body_size =
+      static_cast<std::size_t>(request->content_len);
+  auto body = read_binary_body(request, body_size);
+  if (body == nullptr) {
     return json_response(request, "{\"error\":\"invalid_request\"}",
                          "400 Bad Request");
   }
-  const auto bytes = std::span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(body.data()), body.size());
-  const esp_err_t result = g_pet_store->append(
-      transaction, static_cast<std::size_t>(offset), bytes, digest);
+  const esp_err_t result = g_pet_store->append_owned(
+      transaction, static_cast<std::size_t>(offset), std::move(body),
+      body_size, digest);
   if (result == ESP_ERR_INVALID_STATE) {
     return json_response(request, "{\"error\":\"transaction_mismatch\"}",
                          "409 Conflict");
@@ -726,6 +750,7 @@ esp_err_t pet_chunk_handler(httpd_req_t* request) {
 
 esp_err_t pet_commit_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  note_companion_pet_activity();
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");

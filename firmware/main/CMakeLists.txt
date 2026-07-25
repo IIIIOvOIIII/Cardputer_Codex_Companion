@@ -88,7 +88,6 @@ idf_component_register(
         mbedtls
         nvs_flash
         spi_flash
-        spiffs
         m5unified
     WHOLE_ARCHIVE
 )

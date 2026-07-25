@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <vector>
 
 #ifdef ESP_PLATFORM
 #include "mbedtls/sha256.h"
@@ -121,7 +120,7 @@ class Sha256 {
 std::optional<std::array<uint8_t, 32>> source_digest(
     const PetByteSource& source, bool zero_content_digest) {
   Sha256 hash;
-  std::array<uint8_t, 4096> buffer{};
+  std::array<uint8_t, 1024> buffer{};
   std::size_t cursor = 0;
   while (cursor < source.size()) {
     const std::size_t count =
@@ -261,33 +260,45 @@ PetBundleError decode_pet_frame(
     return PetBundleError::bounds;
   }
   const PetFrameRecord record = metadata.frames[state_index][frame];
-  std::vector<uint8_t> encoded(record.stored_length);
-  if (!source.read(record.payload_offset, encoded)) {
-    return PetBundleError::truncated;
-  }
   if (record.encoding == PetFrameEncoding::raw_rgb565) {
-    if (encoded.size() != kDecodedFrameBytes) {
+    if (record.stored_length != kDecodedFrameBytes) {
       return PetBundleError::decoded_length;
     }
-    for (std::size_t index = 0; index < output.size(); ++index) {
-      output[index] = read16(encoded, index * 2);
+    std::array<uint8_t, kPetFrameWidth * 2> row_bytes{};
+    for (std::size_t row = 0; row < kPetFrameHeight; ++row) {
+      if (!source.read(
+              record.payload_offset + row * row_bytes.size(), row_bytes)) {
+        return PetBundleError::truncated;
+      }
+      for (std::size_t column = 0; column < kPetFrameWidth; ++column) {
+        output[row * kPetFrameWidth + column] =
+            read16(row_bytes, column * 2);
+      }
     }
     return PetBundleError::none;
   }
   if (record.encoding != PetFrameEncoding::rle_rgb565) {
     return PetBundleError::encoding;
   }
-  std::size_t cursor = 0;
+  std::size_t cursor = record.payload_offset;
+  const std::size_t end = record.payload_offset + record.stored_length;
   std::size_t output_cursor = 0;
+  std::array<uint8_t, 4> encoded{};
   for (std::size_t row = 0; row < kPetFrameHeight; ++row) {
-    if (!range_valid(cursor, 2, encoded.size())) return PetBundleError::rle;
-    const uint16_t run_count = read16(encoded, cursor);
+    if (!range_valid(cursor, 2, end) ||
+        !source.read(cursor, std::span<uint8_t>(encoded.data(), 2))) {
+      return PetBundleError::rle;
+    }
+    const uint16_t run_count = read16(encoded, 0);
     cursor += 2;
     std::size_t row_pixels = 0;
     for (uint16_t run = 0; run < run_count; ++run) {
-      if (!range_valid(cursor, 4, encoded.size())) return PetBundleError::rle;
-      const uint16_t count = read16(encoded, cursor);
-      const uint16_t pixel = read16(encoded, cursor + 2);
+      if (!range_valid(cursor, 4, end) ||
+          !source.read(cursor, encoded)) {
+        return PetBundleError::rle;
+      }
+      const uint16_t count = read16(encoded, 0);
+      const uint16_t pixel = read16(encoded, 2);
       cursor += 4;
       if (count == 0 || count > kPetFrameWidth - row_pixels) {
         return PetBundleError::rle;
@@ -298,7 +309,7 @@ PetBundleError decode_pet_frame(
     }
     if (row_pixels != kPetFrameWidth) return PetBundleError::rle;
   }
-  if (cursor != encoded.size() || output_cursor != output.size()) {
+  if (cursor != end || output_cursor != output.size()) {
     return PetBundleError::rle;
   }
   return PetBundleError::none;

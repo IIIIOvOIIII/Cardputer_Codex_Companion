@@ -161,6 +161,11 @@ final class LANBridge: @unchecked Sendable, PetDeviceClient {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = error
+        defer {
+            try? input.fileHandleForWriting.close()
+            try? output.fileHandleForReading.close()
+            try? error.fileHandleForReading.close()
+        }
         try process.run()
         if let body {
             try input.fileHandleForWriting.write(contentsOf: body)

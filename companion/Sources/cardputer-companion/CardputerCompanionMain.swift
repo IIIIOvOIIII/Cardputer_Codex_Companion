@@ -51,6 +51,11 @@ struct CardputerCompanionMain {
         )
         var lastPostedSnapshot: CompanionSnapshot?
         var wireSequence: UInt64 = 0
+        var synchronizedPet = PetSyncResult(
+            petID: "",
+            digest: "",
+            errorCode: nil
+        )
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
         while !Task.isCancelled {
             do {
@@ -59,23 +64,32 @@ struct CardputerCompanionMain {
                     lastPostedSnapshot = nil
                 }
                 try adapter.perform(action.action)
-                let pet = await petSync.synchronize(client: bridge)
-                if let errorCode = pet.errorCode {
+                var currentSnapshot = try adapter.snapshot().withPet(
+                    id: synchronizedPet.petID,
+                    digest: synchronizedPet.digest
+                )
+                try await postSnapshotIfChanged(
+                    currentSnapshot,
+                    bridge: bridge,
+                    lastPosted: &lastPostedSnapshot,
+                    wireSequence: &wireSequence
+                )
+                synchronizedPet = await petSync.synchronize(client: bridge)
+                if let errorCode = synchronizedPet.errorCode {
                     FileHandle.standardError.write(
                         Data("pet sync warning: \(errorCode)\n".utf8)
                     )
                 }
-                let currentSnapshot = try adapter.snapshot().withPet(
-                    id: pet.petID,
-                    digest: pet.digest
+                currentSnapshot = try adapter.snapshot().withPet(
+                    id: synchronizedPet.petID,
+                    digest: synchronizedPet.digest
                 )
-                if lastPostedSnapshot == nil ||
-                    !currentSnapshot.hasSameContent(as: lastPostedSnapshot!) {
-                    wireSequence += 1
-                    let snapshot = currentSnapshot.withSequence(wireSequence)
-                    try await bridge.post(snapshot)
-                    lastPostedSnapshot = snapshot
-                }
+                try await postSnapshotIfChanged(
+                    currentSnapshot,
+                    bridge: bridge,
+                    lastPosted: &lastPostedSnapshot,
+                    wireSequence: &wireSequence
+                )
             } catch {
                 FileHandle.standardError.write(
                     Data("sync warning: \(error)\n".utf8)
@@ -84,6 +98,22 @@ struct CardputerCompanionMain {
             try await Task.sleep(for: .seconds(2))
         }
         withExtendedLifetime(receiver) {}
+    }
+
+    private static func postSnapshotIfChanged(
+        _ current: CompanionSnapshot,
+        bridge: LANBridge,
+        lastPosted: inout CompanionSnapshot?,
+        wireSequence: inout UInt64
+    ) async throws {
+        guard lastPosted == nil ||
+                !current.hasSameContent(as: lastPosted!) else {
+            return
+        }
+        wireSequence += 1
+        let snapshot = current.withSequence(wireSequence)
+        try await bridge.post(snapshot)
+        lastPosted = snapshot
     }
 
     private static func doctor() {
