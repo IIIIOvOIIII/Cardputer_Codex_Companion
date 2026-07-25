@@ -36,5 +36,7 @@ int main() {
   router.enter_safe_profile();
   assert(router.mode() == InputMode::keyboard);
   assert(router.safe_profile());
+  router.leave_safe_profile();
+  assert(!router.safe_profile());
   return 0;
 }

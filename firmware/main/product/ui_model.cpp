@@ -255,6 +255,13 @@ void UiModel::navigate(UiNavAction action) {
   }
 }
 
+void UiModel::return_to_pet() {
+  if (page_ == UiPage::pet && scroll_offset_ == 0) return;
+  page_ = UiPage::pet;
+  scroll_offset_ = 0;
+  ++revision_;
+}
+
 UiPageContent UiModel::page_content() const {
   UiPageContent content;
   char value[96]{};

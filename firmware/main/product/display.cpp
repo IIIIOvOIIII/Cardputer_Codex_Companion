@@ -134,6 +134,12 @@ void display_render_page(const UiModel& model) {
   for (uint8_t index = model.scroll_offset(); index < end; ++index) {
     M5.Display.println(content.lines[index].c_str());
   }
+  if (model.scroll_offset() > 0) {
+    M5.Display.fillTriangle(228, 23, 223, 29, 233, 29, kAccent);
+  }
+  if (end < content.count) {
+    M5.Display.fillTriangle(223, 116, 233, 116, 228, 122, kAccent);
+  }
   draw_page_dots(model.page());
   M5.Display.endWrite();
 }

@@ -98,6 +98,14 @@ void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler);
 void product_web_set_pet_store(PetStore* store);
 void product_web_set_profile_catalog(ProfileCatalogStore* catalog);
+esp_err_t product_web_prepare_profile_catalog(ProfileCatalogStore* catalog);
+bool product_web_cycle_profile(bool forward);
+bool product_web_activate_profile(std::string_view id);
+bool product_web_profile_summaries(
+    std::span<ProfileSummary> output,
+    std::size_t* count
+);
+esp_err_t product_web_rotate_pin(std::string_view pin);
 bool product_web_action(uint8_t layer, uint8_t physical_key, KeyAction* action);
 bool product_web_profile_name(char* output, std::size_t output_size);
 void product_web_queue_codex_action(CodexAction action);

@@ -1,5 +1,7 @@
 #include <cassert>
+#include <array>
 #include <string>
+#include <string_view>
 
 #include "product/settings_menu.hpp"
 
@@ -68,5 +70,44 @@ int main() {
   menu.leave();
   assert(!menu.active());
   assert(!menu.on_key(39, true, false, 700).captured);
+
+  SettingsMenu hierarchy;
+  hierarchy.enter();
+  constexpr std::array<std::string_view, 2> profile_ids{"SAFE", "CODE"};
+  constexpr std::array<std::string_view, 2> profile_names{"Safe", "Coding"};
+  hierarchy.set_profile_choices(profile_ids, profile_names);
+  hierarchy.on_key(54, true, false, 800);
+  hierarchy.on_key(54, false, false, 801);
+  assert(hierarchy.content().count == 2);
+  hierarchy.on_key(53, true, false, 802);
+  hierarchy.on_key(53, false, false, 803);
+  result = hierarchy.on_key(54, true, false, 804);
+  assert(result.command == SettingsCommandKind::activate_profile);
+  assert(hierarchy.profile_id() == "CODE");
+  hierarchy.on_key(54, false, false, 805);
+  hierarchy.set_result("PROFILE ACTIVATED");
+  hierarchy.on_key(0, true, false, 806);
+  hierarchy.on_key(0, false, false, 807);
+  assert(hierarchy.content().count == 7);
+
+  hierarchy.on_key(53, true, false, 808);
+  hierarchy.on_key(53, false, false, 809);
+  hierarchy.on_key(53, true, false, 810);
+  hierarchy.on_key(53, false, false, 811);
+  result = hierarchy.on_key(54, true, false, 812);
+  assert(result.command == SettingsCommandKind::scan_wifi);
+  hierarchy.on_key(54, false, false, 813);
+  constexpr std::array<std::string_view, 1> ssids{"Lynx WiFi"};
+  hierarchy.set_wifi_choices(ssids);
+  assert(hierarchy.content().count == 2);
+  hierarchy.on_key(54, true, false, 814);
+  hierarchy.on_key(54, false, false, 815);
+  assert(hierarchy.interaction() == SettingsInteraction::text_edit);
+  hierarchy.on_key(30, true, false, 816);
+  hierarchy.on_key(30, false, false, 817);
+  result = hierarchy.on_key(41, true, false, 818);
+  assert(result.command == SettingsCommandKind::stage_wifi);
+  assert(hierarchy.ssid_value() == "Lynx WiFi");
+  assert(hierarchy.password_value() == "a");
   return 0;
 }

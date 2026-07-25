@@ -419,3 +419,10 @@
 - Expected result: 旧 PIN 仅能在 300 秒内访问 Companion action；新 PIN 的任一成功请求立即撤销 grace；Agent 原子更新 JSON、保留无关键及 0600 权限，并拒绝旧 revision 与非 ASCII 数字。
 - Result: Achieved — 固件 PIN RED/GREEN 覆盖 299999/300000 ms 边界、current/previous 路由范围、提前撤销和 revision；Web PIN 表单改为两次掩码输入和页内结果提示。Action 只在旧 PIN grace 鉴权时返回迁移字段。Swift 可执行测试覆盖有/无迁移、旧 revision、无关键保留、同目录临时文件、原子 rename、0600 和 Unicode 数字拒绝；本机 XCTest 模块不可用，因此同步保留 XCTest 源并使用仓库既有可执行 harness 验证。Swift release、鉴权相关 host 测试及 ESP-IDF 构建均通过，应用大小 0x178c70。
 - Next step: 在 controller 中完成 Profile Catalog、Settings、Wi-Fi、PIN、显示参数和输入优先级的运行时接线。
+
+## 2026-07-26 00:21 HKT
+
+- Current work: 完成 Task 8 的五页 UI、Profile Catalog、设备端 Settings、PIN/Wi-Fi 和显示设置运行时接线。
+- Expected result: 启动先恢复 Profile Catalog；Settings 严格优先于全局导航和 HID；Profile、PIN、Wi-Fi、亮度、自动返回、宠物 FPS 均可从设备执行并保持；宠物动画不插入空白帧。
+- Result: Achieved — controller 在 Web 前加载双 bank Profile Catalog，并让 Web、设备菜单及 DeviceAction 共用当前 Profile；Settings 提供 Profile 和 Wi-Fi 二级列表、隐藏 SSID 手工输入、PIN 双次确认及三项版本化显示设置，耗时操作通过独立队列离开 10 ms 键盘路径。输入优先级已固定为 BLE 配对、Settings 编辑/浏览、Fn 导航、宏/HID；页面加入滚动提示，动画间隔可在 500/400/333 ms 切换且直接覆盖上一帧。Codex Model/Thinking/Fast/限额现已接入 UiModel。完整 host 28/28、专项 4/4 及 ESP-IDF 5.5.4 编译通过，应用大小 0x17d330。
+- Next step: 提交 Task 8，升级 1.0.30，运行完整 release gate，构建最终制品并 app-only 部署到当前 Cardputer。

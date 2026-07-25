@@ -38,16 +38,20 @@ void ProductController::start() {
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "probe/ble_services.hpp"
 #include "probe/keyboard_probe.hpp"
 #include "product/companion_protocol.hpp"
 #include "product/display.hpp"
+#include "product/device_settings.hpp"
 #include "product/input_router.hpp"
 #include "product/keyboard_matrix.hpp"
 #include "product/macro_engine.hpp"
 #include "product/pet_store.hpp"
+#include "product/profile_catalog.hpp"
 #include "product/product_web.hpp"
+#include "product/settings_menu.hpp"
 #include "product/ui_model.hpp"
 #include "product/ui_navigation.hpp"
 #include "product/wifi_manager.hpp"
@@ -55,10 +59,49 @@ void ProductController::start() {
 namespace {
 constexpr char kTag[] = "cardputer-product";
 constexpr std::size_t kMacroQueueDepth = 16;
+constexpr std::size_t kSettingsQueueDepth = 4;
+constexpr char kSettingsNvsNamespace[] = "product";
+constexpr char kSettingsNvsKey[] = "display_settings";
 
 struct MacroInvocation {
   uint8_t layer = 0;
   uint8_t physical_key = 0;
+};
+
+struct SettingsInvocation {
+  SettingsCommandKind command = SettingsCommandKind::none;
+  uint8_t selected = 0;
+  std::array<char, 9> pin{};
+  std::array<char, 9> profile_id{};
+  std::array<char, 33> ssid{};
+  std::array<char, 65> password{};
+};
+
+class NvsDeviceSettingsBackend final : public DeviceSettingsBackend {
+ public:
+  bool load(std::span<uint8_t> output) override {
+    nvs_handle_t handle;
+    if (nvs_open(kSettingsNvsNamespace, NVS_READONLY, &handle) != ESP_OK) {
+      return false;
+    }
+    size_t size = output.size();
+    const esp_err_t result =
+        nvs_get_blob(handle, kSettingsNvsKey, output.data(), &size);
+    nvs_close(handle);
+    return result == ESP_OK && size == output.size();
+  }
+
+  bool commit(std::span<const uint8_t> input) override {
+    nvs_handle_t handle;
+    if (nvs_open(kSettingsNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) {
+      return false;
+    }
+    esp_err_t result =
+        nvs_set_blob(handle, kSettingsNvsKey, input.data(), input.size());
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    return result == ESP_OK;
+  }
 };
 
 UiModel g_ui;
@@ -66,6 +109,11 @@ InputRouter g_input_router;
 UiNavigation g_ui_navigation;
 CompanionProtocol g_companion_protocol;
 PetStore g_pet_store;
+EspProfileCatalogBackend g_profile_catalog_backend;
+ProfileCatalogStore g_profile_catalog(g_profile_catalog_backend);
+NvsDeviceSettingsBackend g_device_settings_backend;
+DeviceSettingsStore g_device_settings_store(g_device_settings_backend);
+SettingsMenu g_settings;
 std::optional<KeyboardProbe> g_keyboard;
 std::array<bool, kPhysicalKeyCount> g_pressed{};
 StaticSemaphore_t g_ui_mutex_storage{};
@@ -78,6 +126,10 @@ StaticQueue_t g_macro_queue_storage{};
 std::array<uint8_t, kMacroQueueDepth * sizeof(MacroInvocation)>
     g_macro_queue_buffer{};
 QueueHandle_t g_macro_queue = nullptr;
+StaticQueue_t g_settings_queue_storage{};
+std::array<uint8_t, kSettingsQueueDepth * sizeof(SettingsInvocation)>
+    g_settings_queue_buffer{};
+QueueHandle_t g_settings_queue = nullptr;
 StaticTask_t g_macro_task_storage{};
 std::array<StackType_t, 6144> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
@@ -86,6 +138,9 @@ ServiceState g_ble_state = ServiceState::offline;
 ServiceState g_wifi_state = ServiceState::offline;
 std::atomic<ServiceState> g_companion_state{ServiceState::offline};
 std::atomic<uint64_t> g_last_companion_ms{0};
+std::atomic<uint64_t> g_last_ui_input_ms{0};
+std::atomic<uint32_t> g_pet_frame_interval_ms{400};
+std::atomic<uint32_t> g_return_to_pet_ms{30000};
 
 class SemaphoreLock {
  public:
@@ -105,6 +160,72 @@ class SemaphoreLock {
 
 void update_web_status() {
   product_web_set_status(g_ble_state, g_wifi_state, g_companion_state.load());
+}
+
+void copy_setting(std::string_view value, std::span<char> output) {
+  if (output.empty()) return;
+  const std::size_t length = std::min(value.size(), output.size() - 1);
+  std::copy_n(value.data(), length, output.data());
+  output[length] = '\0';
+}
+
+void update_settings_ui_locked() {
+  const SettingsMenuContent content = g_settings.content();
+  std::array<std::string_view, 12> rows{};
+  for (uint8_t index = 0; index < content.count; ++index) {
+    rows[index] = content.lines[index];
+  }
+  SemaphoreLock ui_lock(g_ui_mutex);
+  if (ui_lock.locked()) {
+    g_ui.set_settings_content(
+        std::span<const std::string_view>(rows.data(), content.count),
+        content.selected, content.scroll);
+  }
+}
+
+void refresh_profile_choices_locked() {
+  std::array<ProfileSummary, 5> profiles{};
+  std::size_t count = 0;
+  if (!product_web_profile_summaries(profiles, &count)) return;
+  std::array<std::string_view, 5> ids{};
+  std::array<std::string_view, 5> names{};
+  for (std::size_t index = 0; index < count; ++index) {
+    ids[index] = profiles[index].id.data();
+    names[index] = profiles[index].name.data();
+  }
+  g_settings.set_profile_choices(
+      std::span<const std::string_view>(ids.data(), count),
+      std::span<const std::string_view>(names.data(), count));
+}
+
+void queue_settings_command(const SettingsInputResult& result) {
+  if (result.command == SettingsCommandKind::none ||
+      result.command == SettingsCommandKind::release_hid ||
+      g_settings_queue == nullptr) {
+    return;
+  }
+  SettingsInvocation invocation{
+      .command = result.command,
+      .selected = g_settings.selected(),
+  };
+  copy_setting(g_settings.pin_value(), invocation.pin);
+  copy_setting(g_settings.profile_id(), invocation.profile_id);
+  copy_setting(g_settings.ssid_value(), invocation.ssid);
+  copy_setting(g_settings.password_value(), invocation.password);
+  xQueueSend(g_settings_queue, &invocation, 0);
+}
+
+void wifi_scan_finished(std::span<const WifiScanEntry> entries) {
+  SemaphoreLock lock(g_input_mutex);
+  if (!lock.locked()) return;
+  std::array<std::string_view, 12> ssids{};
+  const std::size_t count = std::min(entries.size(), ssids.size());
+  for (std::size_t index = 0; index < count; ++index) {
+    ssids[index] = entries[index].ssid.data();
+  }
+  g_settings.set_wifi_choices(
+      std::span<const std::string_view>(ssids.data(), count));
+  update_settings_ui_locked();
 }
 
 void release_and_set_mode(bool safe) {
@@ -157,7 +278,11 @@ class ProductMacroSink final : public MacroSink {
         product_wifi_reconnect();
         break;
       case DeviceAction::next_profile:
+        product_web_cycle_profile(true);
+        break;
       case DeviceAction::previous_profile:
+        product_web_cycle_profile(false);
+        break;
       case DeviceAction::none:
         break;
     }
@@ -185,6 +310,78 @@ void macro_task(void*) {
       g_macro_engine.execute(action);
     }
   }
+}
+
+void apply_runtime_settings(const DeviceSettings& settings) {
+  M5.Display.setBrightness(device_brightness(settings));
+  g_pet_frame_interval_ms.store(
+      device_pet_frame_interval_ms(settings));
+  g_return_to_pet_ms.store(device_return_timeout_ms(settings));
+}
+
+void process_settings_command(const SettingsInvocation& invocation) {
+  bool success = false;
+  const char* result_text = "FAILED";
+  switch (invocation.command) {
+    case SettingsCommandKind::activate_profile:
+      success = product_web_activate_profile(invocation.profile_id.data());
+      if (success) {
+        {
+          SemaphoreLock input_lock(g_input_mutex);
+          if (input_lock.locked()) g_input_router.leave_safe_profile();
+        }
+        result_text = "PROFILE ACTIVATED";
+      }
+      break;
+    case SettingsCommandKind::scan_wifi:
+      success = product_wifi_scan(wifi_scan_finished) == ESP_OK;
+      if (success) return;
+      result_text = "WIFI SCAN FAILED";
+      break;
+    case SettingsCommandKind::rotate_pin:
+      success = product_web_rotate_pin(invocation.pin.data()) == ESP_OK;
+      result_text = success ? "PIN UPDATED" : "PIN UPDATE FAILED";
+      break;
+    case SettingsCommandKind::stage_wifi:
+      success = product_wifi_save(invocation.ssid.data(),
+                                  invocation.password.data()) == ESP_OK;
+      result_text = success ? "WIFI CONNECTING" : "WIFI UPDATE FAILED";
+      break;
+    case SettingsCommandKind::apply_display_settings: {
+      DeviceSettings settings;
+      {
+        SemaphoreLock lock(g_input_mutex);
+        if (!lock.locked()) return;
+        settings = g_settings.device_settings();
+      }
+      success =
+          g_device_settings_store.apply(settings) == DeviceSettingsResult::ok;
+      if (success) {
+        apply_runtime_settings(settings);
+        result_text = "SETTING SAVED";
+      } else {
+        result_text = "SETTING SAVE FAILED";
+      }
+      break;
+    }
+    case SettingsCommandKind::return_to_pet: {
+      SemaphoreLock input_lock(g_input_mutex);
+      if (input_lock.locked()) {
+        g_settings.leave();
+        if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+      }
+      SemaphoreLock ui_lock(g_ui_mutex);
+      if (ui_lock.locked()) g_ui.return_to_pet();
+      return;
+    }
+    case SettingsCommandKind::none:
+    case SettingsCommandKind::release_hid:
+      return;
+  }
+  SemaphoreLock lock(g_input_mutex);
+  if (!lock.locked()) return;
+  g_settings.set_result(result_text);
+  update_settings_ui_locked();
 }
 
 uint8_t current_profile_layer_locked() {
@@ -228,13 +425,55 @@ void keyboard_event(const MatrixKeyEvent& event) {
     }
   }
 
+  UiPage page = UiPage::pet;
+  {
+    SemaphoreLock ui_lock(g_ui_mutex);
+    if (ui_lock.locked()) page = g_ui.page();
+  }
+  if (page == UiPage::settings) {
+    if (!g_settings.active()) {
+      g_settings.enter();
+      refresh_profile_choices_locked();
+      if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+      update_settings_ui_locked();
+    }
+    const SettingsInputResult settings_result = g_settings.on_key(
+        event.physical_key, event.pressed, g_pressed[kFnPhysicalKey],
+        static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+    if (settings_result.captured) {
+      if (event.pressed) {
+        g_last_ui_input_ms.store(
+            static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+      }
+      if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+      queue_settings_command(settings_result);
+      update_settings_ui_locked();
+      return;
+    }
+  }
+
   const UiNavigationResult navigation = g_ui_navigation.on_key(
       event.physical_key, event.pressed, g_pressed[kFnPhysicalKey]);
   if (navigation.captured) {
+    if (event.pressed) {
+      g_last_ui_input_ms.store(
+          static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+    }
     if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+    UiPage next_page = page;
     if (navigation.action != UiNavAction::none) {
       SemaphoreLock ui_lock(g_ui_mutex);
-      if (ui_lock.locked()) g_ui.navigate(navigation.action);
+      if (ui_lock.locked()) {
+        g_ui.navigate(navigation.action);
+        next_page = g_ui.page();
+      }
+    }
+    if (next_page == UiPage::settings && !g_settings.active()) {
+      g_settings.enter();
+      refresh_profile_choices_locked();
+      update_settings_ui_locked();
+    } else if (next_page != UiPage::settings && g_settings.active()) {
+      g_settings.leave();
     }
     return;
   }
@@ -333,6 +572,10 @@ void companion_snapshot(std::string_view json) {
       g_ui.set_companion(ServiceState::ok);
       g_ui.set_session(snapshot.title, snapshot.cwd, snapshot.state,
                        snapshot.approvals, snapshot.inputs);
+      g_ui.set_codex(
+          snapshot.model, snapshot.thinking_level, snapshot.fast,
+          std::span<const CodexLimitUsage>(
+              snapshot.limits.data(), snapshot.limit_count));
       const PetStoreStatus pet = g_pet_store.status();
       g_ui.set_pet(
           snapshot.pet_id.empty() ? pet.pet_id : snapshot.pet_id,
@@ -375,6 +618,35 @@ void ui_task(void*) {
 
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    SettingsInvocation settings_invocation;
+    while (g_settings_queue != nullptr &&
+           xQueueReceive(g_settings_queue, &settings_invocation, 0) ==
+               pdTRUE) {
+      process_settings_command(settings_invocation);
+    }
+    const uint32_t return_timeout = g_return_to_pet_ms.load();
+    bool timeout_suspended = false;
+    {
+      SemaphoreLock lock(g_input_mutex);
+      timeout_suspended =
+          lock.locked() && g_settings.return_timeout_suspended();
+    }
+    if (return_timeout != 0 && !timeout_suspended &&
+        g_last_ui_input_ms.load() != 0 &&
+        now_ms - g_last_ui_input_ms.load() >= return_timeout) {
+      {
+        SemaphoreLock lock(g_input_mutex);
+        if (lock.locked()) {
+          g_settings.leave();
+          if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+        }
+      }
+      {
+        SemaphoreLock lock(g_ui_mutex);
+        if (lock.locked()) g_ui.return_to_pet();
+      }
+      g_last_ui_input_ms.store(0);
+    }
     bool companion_stale = false;
     {
       SemaphoreLock lock(g_companion_mutex);
@@ -454,9 +726,11 @@ void ui_task(void*) {
         display_render_placeholder(current_pet_state);
       }
       frame_index = static_cast<uint8_t>((frame_index + 1) % 8);
-      next_frame_ms =
-          now_ms > next_frame_ms + 800 ? now_ms + 400 : next_frame_ms + 400;
-      if (next_frame_ms == 400) next_frame_ms = now_ms + 400;
+      const uint32_t interval = g_pet_frame_interval_ms.load();
+      next_frame_ms = now_ms > next_frame_ms + interval * 2
+                          ? now_ms + interval
+                          : next_frame_ms + interval;
+      if (next_frame_ms == interval) next_frame_ms = now_ms + interval;
     }
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(200));
   }
@@ -477,6 +751,17 @@ class EspProductStartup final : public ProductStartupBackend {
       if (result == ESP_OK) result = nvs_flash_init();
     }
     if (result == ESP_OK) {
+      if (!g_profile_catalog_backend.start()) {
+        result = ESP_FAIL;
+      } else {
+        result = product_web_prepare_profile_catalog(&g_profile_catalog);
+      }
+    }
+    if (result == ESP_OK) {
+      g_device_settings_store.load();
+      const DeviceSettings settings = g_device_settings_store.current();
+      g_settings.set_device_settings(settings);
+      apply_runtime_settings(settings);
       const esp_err_t pet_result = g_pet_store.start();
       if (pet_result == ESP_OK) {
         product_web_set_pet_store(&g_pet_store);
@@ -494,6 +779,13 @@ class EspProductStartup final : public ProductStartupBackend {
         kMacroQueueDepth, sizeof(MacroInvocation), g_macro_queue_buffer.data(),
         &g_macro_queue_storage);
     if (g_macro_queue == nullptr) {
+      set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
+      return false;
+    }
+    g_settings_queue = xQueueCreateStatic(
+        kSettingsQueueDepth, sizeof(SettingsInvocation),
+        g_settings_queue_buffer.data(), &g_settings_queue_storage);
+    if (g_settings_queue == nullptr) {
       set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
       return false;
     }

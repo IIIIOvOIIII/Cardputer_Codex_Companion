@@ -13,9 +13,8 @@ constexpr uint8_t kPhysicalBackspace = 13;
 constexpr uint8_t kPhysicalReturn = 41;
 constexpr uint8_t kMenuItems = 7;
 
-constexpr std::array<std::string_view, kMenuItems> kRows{
-    "KEYBOARD PROFILE", "CHANGE PIN", "BIND WIFI", "BRIGHTNESS 75%",
-    "RETURN TO PET 30S", "PET FPS 2.5", "ABOUT"};
+constexpr std::array<std::string_view, 3> kFixedRows{
+    "KEYBOARD PROFILE", "CHANGE PIN", "BIND WIFI"};
 }  // namespace
 
 SettingsInputResult SettingsMenu::enter() {
@@ -24,6 +23,9 @@ SettingsInputResult SettingsMenu::enter() {
   captured_ = {};
   selected_ = 0;
   scroll_ = 0;
+  root_selected_ = 0;
+  root_scroll_ = 0;
+  screen_ = Screen::root;
   return {.captured = true, .command = SettingsCommandKind::release_hid};
 }
 
@@ -32,6 +34,11 @@ void SettingsMenu::leave() {
   editor_kind_ = Editor::none;
   editor_.clear();
   first_pin_.clear();
+  first_ssid_.clear();
+  result_.clear();
+  screen_ = Screen::root;
+  selected_ = root_selected_;
+  scroll_ = root_scroll_;
   captured_ = {};
 }
 
@@ -41,6 +48,11 @@ void SettingsMenu::cancel() {
   editor_kind_ = Editor::none;
   editor_.clear();
   first_pin_.clear();
+  first_ssid_.clear();
+  result_.clear();
+  screen_ = Screen::root;
+  selected_ = root_selected_;
+  scroll_ = root_scroll_;
 }
 
 void SettingsMenu::begin_pin_edit() {
@@ -56,6 +68,7 @@ void SettingsMenu::begin_ssid_edit() {
   interaction_ = SettingsInteraction::text_edit;
   editor_kind_ = Editor::ssid;
   editor_.clear();
+  first_ssid_.clear();
 }
 
 void SettingsMenu::begin_password_edit() {
@@ -72,6 +85,39 @@ void SettingsMenu::finish_result() {
   }
 }
 
+void SettingsMenu::set_result(std::string_view result) {
+  result_ = std::string(result.substr(0, 28));
+  interaction_ = SettingsInteraction::result;
+}
+
+void SettingsMenu::set_profile_choices(
+    std::span<const std::string_view> ids,
+    std::span<const std::string_view> names
+) {
+  profile_count_ = static_cast<uint8_t>(
+      std::min<std::size_t>({ids.size(), names.size(), profile_ids_.size()}));
+  for (uint8_t index = 0; index < profile_count_; ++index) {
+    profile_ids_[index] = ids[index].substr(0, 8);
+    profile_names_[index] = names[index].substr(0, 20);
+  }
+}
+
+void SettingsMenu::set_wifi_choices(
+    std::span<const std::string_view> ssids
+) {
+  const uint8_t count = static_cast<uint8_t>(
+      std::min<std::size_t>(ssids.size(), wifi_ssids_.size() - 1));
+  for (uint8_t index = 0; index < count; ++index) {
+    wifi_ssids_[index] = ssids[index].substr(0, 32);
+  }
+  wifi_ssids_[count] = "HIDDEN NETWORK";
+  wifi_count_ = count + 1;
+  screen_ = Screen::wifi;
+  selected_ = 0;
+  scroll_ = 0;
+  interaction_ = SettingsInteraction::browse;
+}
+
 SettingsInputResult SettingsMenu::on_key(
     uint8_t physical_key,
     bool pressed,
@@ -85,6 +131,11 @@ SettingsInputResult SettingsMenu::on_key(
   }
   if (!pressed) return {};
   if (captured_[physical_key]) return {.captured = true};
+  if (interaction_ == SettingsInteraction::browse &&
+      physical_key != kUpKey && physical_key != kDownKey &&
+      physical_key != kBackKey && physical_key != kEnterKey) {
+    return {};
+  }
   captured_[physical_key] = true;
   if (interaction_ == SettingsInteraction::browse) {
     return browse_key(physical_key);
@@ -93,31 +144,81 @@ SettingsInputResult SettingsMenu::on_key(
       interaction_ == SettingsInteraction::confirm) {
     return edit_key(physical_key, shift);
   }
+  if (interaction_ == SettingsInteraction::result &&
+      physical_key == kPhysicalEsc) {
+    cancel();
+  }
   return {.captured = true};
 }
 
 SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
+  const uint8_t item_count =
+      screen_ == Screen::root
+          ? kMenuItems
+          : screen_ == Screen::profiles ? profile_count_ : wifi_count_;
+  if (item_count == 0) {
+    screen_ = Screen::root;
+    selected_ = root_selected_;
+    scroll_ = root_scroll_;
+    return {.captured = true};
+  }
   if (physical_key == kUpKey) {
-    selected_ = selected_ == 0 ? kMenuItems - 1 : selected_ - 1;
+    selected_ = selected_ == 0 ? item_count - 1 : selected_ - 1;
   } else if (physical_key == kDownKey) {
-    selected_ = static_cast<uint8_t>((selected_ + 1) % kMenuItems);
+    selected_ = static_cast<uint8_t>((selected_ + 1) % item_count);
   } else if (physical_key == kBackKey) {
+    if (screen_ != Screen::root) {
+      screen_ = Screen::root;
+      selected_ = root_selected_;
+      scroll_ = root_scroll_;
+      return {.captured = true};
+    }
     return {.captured = true,
             .command = SettingsCommandKind::return_to_pet};
   } else if (physical_key == kEnterKey) {
+    if (screen_ == Screen::profiles) {
+      selected_profile_id_ = profile_ids_[selected_];
+      interaction_ = SettingsInteraction::applying;
+      return {.captured = true,
+              .command = SettingsCommandKind::activate_profile};
+    }
+    if (screen_ == Screen::wifi) {
+      if (selected_ + 1 == wifi_count_) {
+        begin_ssid_edit();
+      } else {
+        first_ssid_ = wifi_ssids_[selected_];
+        begin_password_edit();
+      }
+      return {.captured = true};
+    }
+    root_selected_ = selected_;
+    root_scroll_ = scroll_;
     switch (selected_) {
       case 0:
-        return {.captured = true,
-                .command = SettingsCommandKind::activate_profile};
+        screen_ = Screen::profiles;
+        selected_ = 0;
+        scroll_ = 0;
+        break;
       case 1:
         begin_pin_edit();
         break;
       case 2:
+        interaction_ = SettingsInteraction::applying;
         return {.captured = true,
                 .command = SettingsCommandKind::scan_wifi};
       case 3:
+        device_settings_.brightness = static_cast<Brightness>(
+            (static_cast<uint8_t>(device_settings_.brightness) + 1) % 4);
+        return {.captured = true,
+                .command = SettingsCommandKind::apply_display_settings};
       case 4:
+        device_settings_.return_to_pet = static_cast<ReturnToPet>(
+            (static_cast<uint8_t>(device_settings_.return_to_pet) + 1) % 4);
+        return {.captured = true,
+                .command = SettingsCommandKind::apply_display_settings};
       case 5:
+        device_settings_.pet_frame_rate = static_cast<PetFrameRate>(
+            (static_cast<uint8_t>(device_settings_.pet_frame_rate) + 1) % 3);
         return {.captured = true,
                 .command = SettingsCommandKind::apply_display_settings};
       default:
@@ -128,6 +229,10 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
   constexpr uint8_t visible = 5;
   if (selected_ < scroll_) scroll_ = selected_;
   if (selected_ >= scroll_ + visible) scroll_ = selected_ - visible + 1;
+  if (screen_ == Screen::root) {
+    root_selected_ = selected_;
+    root_scroll_ = scroll_;
+  }
   return {.captured = true};
 }
 
@@ -160,6 +265,13 @@ SettingsInputResult SettingsMenu::edit_key(
                 .command = SettingsCommandKind::rotate_pin};
       }
       editor_.clear();
+      return {.captured = true};
+    }
+    if (editor_kind_ == Editor::ssid) {
+      if (!editor_.empty()) {
+        first_ssid_ = editor_;
+        begin_password_edit();
+      }
       return {.captured = true};
     }
     interaction_ = SettingsInteraction::applying;
@@ -230,14 +342,79 @@ std::string SettingsMenu::masked_value() const {
 
 SettingsMenuContent SettingsMenu::content() const {
   SettingsMenuContent output;
+  if (interaction_ == SettingsInteraction::text_edit ||
+      interaction_ == SettingsInteraction::confirm) {
+    output.count = 3;
+    if (editor_kind_ == Editor::pin_first) {
+      output.lines[0] = "NEW PIN (8 DIGITS)";
+    } else if (editor_kind_ == Editor::pin_confirm) {
+      output.lines[0] = "CONFIRM NEW PIN";
+    } else if (editor_kind_ == Editor::ssid) {
+      output.lines[0] = "ENTER WIFI SSID";
+    } else {
+      output.lines[0] = "ENTER WIFI PASSWORD";
+    }
+    output.lines[1] = masked_value();
+    output.lines[2] = "ENTER=OK ESC=CANCEL";
+    return output;
+  }
+  if (interaction_ == SettingsInteraction::applying) {
+    output.count = 2;
+    output.lines[0] = "APPLYING...";
+    output.lines[1] = "PLEASE WAIT";
+    return output;
+  }
+  if (interaction_ == SettingsInteraction::result) {
+    output.count = 2;
+    output.lines[0] = result_.empty() ? "ABOUT" : result_;
+    output.lines[1] = "ESC TO RETURN";
+    return output;
+  }
+  if (screen_ == Screen::profiles) {
+    output.count = profile_count_;
+    output.selected = selected_;
+    output.scroll = scroll_;
+    for (uint8_t index = 0; index < profile_count_; ++index) {
+      output.lines[index] =
+          std::string(index == selected_ ? "> " : "  ") +
+          profile_names_[index];
+    }
+    return output;
+  }
+  if (screen_ == Screen::wifi) {
+    output.count = wifi_count_;
+    output.selected = selected_;
+    output.scroll = scroll_;
+    for (uint8_t index = 0; index < wifi_count_; ++index) {
+      output.lines[index] =
+          std::string(index == selected_ ? "> " : "  ") +
+          wifi_ssids_[index];
+    }
+    return output;
+  }
   output.count = kMenuItems;
   output.selected = selected_;
   output.scroll = scroll_;
+  std::array<std::string, kMenuItems> rows{};
+  for (uint8_t index = 0; index < kFixedRows.size(); ++index) {
+    rows[index] = kFixedRows[index];
+  }
+  constexpr std::array brightness{"25%", "50%", "75%", "100%"};
+  constexpr std::array timeout{"OFF", "15S", "30S", "60S"};
+  constexpr std::array fps{"2", "2.5", "3"};
+  rows[3] = "BRIGHTNESS " +
+            std::string(brightness[
+                static_cast<uint8_t>(device_settings_.brightness)]);
+  rows[4] = "RETURN TO PET " +
+            std::string(timeout[
+                static_cast<uint8_t>(device_settings_.return_to_pet)]);
+  rows[5] = "PET FPS " +
+            std::string(fps[
+                static_cast<uint8_t>(device_settings_.pet_frame_rate)]);
+  rows[6] = "ABOUT";
   for (uint8_t index = 0; index < kMenuItems; ++index) {
     output.lines[index] =
-        std::string(index == selected_ ? "> " : "  ") +
-        std::string(kRows[index]);
+        std::string(index == selected_ ? "> " : "  ") + rows[index];
   }
   return output;
 }
-

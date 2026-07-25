@@ -267,6 +267,53 @@ void load_profile() {
   nvs_close(handle);
 }
 
+std::optional<std::string> legacy_profile_json() {
+  nvs_handle_t handle;
+  if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) {
+    return std::nullopt;
+  }
+  size_t size = 0;
+  if (nvs_get_str(handle, kProfileNvsKey, nullptr, &size) != ESP_OK ||
+      size == 0 || size > kRequestLimit) {
+    nvs_close(handle);
+    return std::nullopt;
+  }
+  std::string json(size, '\0');
+  const esp_err_t result =
+      nvs_get_str(handle, kProfileNvsKey, json.data(), &size);
+  nvs_close(handle);
+  if (result != ESP_OK) return std::nullopt;
+  json.resize(std::strlen(json.c_str()));
+  return json;
+}
+
+std::string persisted_active_profile() {
+  nvs_handle_t handle;
+  if (nvs_open(kProductNvsNamespace, NVS_READONLY, &handle) != ESP_OK) {
+    return "SAFE";
+  }
+  std::array<char, 9> id{};
+  size_t size = id.size();
+  const esp_err_t result =
+      nvs_get_str(handle, kActiveProfileNvsKey, id.data(), &size);
+  nvs_close(handle);
+  return result == ESP_OK && id.front() != '\0'
+             ? std::string(id.data())
+             : "SAFE";
+}
+
+bool activate_catalog_profile(std::string_view id) {
+  if (g_profile_catalog == nullptr) return false;
+  Profile selected;
+  if (g_profile_catalog->read(id, selected) != ProfileCatalogResult::ok ||
+      persist_active_profile(id) != ESP_OK ||
+      g_profile_catalog->activate(id) != ProfileCatalogResult::ok) {
+    return false;
+  }
+  g_profile = std::move(selected);
+  return true;
+}
+
 void set_pairing_code(std::string_view pin) {
   if (!product_web_pin_is_valid(pin)) return;
   std::memset(g_pairing_code.data(), 0, g_pairing_code.size());
@@ -864,7 +911,7 @@ esp_err_t product_web_start() {
   }
   if (g_profile_mutex == nullptr) return ESP_ERR_NO_MEM;
   load_pairing_code();
-  load_profile();
+  if (g_profile_catalog == nullptr) load_profile();
   DeviceTlsIdentity identity;
   esp_err_t result = load_or_create_device_tls_identity(&identity);
   if (result != ESP_OK) return result;
@@ -942,6 +989,82 @@ void product_web_set_pet_store(PetStore* store) {
 
 void product_web_set_profile_catalog(ProfileCatalogStore* catalog) {
   g_profile_catalog = catalog;
+}
+
+esp_err_t product_web_prepare_profile_catalog(ProfileCatalogStore* catalog) {
+  if (catalog == nullptr) return ESP_ERR_INVALID_ARG;
+  if (g_profile_mutex == nullptr) {
+    g_profile_mutex = xSemaphoreCreateMutexStatic(&g_profile_mutex_storage);
+  }
+  if (g_profile_mutex == nullptr) return ESP_ERR_NO_MEM;
+  const std::optional<std::string> legacy = legacy_profile_json();
+  const ProfileCatalogLoadResult loaded =
+      catalog->load(legacy.has_value()
+                        ? std::optional<std::string_view>(*legacy)
+                        : std::nullopt);
+  if (loaded == ProfileCatalogLoadResult::storage_error) {
+    return ESP_FAIL;
+  }
+  g_profile_catalog = catalog;
+  ProfileLock lock;
+  if (!lock.locked()) return ESP_ERR_TIMEOUT;
+  std::string active = persisted_active_profile();
+  if (loaded == ProfileCatalogLoadResult::migrated) {
+    std::array<ProfileSummary, 5> profiles{};
+    std::size_t count = 0;
+    if (catalog->list(profiles, &count) == ProfileCatalogResult::ok &&
+        count > 1) {
+      active = profiles[1].id.data();
+    }
+  }
+  if (!activate_catalog_profile(active) &&
+      !activate_catalog_profile("SAFE")) {
+    g_profile = safe_profile();
+    return ESP_FAIL;
+  }
+  return ESP_OK;
+}
+
+bool product_web_cycle_profile(bool forward) {
+  if (g_profile_catalog == nullptr) return false;
+  ProfileLock lock;
+  if (!lock.locked()) return false;
+  std::array<ProfileSummary, 5> profiles{};
+  std::size_t count = 0;
+  if (g_profile_catalog->list(profiles, &count) != ProfileCatalogResult::ok ||
+      count == 0) {
+    return false;
+  }
+  std::size_t current = 0;
+  for (std::size_t index = 0; index < count; ++index) {
+    if (std::string_view(profiles[index].id.data()) ==
+        g_profile_catalog->active_id()) {
+      current = index;
+      break;
+    }
+  }
+  const std::size_t next =
+      forward ? (current + 1) % count : (current + count - 1) % count;
+  return activate_catalog_profile(profiles[next].id.data());
+}
+
+bool product_web_activate_profile(std::string_view id) {
+  ProfileLock lock;
+  return lock.locked() && activate_catalog_profile(id);
+}
+
+bool product_web_profile_summaries(
+    std::span<ProfileSummary> output,
+    std::size_t* count
+) {
+  if (g_profile_catalog == nullptr) return false;
+  ProfileLock lock;
+  return lock.locked() &&
+         g_profile_catalog->list(output, count) == ProfileCatalogResult::ok;
+}
+
+esp_err_t product_web_rotate_pin(std::string_view pin) {
+  return persist_pairing_code(pin);
 }
 
 bool product_web_action(uint8_t layer, uint8_t physical_key,

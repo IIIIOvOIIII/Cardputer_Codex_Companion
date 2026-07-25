@@ -55,6 +55,7 @@ class UiModel {
   void set_settings_content(std::span<const std::string_view> rows,
                             uint8_t selected, uint8_t scroll);
   void navigate(UiNavAction action);
+  void return_to_pet();
   [[nodiscard]] uint32_t revision() const { return revision_; }
   [[nodiscard]] std::string runtime_text() const;
   [[nodiscard]] UiPage page() const { return page_; }

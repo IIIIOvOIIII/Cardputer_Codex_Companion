@@ -18,6 +18,7 @@ class InputRouter {
       const std::array<bool, kPhysicalKeyCount>& pressed) const;
   void toggle_mode();
   void enter_safe_profile();
+  void leave_safe_profile() { safe_profile_ = false; }
   [[nodiscard]] InputMode mode() const { return mode_; }
   [[nodiscard]] bool safe_profile() const { return safe_profile_; }
 
