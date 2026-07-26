@@ -79,3 +79,18 @@
   目标构建通过，镜像 `0x17f790`，app partition 仍有 50% 空间。
 - Next step: Task 6 实现 controller 的 capture→ADPCM→packet→transport 固定路径，
   把 G0 从旧 mode 切换中移除并接入短按麦克风开关，同时扩展只读 runtime metrics。
+
+## 2026-07-26 17:00 HKT
+
+- Current work: 完成 Task 6 麦克风 controller、G0 运行时、固定静态音频任务与
+  有界事件队列，并接入 BLE subscription + Mac sink-ready 双重就绪门禁。
+- Expected result: G0 仅在一秒内的完整短按释放后切换录音；采集帧固定经
+  PCM→IMA-ADPCM→Audio v1 packet→单次 notify；断连优先停录且重连不恢复；
+  24 kHz 持续丢帧只降级一次，16 kHz 再失败进入 ERROR；指标包含 capture、
+  overrun、transport drop 和 fallback。
+- Result: Achieved。新增 controller 测试覆盖 unavailable、24/16 kHz、132/92-byte
+  packet、sequence wrap、drop、overrun、discontinuity、fallback、error、断连清空、
+  重连不恢复和长按忽略；host 34/34、Task 6 ASan/UBSan 2/2、ESP-IDF 5.5.4
+  目标构建均通过。镜像大小 `0x185860`，app partition 仍有 49% 空间。
+- Next step: 提交 Task 6；Task 7 在 Mac 侧实现 ADPCM frame decode 后的 jitter
+  buffer、24/16→48 kHz 自适应重采样和无锁音频 pipeline。

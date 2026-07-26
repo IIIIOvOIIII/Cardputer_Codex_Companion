@@ -344,3 +344,13 @@ add_executable(test_ble_audio_transport
 )
 target_include_directories(test_ble_audio_transport PRIVATE ../../main)
 add_test(NAME ble_audio_transport COMMAND test_ble_audio_transport)
+
+add_executable(test_microphone_controller
+  test_microphone_controller.cpp
+  ../../main/product/microphone_controller.cpp
+  ../../main/product/microphone_state.cpp
+  ../../main/product/audio_protocol.cpp
+  ../../main/product/ima_adpcm.cpp
+)
+target_include_directories(test_microphone_controller PRIVATE ../../main)
+add_test(NAME microphone_controller COMMAND test_microphone_controller)

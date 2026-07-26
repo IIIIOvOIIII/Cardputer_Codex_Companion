@@ -83,6 +83,13 @@ struct BurstMetrics {
   uint32_t approval_bytes = 0;
 };
 
+struct AudioRuntimeMetrics {
+  uint32_t captured_frames = 0;
+  uint32_t source_overruns = 0;
+  uint32_t transport_drops = 0;
+  uint32_t fallback_count = 0;
+};
+
 enum class BurstError {
   none,
   window_duration,
@@ -114,8 +121,9 @@ struct ResourceSample {
   uint32_t display_queue_failures = 0;
   uint32_t metrics_encode_failures = 0;
   HidLatencyMetrics hid;
+  AudioRuntimeMetrics audio;
   BurstMetrics burst;
-  std::array<TaskStackMetric, 7> tasks{};
+  std::array<TaskStackMetric, 8> tasks{};
 };
 
 ResourceThresholdResult evaluate_resource_thresholds(

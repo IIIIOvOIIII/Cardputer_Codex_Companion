@@ -30,6 +30,7 @@ void ProductController::start() {
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -48,11 +49,14 @@ void ProductController::start() {
 #include "probe/ble_services.hpp"
 #include "probe/keyboard_probe.hpp"
 #include "product/companion_protocol.hpp"
+#include "product/audio_capture.hpp"
+#include "product/ble_audio_transport.hpp"
 #include "product/display.hpp"
 #include "product/device_settings.hpp"
 #include "product/input_router.hpp"
 #include "product/keyboard_matrix.hpp"
 #include "product/macro_engine.hpp"
+#include "product/microphone_controller.hpp"
 #include "product/pet_store.hpp"
 #include "product/profile_catalog.hpp"
 #include "product/product_web.hpp"
@@ -65,6 +69,7 @@ namespace {
 constexpr char kTag[] = "cardputer-product";
 constexpr std::size_t kMacroQueueDepth = 16;
 constexpr std::size_t kSettingsQueueDepth = 4;
+constexpr std::size_t kMicrophoneQueueDepth = 8;
 constexpr char kSettingsNvsNamespace[] = "product";
 
 struct MacroInvocation {
@@ -80,6 +85,13 @@ struct SettingsInvocation {
   std::array<char, 9> profile_id{};
   std::array<char, 33> ssid{};
   std::array<char, 65> password{};
+};
+
+enum class MicrophoneRuntimeEvent : uint8_t {
+  sink_ready,
+  sink_lost,
+  g0_click,
+  g0_ignored,
 };
 
 class NvsDeviceSettingsBackend final : public DeviceSettingsBackend {
@@ -141,10 +153,18 @@ StaticQueue_t g_settings_queue_storage{};
 std::array<uint8_t, kSettingsQueueDepth * sizeof(SettingsInvocation)>
     g_settings_queue_buffer{};
 QueueHandle_t g_settings_queue = nullptr;
+StaticQueue_t g_microphone_queue_storage{};
+std::array<uint8_t,
+           kMicrophoneQueueDepth * sizeof(MicrophoneRuntimeEvent)>
+    g_microphone_queue_buffer{};
+QueueHandle_t g_microphone_queue = nullptr;
 StaticTask_t g_macro_task_storage{};
 std::array<StackType_t, 6144> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
+StaticTask_t g_audio_task_storage{};
+std::array<StackType_t, 3072> g_audio_task_stack{};
+TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_profile_catalog_task_handle = nullptr;
 StaticSemaphore_t g_profile_catalog_initialization_done_storage{};
 SemaphoreHandle_t g_profile_catalog_initialization_done = nullptr;
@@ -156,6 +176,11 @@ std::atomic<uint64_t> g_last_companion_ms{0};
 std::atomic<uint64_t> g_last_ui_input_ms{0};
 std::atomic<uint32_t> g_pet_frame_interval_ms{400};
 std::atomic<uint32_t> g_return_to_pet_ms{30000};
+std::atomic<bool> g_audio_data_ready{false};
+std::atomic<bool> g_audio_sink_declared{false};
+std::unique_ptr<IAudioCapture> g_audio_capture;
+std::unique_ptr<IBleAudioTransport> g_audio_transport;
+std::unique_ptr<MicrophoneController> g_microphone;
 
 class SemaphoreLock {
  public:
@@ -553,8 +578,158 @@ void keyboard_event(const MatrixKeyEvent& event) {
   send_passthrough_report_locked();
 }
 
+void enqueue_microphone_event(MicrophoneRuntimeEvent event,
+                              bool privacy_critical = false) {
+  if (g_microphone_queue == nullptr) return;
+  if (xQueueSend(g_microphone_queue, &event, 0) == pdTRUE) return;
+  if (privacy_critical) {
+    xQueueReset(g_microphone_queue);
+    if (xQueueSendToFront(g_microphone_queue, &event, 0) == pdTRUE) {
+      ESP_LOGW(kTag, "microphone queue reset for stop event");
+      return;
+    }
+  }
+  ESP_LOGW(kTag, "microphone event queue full event=%u",
+           static_cast<unsigned>(event));
+}
+
+void publish_microphone_readiness() {
+  const bool ready =
+      g_audio_data_ready.load() && g_audio_sink_declared.load();
+  enqueue_microphone_event(
+      ready ? MicrophoneRuntimeEvent::sink_ready
+            : MicrophoneRuntimeEvent::sink_lost,
+      !ready);
+}
+
+void audio_sink_state_changed(bool ready) {
+  g_audio_data_ready.store(ready);
+  if (!ready) g_audio_sink_declared.store(false);
+  publish_microphone_readiness();
+}
+
+void audio_control_received(AudioControlMessage message) {
+  switch (message.opcode) {
+    case AudioControlOpcode::sink_ready:
+      g_audio_sink_declared.store(true);
+      publish_microphone_readiness();
+      break;
+    case AudioControlOpcode::sink_not_ready:
+      g_audio_sink_declared.store(false);
+      publish_microphone_readiness();
+      break;
+    case AudioControlOpcode::hello:
+    case AudioControlOpcode::set_preferred_rate:
+    case AudioControlOpcode::reset_statistics:
+      break;
+  }
+}
+
+void audio_task(void*) {
+  MicrophoneState previous_state = MicrophoneState::unavailable;
+  uint64_t warmup_ends_ms = 0;
+  uint64_t window_started_ms = 0;
+  MicrophoneSnapshot window_baseline{};
+  uint8_t consecutive_missing = 0;
+  while (true) {
+    MicrophoneRuntimeEvent event;
+    while (g_microphone_queue != nullptr &&
+           xQueueReceive(g_microphone_queue, &event, 0) == pdTRUE) {
+      if (g_microphone == nullptr) continue;
+      switch (event) {
+        case MicrophoneRuntimeEvent::sink_ready:
+          g_microphone->on_sink_ready(true);
+          break;
+        case MicrophoneRuntimeEvent::sink_lost:
+          g_microphone->stop_for_disconnect();
+          break;
+        case MicrophoneRuntimeEvent::g0_click:
+          g_microphone->on_g0_click();
+          break;
+        case MicrophoneRuntimeEvent::g0_ignored:
+          g_microphone->on_g0_ignored();
+          break;
+      }
+    }
+
+    if (g_microphone == nullptr) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+      continue;
+    }
+    const MicrophoneSnapshot before = g_microphone->snapshot();
+    const bool active =
+        before.state == MicrophoneState::live24 ||
+        before.state == MicrophoneState::live16;
+    if (active) {
+      (void)g_microphone->run_once();
+    }
+    MicrophoneSnapshot after = g_microphone->snapshot();
+    const uint64_t now_ms =
+        static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    const bool live =
+        after.state == MicrophoneState::live24 ||
+        after.state == MicrophoneState::live16;
+    if (live && previous_state != after.state) {
+      warmup_ends_ms = now_ms + 2000;
+      window_started_ms = warmup_ends_ms;
+      window_baseline = after;
+      consecutive_missing = 0;
+    }
+    if (live && active) {
+      const bool frame_missing =
+          after.captured_frames == before.captured_frames ||
+          after.transport_drops != before.transport_drops;
+      consecutive_missing =
+          frame_missing
+              ? static_cast<uint8_t>(
+                    std::min<unsigned>(10, consecutive_missing + 1))
+              : 0;
+      if (consecutive_missing >= 10) {
+        g_microphone->on_loss_window(false);
+        g_microphone->on_loss_window(false);
+        after = g_microphone->snapshot();
+        consecutive_missing = 0;
+        warmup_ends_ms = now_ms + 2000;
+        window_started_ms = warmup_ends_ms;
+        window_baseline = after;
+      } else if (now_ms >= warmup_ends_ms &&
+                 now_ms - window_started_ms >= 5000) {
+        constexpr uint32_t kExpectedFrames = 500;
+        const uint32_t captured =
+            after.captured_frames - window_baseline.captured_frames;
+        const uint32_t transport_lost =
+            after.transport_drops - window_baseline.transport_drops;
+        const uint32_t source_lost =
+            after.source_overruns - window_baseline.source_overruns;
+        const uint32_t schedule_lost =
+            captured < kExpectedFrames ? kExpectedFrames - captured : 0;
+        const uint32_t lost =
+            std::max(source_lost, schedule_lost) + transport_lost;
+        g_microphone->on_loss_window(
+            static_cast<uint64_t>(lost) * 100U <= kExpectedFrames);
+        after = g_microphone->snapshot();
+        window_started_ms = now_ms;
+        window_baseline = after;
+      }
+    } else if (!live) {
+      consecutive_missing = 0;
+      warmup_ends_ms = 0;
+      window_started_ms = 0;
+    }
+    previous_state = after.state;
+    if (!live) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
+  }
+}
+
 void ble_connection_changed(bool connected) {
   g_ble_state = connected ? ServiceState::ok : ServiceState::starting;
+  if (!connected) {
+    g_audio_data_ready.store(false);
+    g_audio_sink_declared.store(false);
+    enqueue_microphone_event(MicrophoneRuntimeEvent::sink_lost, true);
+  }
   {
     SemaphoreLock lock(g_ui_mutex);
     if (lock.locked()) g_ui.set_ble(g_ble_state);
@@ -564,6 +739,9 @@ void ble_connection_changed(bool connected) {
 
 void ble_disconnected() {
   if (g_keyboard.has_value()) g_keyboard->on_ble_disconnected();
+  g_audio_data_ready.store(false);
+  g_audio_sink_declared.store(false);
+  enqueue_microphone_event(MicrophoneRuntimeEvent::sink_lost, true);
 }
 
 void wifi_status_changed(WifiState state, const char* detail) {
@@ -651,7 +829,7 @@ void companion_heartbeat() {
 }
 
 void ui_task(void*) {
-  bool long_press_handled = false;
+  uint64_t g0_pressed_at_ms = 0;
   TickType_t wake = xTaskGetTickCount();
   uint32_t rendered_revision = UINT32_MAX;
   uint64_t next_frame_ms = 0;
@@ -661,13 +839,23 @@ void ui_task(void*) {
   uint64_t last_pet_sync_ms = 0;
   while (true) {
     M5.update();
-    if (!long_press_handled && M5.BtnA.pressedFor(2000)) {
-      release_and_set_mode(true);
-      long_press_handled = true;
+    const uint64_t button_now_ms =
+        static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    if (M5.BtnA.wasPressed()) {
+      g0_pressed_at_ms = button_now_ms;
     }
     if (M5.BtnA.wasReleased()) {
-      if (!long_press_handled) release_and_set_mode(false);
-      long_press_handled = false;
+      const uint32_t held_ms =
+          g0_pressed_at_ms == 0 || button_now_ms < g0_pressed_at_ms
+              ? UINT32_MAX
+              : static_cast<uint32_t>(std::min<uint64_t>(
+                    UINT32_MAX, button_now_ms - g0_pressed_at_ms));
+      enqueue_microphone_event(
+          microphone_button_event(held_ms) ==
+                  MicrophoneButtonEvent::click
+              ? MicrophoneRuntimeEvent::g0_click
+              : MicrophoneRuntimeEvent::g0_ignored);
+      g0_pressed_at_ms = 0;
     }
 
     const uint64_t now_ms =
@@ -786,7 +974,7 @@ void ui_task(void*) {
                           : next_frame_ms + interval;
       if (next_frame_ms == interval) next_frame_ms = now_ms + interval;
     }
-    vTaskDelayUntil(&wake, pdMS_TO_TICKS(200));
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(50));
   }
 }
 
@@ -904,8 +1092,31 @@ class EspProductStartup final : public ProductStartupBackend {
     if (result == ESP_OK) {
       g_keyboard.emplace(hid_device);
       enable_product_companion_mode();
+      g_microphone_queue = xQueueCreateStatic(
+          kMicrophoneQueueDepth, sizeof(MicrophoneRuntimeEvent),
+          g_microphone_queue_buffer.data(), &g_microphone_queue_storage);
+      g_audio_capture = make_product_audio_capture();
+      g_audio_transport = make_product_ble_audio_transport();
+      if (g_microphone_queue == nullptr || g_audio_capture == nullptr ||
+          g_audio_transport == nullptr) {
+        result = ESP_ERR_NO_MEM;
+      } else {
+        g_microphone = std::make_unique<MicrophoneController>(
+            *g_audio_capture, *g_audio_transport);
+        g_audio_task_handle = xTaskCreateStatic(
+            audio_task, "product-audio", g_audio_task_stack.size(), nullptr,
+            tskIDLE_PRIORITY + 2, g_audio_task_stack.data(),
+            &g_audio_task_storage);
+        if (g_microphone == nullptr || g_audio_task_handle == nullptr) {
+          result = ESP_ERR_NO_MEM;
+        }
+      }
+    }
+    if (result == ESP_OK) {
       set_ble_disconnect_handler(ble_disconnected);
       set_ble_connection_handler(ble_connection_changed);
+      set_audio_control_handler(audio_control_received);
+      set_audio_sink_state_handler(audio_sink_state_changed);
       g_ble_state = ServiceState::starting;
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {

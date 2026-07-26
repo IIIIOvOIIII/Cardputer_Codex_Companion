@@ -73,6 +73,7 @@ idf_component_register(
         "product/microphone_state.cpp"
         "product/audio_capture.cpp"
         "product/ble_audio_transport.cpp"
+        "product/microphone_controller.cpp"
         "product/product_controller.cpp"
         "product/pet_bundle.cpp"
         "product/pet_store.cpp"

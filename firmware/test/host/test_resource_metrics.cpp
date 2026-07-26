@@ -253,6 +253,12 @@ int main() {
   sample.hid_queue_failures = 4;
   sample.network_queue_failures = 5;
   sample.display_queue_failures = 6;
+  sample.audio = {
+      .captured_frames = 700,
+      .source_overruns = 8,
+      .transport_drops = 9,
+      .fallback_count = 10,
+  };
   sample.burst = burst;
   sample.tasks[0] = {"scanner", 8192, 2000};
   sample.tasks[1] = {"nimble", 10000, 2500};
@@ -261,6 +267,7 @@ int main() {
   sample.tasks[4] = {"display", 16000, 4000};
   sample.tasks[5] = {"metrics", 18000, 4500};
   sample.tasks[6] = {"unused", 0, 0};
+  sample.tasks[7] = {"audio", 12288, 4096};
 
   std::array<char, 4096> encoded{};
   assert(emit_resource_sample_line(sample, "baseline", encoded) == ResourceEncodeError::none);
@@ -278,6 +285,10 @@ int main() {
   assert(std::strstr(encoded_text, "42424242424242424242424242424242") ==
          nullptr);
   assert(std::strstr(encoded_text, "\"scenario\":\"baseline\"") != nullptr);
+  assert(std::strstr(
+             encoded_text,
+             "\"audio\":{\"captured_frames\":700,\"source_overruns\":8,"
+             "\"transport_drops\":9,\"fallback_count\":10}") != nullptr);
   assert(std::strstr(encoded_text, "\"tasks\":[") != nullptr);
   const size_t encoded_length = std::strlen(encoded_text);
   assert(encoded_length > 0);
