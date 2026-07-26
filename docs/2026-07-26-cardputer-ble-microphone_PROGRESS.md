@@ -200,3 +200,17 @@
   删除的问题。
 - Next step: 提交 Task 10；Task 11 实现 48 kHz mono input-only Core Audio HAL
   device、纯 C render adapter、确定性 bundle 构建与签名验证。
+
+## 2026-07-26 17:57 HKT
+
+- Current work: 完成 Task 11 input-only Core Audio AudioServerPlugIn HAL driver。
+- Expected result: 系统仅发布一个 48 kHz mono float 输入流，无输出流；稳定 object
+  IDs；多 client start/stop 计数；无 producer 时精确静音；render 路径不含锁、
+  allocation、日志、文件系统或 HAL client API；bundle 可确定性构建和验证。
+- Result: Achieved。纯 C device tests 在 ASan/UBSan 下通过 stream/cardinality、
+  client count、ring data 和 underflow silence；bundle manifest tests 3/3 通过；
+  `CardputerAudioDriverFactory` 为导出符号，ad-hoc codesign strict/deep 验证通过。
+  CoreAudio/CoreFoundation/Security 与 libSystem 依赖已由 `otool` 验证。计划中
+  `XPC.framework` 假设经 SDK 证实不存在，已更正为由 libSystem 提供 XPC C API。
+- Next step: 提交 Task 11；Task 12 实现 audit-token policy、匿名 shm、单 producer
+  两秒 lease、XPC FD transfer 和 Swift 500 ms heartbeat client。
