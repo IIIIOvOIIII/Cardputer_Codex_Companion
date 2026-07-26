@@ -1,5 +1,19 @@
 # Cardputer BLE 麦克风与 macOS 虚拟输入进度
 
+## 2026-07-26 20:56 HKT
+
+- Current work: 固化 USB 串口 HIL 麦克风控制设计，并把解析器、固件事件接入、
+  PET 动画隔离、Python 自动启停和真实 Core Audio probe 路径拆分为 TDD 实施任务。
+- Expected result: 后续调试无需用户反复按 G0；接口仅限物理 USB，不新增局域网或
+  BLE 远程录音入口；自动短测能够复现并记录约八秒后的降级/ERR，同时让 HAL
+  虚拟麦克风真正收到 probe 音频。
+- Result: Achieved。设计提交为 `514ba98`；实施计划明确保留现有加密、绑定、
+  subscription、sink-ready、首帧和 metrics-only 门禁，并要求任何异常路径均发送
+  STOP。MIC ERR 的修复不预设结论，先由自动短测区分采集、BLE transport、TLS
+  竞争和 HAL 路径。
+- Next step: 用户选择执行方式后，按 Task 1 从 allocation-free parser 的
+  RED 测试开始实施。
+
 ## 2026-07-26 14:14 HKT
 
 - Current work: 完成现有 1.0.31 架构、SPM1423 硬件、ESP32-S3
