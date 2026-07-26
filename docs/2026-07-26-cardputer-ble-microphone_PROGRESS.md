@@ -172,3 +172,17 @@
   额外 HTTPS 烟测无 reboot、panic 或 allocation failure。
 - Next step: 提交调优改动；为十分钟音频 HIL runner 增加自动 HTTPS 请求，随后执行
   G0 激活的 24 kHz 音频、并发 HID 与 TLS 真机门禁。
+
+## 2026-07-26 17:20 HKT
+
+- Current work: 补齐十分钟 HIL 的自动 HTTPS 压力、局域网 URL 约束和首帧启动门禁，
+  并准备 24 kHz 真机音频验证。
+- Expected result: 先保留八秒 steady 资源窗口，再每十五秒触发一次 TLS；只有收到
+  G0 启动后的首个音频帧才开始 600 秒计时，120 秒未启动则明确失败。
+- Result: Partial。Python HIL tests 15/15 和 ProductAudio executable tests 通过，
+  Companion release app 已重建。首次尝试中 BLE 保持连接但约两分钟收到 0 帧；
+  检查同时发现旧 probe 错误地在首帧前计时，已修复并提交。用户选择稍后执行实体
+  G0 门禁，因此本轮未生成可行性通过证据。常驻 LaunchAgent 已恢复，Cardputer
+  Codex 为 BLE connected，状态 API 返回 HTTP 200，宠物同步恢复。
+- Next step: 用户设备在手边时重新运行十分钟 HIL，短按一次 G0，并在录音期间输入
+  普通按键；通过全部 loss/gap/reconnect/HID/heap/TLS/stack gate 后再进入 Task 10。
