@@ -30,6 +30,13 @@ struct StableKeyEvent {
   uint64_t stable_at_us = 0;
 };
 
+struct HidRuntimeSummary {
+  uint32_t generated = 0;
+  uint32_t queued = 0;
+  uint32_t queue_failures = 0;
+  uint32_t p95_upper_bound_us = 0;
+};
+
 #ifdef ESP_PLATFORM
 class EspHidReportSink final : public KeyboardReportSink {
  public:
@@ -57,11 +64,16 @@ class KeyboardProbe {
   void on_ble_disconnected();
   void on_scanner_fault();
   void on_controlled_reboot();
+  void observe_product_hid_event(int64_t stable_at_us,
+                                 int64_t queued_at_us,
+                                 bool queued_ok);
   void set_web_pairing_physical_sink(WebPairingPhysicalSink* sink);
   void on_physical_web_pairing_window(std::string_view eight_digit_code,
                                       uint64_t now_ms);
   void on_physical_web_pairing_confirmation(bool accepted, uint64_t now_ms);
   [[nodiscard]] HidLatencyMetrics hid_latency_metrics() const;
+  [[nodiscard]] uint32_t hid_p95_upper_bound_us() const;
+  [[nodiscard]] HidRuntimeSummary hid_runtime_summary() const;
   [[nodiscard]] uint32_t hid_queue_overflow_count() const;
 #ifdef ESP_PLATFORM
   [[nodiscard]] TaskHandle_t hid_sender_task() const;

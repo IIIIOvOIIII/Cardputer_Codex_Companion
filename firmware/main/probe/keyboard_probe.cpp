@@ -186,6 +186,22 @@ void KeyboardProbe::on_controlled_reboot() {
   release_state();
 }
 
+void KeyboardProbe::observe_product_hid_event(
+    int64_t stable_at_us, int64_t queued_at_us, bool queued_ok) {
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&hid_metrics_lock_);
+#endif
+  hid_latency_metrics_.observe(stable_at_us, queued_at_us, queued_ok);
+  if (!queued_ok) {
+#ifdef ESP_PLATFORM
+    ++hid_queue_overflow_count_;
+#endif
+  }
+#ifdef ESP_PLATFORM
+  portEXIT_CRITICAL(&hid_metrics_lock_);
+#endif
+}
+
 void KeyboardProbe::set_web_pairing_physical_sink(
     WebPairingPhysicalSink* sink) {
   web_pairing_sink_ = sink;
@@ -214,6 +230,35 @@ HidLatencyMetrics KeyboardProbe::hid_latency_metrics() const {
 #else
   return hid_latency_metrics_;
 #endif
+}
+
+uint32_t KeyboardProbe::hid_p95_upper_bound_us() const {
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&hid_metrics_lock_);
+#endif
+  const uint32_t snapshot =
+      hid_latency_metrics_.p95_upper_bound_us();
+#ifdef ESP_PLATFORM
+  portEXIT_CRITICAL(&hid_metrics_lock_);
+#endif
+  return snapshot;
+}
+
+HidRuntimeSummary KeyboardProbe::hid_runtime_summary() const {
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&hid_metrics_lock_);
+#endif
+  const HidRuntimeSummary snapshot{
+      .generated = hid_latency_metrics_.generated,
+      .queued = hid_latency_metrics_.queued,
+      .queue_failures = hid_latency_metrics_.queue_failures,
+      .p95_upper_bound_us =
+          hid_latency_metrics_.p95_upper_bound_us(),
+  };
+#ifdef ESP_PLATFORM
+  portEXIT_CRITICAL(&hid_metrics_lock_);
+#endif
+  return snapshot;
 }
 
 uint32_t KeyboardProbe::hid_queue_overflow_count() const {

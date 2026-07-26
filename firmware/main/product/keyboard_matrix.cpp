@@ -108,4 +108,8 @@ esp_err_t keyboard_matrix_start(MatrixEventHandler handler) {
       tskIDLE_PRIORITY + 3, g_scanner_stack.data(), &g_scanner_task_storage);
   return g_scanner_task == nullptr ? ESP_ERR_NO_MEM : ESP_OK;
 }
+
+TaskHandle_t keyboard_matrix_task() {
+  return g_scanner_task;
+}
 #endif

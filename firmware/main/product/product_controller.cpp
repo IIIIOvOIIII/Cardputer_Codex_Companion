@@ -30,6 +30,8 @@ void ProductController::start() {
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <cinttypes>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <span>
@@ -165,6 +167,8 @@ std::array<StackType_t, 4096> g_ui_task_stack{};
 StaticTask_t g_audio_task_storage{};
 std::array<StackType_t, 3072> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
+TaskHandle_t g_macro_task_handle = nullptr;
+TaskHandle_t g_ui_task_handle = nullptr;
 TaskHandle_t g_profile_catalog_task_handle = nullptr;
 StaticSemaphore_t g_profile_catalog_initialization_done_storage{};
 SemaphoreHandle_t g_profile_catalog_initialization_done = nullptr;
@@ -178,6 +182,7 @@ std::atomic<uint32_t> g_pet_frame_interval_ms{400};
 std::atomic<uint32_t> g_return_to_pet_ms{30000};
 std::atomic<bool> g_audio_data_ready{false};
 std::atomic<bool> g_audio_sink_declared{false};
+std::atomic<uint32_t> g_allocation_failures{0};
 std::unique_ptr<IAudioCapture> g_audio_capture;
 std::unique_ptr<IBleAudioTransport> g_audio_transport;
 std::unique_ptr<MicrophoneController> g_microphone;
@@ -197,6 +202,90 @@ class SemaphoreLock {
   SemaphoreHandle_t mutex_ = nullptr;
   bool locked_ = false;
 };
+
+void allocation_failed(size_t, uint32_t, const char*) {
+  uint32_t current = g_allocation_failures.load();
+  while (current != UINT32_MAX &&
+         !g_allocation_failures.compare_exchange_weak(
+             current, current + 1)) {
+  }
+}
+
+uint32_t task_stack_free_bytes(TaskHandle_t task) {
+  return task == nullptr
+             ? 0
+             : static_cast<uint32_t>(
+                   uxTaskGetStackHighWaterMark(task) *
+                   sizeof(StackType_t));
+}
+
+void emit_runtime_metrics(uint64_t now_us) {
+  const HidRuntimeSummary hid =
+      g_keyboard.has_value()
+          ? g_keyboard->hid_runtime_summary()
+          : HidRuntimeSummary{};
+  const MicrophoneSnapshot audio =
+      g_microphone != nullptr
+          ? g_microphone->snapshot()
+          : MicrophoneSnapshot{};
+  constexpr uint32_t kScannerStackBytes =
+      kKeyboardScannerTaskStackBytes * sizeof(StackType_t);
+  constexpr uint32_t kHidStackBytes =
+      kHidSenderTaskStackBytes * sizeof(StackType_t);
+  const uint32_t capabilities =
+      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  std::printf(
+      "{\"scenario\":\"transient\",\"monotonic_us\":%" PRIu64
+      ",\"free_internal_heap\":%u,\"largest_internal_block\":%u,"
+      "\"allocation_failures\":%u,"
+      "\"hid\":{\"generated\":%u,\"queued\":%u,"
+      "\"queue_failures\":%u,\"p95_upper_bound_us\":%u},"
+      "\"audio\":{\"captured_frames\":%u,\"source_overruns\":%u,"
+      "\"transport_drops\":%u,\"fallback_count\":%u},"
+      "\"tasks\":["
+      "{\"name\":\"scanner\",\"configured\":%u,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"keyboard-hid\",\"configured\":%u,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"macro\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"audio\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"ui\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u}]}\n",
+      now_us,
+      static_cast<unsigned>(
+          heap_caps_get_free_size(capabilities)),
+      static_cast<unsigned>(
+          heap_caps_get_largest_free_block(capabilities)),
+      static_cast<unsigned>(g_allocation_failures.load()),
+      static_cast<unsigned>(hid.generated),
+      static_cast<unsigned>(hid.queued),
+      static_cast<unsigned>(hid.queue_failures),
+      static_cast<unsigned>(hid.p95_upper_bound_us),
+      static_cast<unsigned>(audio.captured_frames),
+      static_cast<unsigned>(audio.source_overruns),
+      static_cast<unsigned>(audio.transport_drops),
+      static_cast<unsigned>(audio.fallback_count),
+      static_cast<unsigned>(kScannerStackBytes),
+      static_cast<unsigned>(
+          task_stack_free_bytes(keyboard_matrix_task())),
+      static_cast<unsigned>(kHidStackBytes),
+      static_cast<unsigned>(task_stack_free_bytes(
+          g_keyboard.has_value()
+              ? g_keyboard->hid_sender_task()
+              : nullptr)),
+      sizeof(g_macro_task_stack),
+      static_cast<unsigned>(
+          task_stack_free_bytes(g_macro_task_handle)),
+      sizeof(g_audio_task_stack),
+      static_cast<unsigned>(
+          task_stack_free_bytes(g_audio_task_handle)),
+      sizeof(g_ui_task_stack),
+      static_cast<unsigned>(
+          task_stack_free_bytes(g_ui_task_handle)));
+  std::fflush(stdout);
+}
 
 void update_web_status() {
   product_web_set_status(g_ble_state, g_wifi_state, g_companion_state.load());
@@ -474,6 +563,11 @@ void send_passthrough_report_locked() {
 }
 
 void keyboard_event(const MatrixKeyEvent& event) {
+  if (g_keyboard.has_value()) {
+    g_keyboard->observe_product_hid_event(
+        static_cast<int64_t>(event.stable_at_ms * 1000),
+        esp_timer_get_time(), true);
+  }
   SemaphoreLock lock(g_input_mutex);
   if (!lock.locked() || event.physical_key >= g_pressed.size()) return;
   g_pressed[event.physical_key] = event.pressed;
@@ -837,6 +931,7 @@ void ui_task(void*) {
   PetState rendered_pet_state = PetState::idle;
   std::string last_pet_digest;
   uint64_t last_pet_sync_ms = 0;
+  uint64_t last_metrics_ms = 0;
   while (true) {
     M5.update();
     const uint64_t button_now_ms =
@@ -860,6 +955,10 @@ void ui_task(void*) {
 
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    if (last_metrics_ms == 0 || now_ms - last_metrics_ms >= 1000) {
+      emit_runtime_metrics(now_ms * 1000);
+      last_metrics_ms = now_ms;
+    }
     SettingsInvocation settings_invocation;
     while (g_settings_queue != nullptr &&
            xQueueReceive(g_settings_queue, &settings_invocation, 0) ==
@@ -1075,11 +1174,13 @@ class EspProductStartup final : public ProductStartupBackend {
       set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
       return false;
     }
-    const TaskHandle_t macro = xTaskCreateStatic(
+    g_macro_task_handle = xTaskCreateStatic(
         macro_task, "product-macro", g_macro_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 2, g_macro_task_stack.data(), &g_macro_task_storage);
-    esp_err_t result = macro == nullptr ? ESP_ERR_NO_MEM
-                                        : keyboard_matrix_start(keyboard_event);
+    esp_err_t result =
+        g_macro_task_handle == nullptr
+            ? ESP_ERR_NO_MEM
+            : keyboard_matrix_start(keyboard_event);
     set_stage(BootStage::keyboard, result);
     return result == ESP_OK;
   }
@@ -1181,11 +1282,11 @@ class EspProductStartup final : public ProductStartupBackend {
         display_render_boot(g_ui);
       }
     }
-    const TaskHandle_t ui = xTaskCreateStatic(
+    g_ui_task_handle = xTaskCreateStatic(
         ui_task, "product-ui", g_ui_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 1, g_ui_task_stack.data(), &g_ui_task_storage);
     update_web_status();
-    return ui != nullptr;
+    return g_ui_task_handle != nullptr;
   }
 
  private:
@@ -1206,6 +1307,12 @@ class EspProductStartup final : public ProductStartupBackend {
 }  // namespace
 
 void product_runtime_start() {
+  const esp_err_t allocation_hook_result =
+      heap_caps_register_failed_alloc_callback(allocation_failed);
+  if (allocation_hook_result != ESP_OK) {
+    ESP_LOGW(kTag, "allocation failure hook unavailable: %s",
+             esp_err_to_name(allocation_hook_result));
+  }
   g_ui_mutex = xSemaphoreCreateMutexStatic(&g_ui_mutex_storage);
   g_input_mutex = xSemaphoreCreateMutexStatic(&g_input_mutex_storage);
   g_companion_mutex =

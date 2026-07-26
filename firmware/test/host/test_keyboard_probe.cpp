@@ -99,5 +99,20 @@ int main() {
   assert(sink.reports.size() == 10000 * 2);
   assert(sink.reports.back() == HidReport{});
 
+  RecordingSink product_sink;
+  KeyboardProbe product_probe(product_sink);
+  product_probe.observe_product_hid_event(1'000, 20'901, true);
+  const HidLatencyMetrics product_metrics =
+      product_probe.hid_latency_metrics();
+  assert(product_metrics.generated == 1);
+  assert(product_metrics.queued == 1);
+  assert(product_metrics.p95_upper_bound_us() == 20'000);
+  const HidRuntimeSummary product_summary =
+      product_probe.hid_runtime_summary();
+  assert(product_summary.generated == 1);
+  assert(product_summary.queued == 1);
+  assert(product_summary.queue_failures == 0);
+  assert(product_summary.p95_upper_bound_us == 20'000);
+
   return 0;
 }

@@ -41,7 +41,10 @@ class KeyboardDebouncer {
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 using MatrixEventHandler = void (*)(const MatrixKeyEvent&);
 esp_err_t keyboard_matrix_start(MatrixEventHandler handler);
+[[nodiscard]] TaskHandle_t keyboard_matrix_task();
 #endif

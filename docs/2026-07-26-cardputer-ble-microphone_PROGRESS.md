@@ -125,3 +125,18 @@
   characteristics。XCTest 仍受本机 CommandLineTools 缺少 module 的既有边界限制。
 - Next step: 提交 Task 8；Task 9 执行 pre-flash 全门禁、app-only 刷写和十分钟
   24 kHz + concurrent HID 真机可行性验证，失败时仅允许固定降为 16 kHz。
+
+## 2026-07-26 15:12 HKT
+
+- Current work: 补齐 Task 9 真机门禁所需的固件侧只读运行指标，并为产品 HID
+  路径加入从矩阵稳定到入队完成的延迟直方图。
+- Expected result: USB 串口每秒输出一条不含音频内容的 JSON，覆盖 internal heap、
+  largest free block、allocation failure、HID p95、麦克风计数器，以及 scanner、
+  HID、macro、audio、UI 五个任务的 stack high-water；采集不能阻塞音频任务。
+- Result: Achieved。先以缺失 API 得到 host RED，再实现指标并通过 GREEN；
+  Swift audio/GATT/pet/telemetry tests、Python 143 tests、host normal/sanitizer
+  34/34、ESP-IDF 5.5.4 build、分区/DIRAM 检查、release app/package/hash 全部门禁
+  通过。应用镜像 `0x186100`，app partition 保留 49%，DIRAM headroom
+  113,529 bytes。
+- Next step: 提交指标修复，随后只刷写 `0x20000` 应用分区，先做短时 boot/metrics
+  smoke，再运行十分钟 24 kHz + concurrent HID 真机门禁。
