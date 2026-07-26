@@ -27,7 +27,7 @@ void begin_page(const char* title) {
   M5.Display.drawFastHLine(6, 17, 228, kAccent);
   M5.Display.setTextColor(kForeground, kBackground);
   M5.Display.setTextSize(kDisplayBodyTextSize);
-  M5.Display.setCursor(6, 20);
+  M5.Display.setCursor(0, 20);
 }
 
 const char* pet_state_name(PetState state) {

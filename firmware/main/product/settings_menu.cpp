@@ -6,8 +6,8 @@
 namespace {
 constexpr uint8_t kUpKey = 39;
 constexpr uint8_t kDownKey = 53;
-constexpr uint8_t kBackKey = 52;
-constexpr uint8_t kEnterKey = 54;
+constexpr uint8_t kPreviousKey = 52;
+constexpr uint8_t kNextKey = 54;
 constexpr uint8_t kPhysicalEsc = 0;
 constexpr uint8_t kPhysicalBackspace = 13;
 constexpr uint8_t kPhysicalReturn = 41;
@@ -133,7 +133,9 @@ SettingsInputResult SettingsMenu::on_key(
   if (captured_[physical_key]) return {.captured = true};
   if (interaction_ == SettingsInteraction::browse &&
       physical_key != kUpKey && physical_key != kDownKey &&
-      physical_key != kBackKey && physical_key != kEnterKey) {
+      physical_key != kPreviousKey && physical_key != kNextKey &&
+      physical_key != kPhysicalReturn &&
+      physical_key != kPhysicalEsc) {
     return {};
   }
   captured_[physical_key] = true;
@@ -166,7 +168,7 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
     selected_ = selected_ == 0 ? item_count - 1 : selected_ - 1;
   } else if (physical_key == kDownKey) {
     selected_ = static_cast<uint8_t>((selected_ + 1) % item_count);
-  } else if (physical_key == kBackKey) {
+  } else if (physical_key == kPhysicalEsc) {
     if (screen_ != Screen::root) {
       screen_ = Screen::root;
       selected_ = root_selected_;
@@ -175,7 +177,31 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
     }
     return {.captured = true,
             .command = SettingsCommandKind::return_to_pet};
-  } else if (physical_key == kEnterKey) {
+  } else if (physical_key == kPreviousKey ||
+             physical_key == kNextKey) {
+    const int8_t direction =
+        physical_key == kPreviousKey ? -1 : 1;
+    if (screen_ != Screen::root) {
+      selected_ = direction < 0
+          ? (selected_ == 0 ? item_count - 1 : selected_ - 1)
+          : static_cast<uint8_t>((selected_ + 1) % item_count);
+    } else if (selected_ == 3) {
+      const uint8_t value =
+          static_cast<uint8_t>(device_settings_.brightness);
+      device_settings_.brightness = static_cast<Brightness>(
+          direction < 0 ? (value + 3) % 4 : (value + 1) % 4);
+    } else if (selected_ == 4) {
+      const uint8_t value =
+          static_cast<uint8_t>(device_settings_.return_to_pet);
+      device_settings_.return_to_pet = static_cast<ReturnToPet>(
+          direction < 0 ? (value + 3) % 4 : (value + 1) % 4);
+    } else if (selected_ == 5) {
+      const uint8_t value =
+          static_cast<uint8_t>(device_settings_.pet_frame_rate);
+      device_settings_.pet_frame_rate = static_cast<PetFrameRate>(
+          direction < 0 ? (value + 2) % 3 : (value + 1) % 3);
+    }
+  } else if (physical_key == kPhysicalReturn) {
     if (screen_ == Screen::profiles) {
       selected_profile_id_ = profile_ids_[selected_];
       interaction_ = SettingsInteraction::applying;
@@ -207,20 +233,20 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
         return {.captured = true,
                 .command = SettingsCommandKind::scan_wifi};
       case 3:
-        device_settings_.brightness = static_cast<Brightness>(
-            (static_cast<uint8_t>(device_settings_.brightness) + 1) % 4);
+        interaction_ = SettingsInteraction::applying;
         return {.captured = true,
-                .command = SettingsCommandKind::apply_display_settings};
+                .command = SettingsCommandKind::apply_display_settings,
+                .device_settings = device_settings_};
       case 4:
-        device_settings_.return_to_pet = static_cast<ReturnToPet>(
-            (static_cast<uint8_t>(device_settings_.return_to_pet) + 1) % 4);
+        interaction_ = SettingsInteraction::applying;
         return {.captured = true,
-                .command = SettingsCommandKind::apply_display_settings};
+                .command = SettingsCommandKind::apply_display_settings,
+                .device_settings = device_settings_};
       case 5:
-        device_settings_.pet_frame_rate = static_cast<PetFrameRate>(
-            (static_cast<uint8_t>(device_settings_.pet_frame_rate) + 1) % 3);
+        interaction_ = SettingsInteraction::applying;
         return {.captured = true,
-                .command = SettingsCommandKind::apply_display_settings};
+                .command = SettingsCommandKind::apply_display_settings,
+                .device_settings = device_settings_};
       default:
         interaction_ = SettingsInteraction::result;
         break;

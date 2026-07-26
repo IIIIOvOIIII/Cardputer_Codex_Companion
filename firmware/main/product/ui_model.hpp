@@ -20,6 +20,10 @@ enum class UiPage : uint8_t {
   settings,
 };
 
+constexpr bool ui_page_allows_host_input(UiPage page) {
+  return page == UiPage::pet;
+}
+
 struct UiPageContent {
   std::array<std::string, 12> lines{};
   uint8_t count = 0;

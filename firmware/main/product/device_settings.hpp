@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 enum class Brightness : uint8_t {
   percent_25,
@@ -35,6 +36,8 @@ struct DeviceSettings {
 };
 
 inline constexpr std::size_t kDeviceSettingsRecordBytes = 12;
+inline constexpr std::string_view kDeviceSettingsStorageKey = "display_cfg";
+static_assert(kDeviceSettingsStorageKey.size() <= 15);
 using DeviceSettingsRecord =
     std::array<uint8_t, kDeviceSettingsRecordBytes>;
 
@@ -70,4 +73,3 @@ class DeviceSettingsStore {
   DeviceSettingsBackend& backend_;
   DeviceSettings current_{};
 };
-

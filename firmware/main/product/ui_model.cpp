@@ -270,11 +270,11 @@ UiPageContent UiModel::page_content() const {
       add_line(content, std::string(pet_state_name(pet_state_)));
       break;
     case UiPage::device_status:
+      add_line(content, "VERSION:" + std::string(kProductVersion));
+      add_line(content, "PIN:" + pairing_code_);
       add_line(content, "BLE:" + std::string(compact_state(ble_)));
       add_line(content, "WIFI:" + std::string(compact_state(wifi_)));
       add_line(content, "AGENT:" + std::string(compact_state(companion_)));
-      add_line(content, "FW:" + std::string(kProductVersion));
-      add_line(content, "PIN:********");
       break;
     case UiPage::codex_status:
       add_line(content, "SESSION:" + session_title_);

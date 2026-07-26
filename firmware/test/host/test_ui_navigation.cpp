@@ -1,8 +1,15 @@
 #include <cassert>
 
+#include "product/ui_model.hpp"
 #include "product/ui_navigation.hpp"
 
 int main() {
+  assert(ui_page_allows_host_input(UiPage::pet));
+  assert(!ui_page_allows_host_input(UiPage::device_status));
+  assert(!ui_page_allows_host_input(UiPage::codex_status));
+  assert(!ui_page_allows_host_input(UiPage::sync_status));
+  assert(!ui_page_allows_host_input(UiPage::settings));
+
   UiNavigation navigation;
   auto result = navigation.on_key(39, true, false);
   assert(!result.captured);

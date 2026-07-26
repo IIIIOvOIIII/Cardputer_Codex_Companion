@@ -24,6 +24,9 @@ struct MemorySettingsBackend final : DeviceSettingsBackend {
 };
 
 int main() {
+  static_assert(kDeviceSettingsStorageKey.size() <= 15);
+  assert(kDeviceSettingsStorageKey == "display_cfg");
+
   const DeviceSettings defaults;
   assert(defaults.brightness == Brightness::percent_75);
   assert(defaults.return_to_pet == ReturnToPet::seconds_30);

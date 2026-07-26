@@ -1,4 +1,4 @@
-# Cardputer Codex Companion 1.0.30 用户指南
+# Cardputer Codex Companion 1.0.31 用户指南
 
 ## 页面与方向键
 
@@ -9,11 +9,20 @@
 - `Fn+,`：上一页
 - `Fn+/`：下一页
 
-Pets 以 2、2.5 或 3 FPS 播放 Mac Companion 同步的当前 Codex 宠物。Device 显示版本、掩码 PIN、BLE、Wi‑Fi 和 Agent。Codex 显示活跃会话、Model、Fast、Thinking Level 以及真实返回的 5H/Weekly 限额；无法识别或超过 120 秒的限额直接隐藏。Sync 显示 IP、Heartbeat、Pet Sync 与当前键盘 Profile。
+Pets 以 2、2.5 或 3 FPS 播放 Mac Companion 同步的当前 Codex 宠物。Device 显示版本、真实 PIN、BLE、Wi‑Fi 和 Agent。Codex 显示活跃会话、Model、Fast、Thinking Level 以及真实返回的 5H/Weekly 限额；无法识别或超过 120 秒的限额直接隐藏。Sync 显示 IP、Heartbeat、Pet Sync 与当前键盘 Profile。
+
+只有 Pets 页面会把普通键盘输入发送给蓝牙 HID 或按键宏。Device、Codex、Sync 和 Settings 页面中的按键只供 Cardputer 本地操作。
 
 ## Settings
 
-进入 Settings 后，不按 Fn 使用 `;`/`.` 上下选择，`,` 返回，`/` 进入。Settings 会截获这些键，不向蓝牙主机发送；离开 Settings 后标点恢复为普通 HID 输入。
+进入 Settings 后，不按 Fn 使用：
+
+- `;`/`.`：上下选择。
+- `,`/`/`：减小/增大当前值，或在子菜单选择上一个/下一个值。
+- Enter：进入、确认或保存。
+- 反引号：取消或返回；在根菜单返回 Pets。
+
+文本编辑时 Enter 保存、反引号取消、Backspace 删除。
 
 菜单支持：
 

@@ -66,7 +66,6 @@ constexpr char kTag[] = "cardputer-product";
 constexpr std::size_t kMacroQueueDepth = 16;
 constexpr std::size_t kSettingsQueueDepth = 4;
 constexpr char kSettingsNvsNamespace[] = "product";
-constexpr char kSettingsNvsKey[] = "display_settings";
 
 struct MacroInvocation {
   uint8_t layer = 0;
@@ -76,6 +75,7 @@ struct MacroInvocation {
 struct SettingsInvocation {
   SettingsCommandKind command = SettingsCommandKind::none;
   uint8_t selected = 0;
+  DeviceSettings device_settings{};
   std::array<char, 9> pin{};
   std::array<char, 9> profile_id{};
   std::array<char, 33> ssid{};
@@ -91,7 +91,8 @@ class NvsDeviceSettingsBackend final : public DeviceSettingsBackend {
     }
     size_t size = output.size();
     const esp_err_t result =
-        nvs_get_blob(handle, kSettingsNvsKey, output.data(), &size);
+        nvs_get_blob(handle, kDeviceSettingsStorageKey.data(),
+                     output.data(), &size);
     nvs_close(handle);
     return result == ESP_OK && size == output.size();
   }
@@ -102,9 +103,14 @@ class NvsDeviceSettingsBackend final : public DeviceSettingsBackend {
       return false;
     }
     esp_err_t result =
-        nvs_set_blob(handle, kSettingsNvsKey, input.data(), input.size());
+        nvs_set_blob(handle, kDeviceSettingsStorageKey.data(),
+                     input.data(), input.size());
     if (result == ESP_OK) result = nvs_commit(handle);
     nvs_close(handle);
+    if (result != ESP_OK) {
+      ESP_LOGE(kTag, "device settings NVS commit failed: %s",
+               esp_err_to_name(result));
+    }
     return result == ESP_OK;
   }
 };
@@ -207,21 +213,30 @@ void refresh_profile_choices_locked() {
       std::span<const std::string_view>(names.data(), count));
 }
 
-void queue_settings_command(const SettingsInputResult& result) {
+bool queue_settings_command(const SettingsInputResult& result) {
   if (result.command == SettingsCommandKind::none ||
-      result.command == SettingsCommandKind::release_hid ||
-      g_settings_queue == nullptr) {
-    return;
+      result.command == SettingsCommandKind::release_hid) {
+    return true;
+  }
+  if (g_settings_queue == nullptr) {
+    ESP_LOGE(kTag, "settings command queue unavailable");
+    return false;
   }
   SettingsInvocation invocation{
       .command = result.command,
       .selected = g_settings.selected(),
+      .device_settings = result.device_settings,
   };
   copy_setting(g_settings.pin_value(), invocation.pin);
   copy_setting(g_settings.profile_id(), invocation.profile_id);
   copy_setting(g_settings.ssid_value(), invocation.ssid);
   copy_setting(g_settings.password_value(), invocation.password);
-  xQueueSend(g_settings_queue, &invocation, 0);
+  if (xQueueSend(g_settings_queue, &invocation, 0) != pdTRUE) {
+    ESP_LOGE(kTag, "settings command queue full: command=%u",
+             static_cast<unsigned>(result.command));
+    return false;
+  }
+  return true;
 }
 
 void wifi_scan_finished(std::span<const WifiScanEntry> entries) {
@@ -340,36 +355,54 @@ void process_settings_command(const SettingsInvocation& invocation) {
           if (input_lock.locked()) g_input_router.leave_safe_profile();
         }
         result_text = "PROFILE ACTIVATED";
+      } else {
+        result_text = "PROFILE ACTIVATE FAILED";
+        ESP_LOGE(kTag, "settings profile activation failed");
       }
       break;
-    case SettingsCommandKind::scan_wifi:
-      success = product_wifi_scan(wifi_scan_finished) == ESP_OK;
+    case SettingsCommandKind::scan_wifi: {
+      const esp_err_t result = product_wifi_scan(wifi_scan_finished);
+      success = result == ESP_OK;
       if (success) return;
       result_text = "WIFI SCAN FAILED";
+      ESP_LOGE(kTag, "settings Wi-Fi scan failed: %s",
+               esp_err_to_name(result));
       break;
-    case SettingsCommandKind::rotate_pin:
-      success = product_web_rotate_pin(invocation.pin.data()) == ESP_OK;
+    }
+    case SettingsCommandKind::rotate_pin: {
+      const esp_err_t result =
+          product_web_rotate_pin(invocation.pin.data());
+      success = result == ESP_OK;
       result_text = success ? "PIN UPDATED" : "PIN UPDATE FAILED";
-      break;
-    case SettingsCommandKind::stage_wifi:
-      success = product_wifi_save(invocation.ssid.data(),
-                                  invocation.password.data()) == ESP_OK;
-      result_text = success ? "WIFI CONNECTING" : "WIFI UPDATE FAILED";
-      break;
-    case SettingsCommandKind::apply_display_settings: {
-      DeviceSettings settings;
-      {
-        SemaphoreLock lock(g_input_mutex);
-        if (!lock.locked()) return;
-        settings = g_settings.device_settings();
+      if (!success) {
+        ESP_LOGE(kTag, "settings PIN update failed: %s",
+                 esp_err_to_name(result));
       }
-      success =
-          g_device_settings_store.apply(settings) == DeviceSettingsResult::ok;
+      break;
+    }
+    case SettingsCommandKind::stage_wifi: {
+      const esp_err_t result =
+          product_wifi_save(invocation.ssid.data(),
+                            invocation.password.data());
+      success = result == ESP_OK;
+      result_text = success ? "WIFI CONNECTING" : "WIFI UPDATE FAILED";
+      if (!success) {
+        ESP_LOGE(kTag, "settings Wi-Fi update failed: %s",
+                 esp_err_to_name(result));
+      }
+      break;
+    }
+    case SettingsCommandKind::apply_display_settings: {
+      const DeviceSettingsResult apply_result =
+          g_device_settings_store.apply(invocation.device_settings);
+      success = apply_result == DeviceSettingsResult::ok;
       if (success) {
-        apply_runtime_settings(settings);
+        apply_runtime_settings(invocation.device_settings);
         result_text = "SETTING SAVED";
       } else {
         result_text = "SETTING SAVE FAILED";
+        ESP_LOGE(kTag, "settings display save failed: result=%u",
+                 static_cast<unsigned>(apply_result));
       }
       break;
     }
@@ -454,8 +487,9 @@ void keyboard_event(const MatrixKeyEvent& event) {
         g_last_ui_input_ms.store(
             static_cast<uint64_t>(esp_timer_get_time()) / 1000);
       }
-      if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
-      queue_settings_command(settings_result);
+      if (!queue_settings_command(settings_result)) {
+        g_settings.set_result("COMMAND QUEUE FAILED");
+      }
       update_settings_ui_locked();
       return;
     }
@@ -468,7 +502,6 @@ void keyboard_event(const MatrixKeyEvent& event) {
       g_last_ui_input_ms.store(
           static_cast<uint64_t>(esp_timer_get_time()) / 1000);
     }
-    if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
     UiPage next_page = page;
     if (navigation.action != UiNavAction::none) {
       SemaphoreLock ui_lock(g_ui_mutex);
@@ -477,12 +510,24 @@ void keyboard_event(const MatrixKeyEvent& event) {
         next_page = g_ui.page();
       }
     }
+    if (next_page != page) {
+      if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+      g_pressed.fill(false);
+    }
     if (next_page == UiPage::settings && !g_settings.active()) {
       g_settings.enter();
       refresh_profile_choices_locked();
       update_settings_ui_locked();
     } else if (next_page != UiPage::settings && g_settings.active()) {
       g_settings.leave();
+    }
+    return;
+  }
+
+  if (!ui_page_allows_host_input(page)) {
+    if (event.pressed) {
+      g_last_ui_input_ms.store(
+          static_cast<uint64_t>(esp_timer_get_time()) / 1000);
     }
     return;
   }

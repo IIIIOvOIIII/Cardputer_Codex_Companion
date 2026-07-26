@@ -23,6 +23,7 @@ enum class SettingsCommandKind : uint8_t {
 struct SettingsInputResult {
   bool captured = false;
   SettingsCommandKind command = SettingsCommandKind::none;
+  DeviceSettings device_settings{};
 };
 
 enum class SettingsInteraction : uint8_t {
