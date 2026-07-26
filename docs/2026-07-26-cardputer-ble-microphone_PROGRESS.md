@@ -9,3 +9,13 @@
 - Result: Achieved。用户确认自定义加密 BLE Audio GATT、24 kHz IMA-ADPCM、G0
   短按开关、系统级 Core Audio 虚拟麦克风、原 G0 功能全部迁入 Settings，以及分阶段硬件门禁。
 - Next step: 完成设计规格自检并提交文档，等待用户复核后再编写实施计划；本阶段不修改代码。
+
+## 2026-07-26 14:42 HKT
+
+- Current work: 将已批准设计拆分为协议、固件采集与 BLE、Mac 音频管线、共享环形缓冲、HAL
+  驱动、XPC、安装、产品集成和 HIL 的 TDD 实施任务。
+- Expected result: 每个任务具备精确文件、接口、RED/GREEN 命令、提交边界和硬件停止门禁。
+- Result: Achieved。计划以 `31fea44` 为基线，要求新建 `feat/ble-microphone`
+  隔离工作树；24 kHz 十分钟真机门禁位于 HAL 扩展之前，失败时只能固定降为 16 kHz，不能放宽
+  HID、堆、栈或丢帧阈值。
+- Next step: 自检实施计划的规格覆盖、占位符和跨任务类型一致性，提交后由用户选择执行方式。
