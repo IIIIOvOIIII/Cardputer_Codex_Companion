@@ -1,10 +1,12 @@
 #include "CardputerAudioDevice.h"
-#include "CardputerAudioIPC.h"
+#include "CardputerAudioXPCClient.h"
 
 #include <CoreAudio/AudioHardware.h>
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <CoreFoundation/CFPlugInCOM.h>
 #include <mach/mach_time.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <string.h>
@@ -168,6 +170,40 @@ static _Atomic Boolean g_stream_active = true;
 static _Atomic UInt64 g_anchor_host_time = 0;
 static _Atomic UInt64 g_timeline_seed = 1;
 static double g_host_ticks_per_frame = 0.0;
+static void *g_ring_mapping = NULL;
+
+static void connect_shared_ring(void) {
+  CardputerAudioXPCClient *client =
+      cardputer_audio_xpc_client_create();
+  if (client == NULL) {
+    return;
+  }
+  const int descriptor =
+      cardputer_audio_xpc_client_consumer_claim(client, 1);
+  cardputer_audio_xpc_client_destroy(client);
+  if (descriptor < 0) {
+    return;
+  }
+  const size_t size = cardputer_audio_ring_size();
+  void *mapping = mmap(
+      NULL,
+      size,
+      PROT_READ | PROT_WRITE,
+      MAP_SHARED,
+      descriptor,
+      0);
+  close(descriptor);
+  if (mapping == MAP_FAILED) {
+    return;
+  }
+  CardputerAudioRing *ring = mapping;
+  if (!cardputer_audio_ring_is_valid(ring)) {
+    munmap(mapping, size);
+    return;
+  }
+  g_ring_mapping = mapping;
+  cardputer_audio_device_set_ring(&g_device, ring);
+}
 
 __attribute__((visibility("default"))) void *CardputerAudioDriverFactory(
     CFAllocatorRef allocator,
@@ -251,6 +287,7 @@ static OSStatus driver_initialize(
     return kAudioHardwareBadObjectError;
   }
   cardputer_audio_device_initialize(&g_device);
+  connect_shared_ring();
   mach_timebase_info_data_t timebase = {0};
   if (mach_timebase_info(&timebase) != KERN_SUCCESS ||
       timebase.numer == 0) {
@@ -261,7 +298,6 @@ static OSStatus driver_initialize(
   g_host_ticks_per_frame = ticks_per_second / 48000.0;
   atomic_store_explicit(
       &g_anchor_host_time, mach_absolute_time(), memory_order_release);
-  (void)cardputer_audio_ipc_server_start(&g_device);
   return noErr;
 }
 

@@ -94,6 +94,19 @@ int cardputer_audio_xpc_client_claim(
   return descriptor;
 }
 
+int cardputer_audio_xpc_client_consumer_claim(
+    CardputerAudioXPCClient *client,
+    uint32_t version) {
+  xpc_object_t reply =
+      send_request(client, "consumer_claim", version);
+  if (reply == NULL) {
+    return -1;
+  }
+  const int descriptor = xpc_dictionary_dup_fd(reply, "fd");
+  xpc_release(reply);
+  return descriptor;
+}
+
 bool cardputer_audio_xpc_client_heartbeat(
     CardputerAudioXPCClient *client) {
   xpc_object_t reply = send_request(client, "heartbeat", 0);

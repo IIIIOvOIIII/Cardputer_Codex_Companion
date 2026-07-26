@@ -316,14 +316,16 @@ The end-to-end p95 latency target is 250 ms or less.
 
 ### CardputerAudioBridge
 
-The bridge connects the user process to the HAL plug-in through an authenticated
-XPC control channel and a preallocated shared-memory single-producer,
-single-consumer ring.
+The bridge is a root-owned launchd Mach service that connects the user process
+to the HAL plug-in through authenticated XPC control channels and a preallocated
+shared-memory single-producer, single-consumer ring.
 
-The plug-in creates the shared memory and gives a writable mapping only to an
-authenticated Companion. The Core Audio side maps it read-only. Only one
-producer lease may be active. The lease expires after approximately two
-seconds without a valid producer heartbeat.
+The launchd helper creates the shared memory, gives a writable mapping only to
+an authenticated Companion, and gives the consumer mapping only to Apple
+platform-signed `coreaudiod`. Only one producer lease may be active. The lease
+expires after approximately two seconds without a valid producer heartbeat.
+The HAL plug-in is an outbound XPC client; it does not attempt to register a
+Mach listener from inside `coreaudiod`.
 
 The Core Audio realtime callback only performs bounded atomic ring reads and
 silence fill. It performs no BLE, XPC, filesystem, logging, locking, or dynamic
@@ -344,16 +346,20 @@ The device remains enumerated while installed. If there is no producer, the
 producer lease expires, the ring underruns, or protocol versions do not match,
 the device outputs digital silence.
 
-The plug-in and Companion share one release signing identity. The XPC endpoint
-validates the caller's code-signing identifier and Team ID before sharing the
-ring. Development-only ad-hoc builds must be visibly marked and restricted to
-the current Mac; they are not a substitute for release signing.
+The Companion, helper, and plug-in share one release signing identity. The
+helper validates the producer's code-signing identifier and Team ID, and
+separately requires the consumer to be Apple platform-signed `coreaudiod`,
+before sharing the ring. Development-only ad-hoc builds must be visibly marked
+and restricted to the current Mac; they are not a substitute for release
+signing.
 
 ## Packaging and Operations
 
 The Companion distribution adds:
 
 - `CardputerCodexMicrophone.driver`;
+- `CardputerAudioBridge`;
+- `com.lynx.cardputer-audio-bridge.plist`;
 - `cardputer-companion install-audio-driver`;
 - `cardputer-companion uninstall-audio-driver`;
 - `cardputer-companion doctor audio`.
@@ -361,6 +367,11 @@ The Companion distribution adds:
 The plug-in installs under:
 
 `/Library/Audio/Plug-Ins/HAL/CardputerCodexMicrophone.driver`
+
+The helper and daemon configuration install under:
+
+- `/Library/PrivilegedHelperTools/com.lynx.cardputer-audio-bridge`;
+- `/Library/LaunchDaemons/com.lynx.cardputer-audio-bridge.plist`.
 
 Administrator authorization is required only for install, upgrade, and
 uninstall. The supported activation path is the Apple-documented audio-service

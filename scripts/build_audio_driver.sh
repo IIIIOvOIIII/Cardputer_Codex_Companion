@@ -4,8 +4,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 driver_source="$repo_root/companion/AudioDriver"
 bridge_source="$repo_root/companion/Sources/CAudioBridge"
+helper_source="$repo_root/companion/AudioHelper"
 bundle="$repo_root/dist/CardputerCodexMicrophone.driver"
 executable="$bundle/Contents/MacOS/CardputerCodexMicrophone"
+bridge_helper="$repo_root/dist/CardputerAudioBridge"
+launchd_plist="$repo_root/dist/com.lynx.cardputer-audio-bridge.plist"
 run_tests=false
 
 if [[ "${1:-}" == "--test" ]]; then
@@ -65,13 +68,30 @@ xcrun --sdk macosx clang \
   -DCARDPUTER_AUDIO_CONSOLE_UID="$(id -u)" \
   -bundle \
   "$bridge_source/CardputerAudioRing.c" \
+  "$bridge_source/CardputerAudioXPCClient.c" \
   "$driver_source/CardputerAudioDevice.c" \
-  "$driver_source/CardputerAudioIPC.c" \
   "$driver_source/CardputerAudioDriver.c" \
   -framework CoreAudio \
   -framework CoreFoundation \
-  -framework Security \
   -o "$executable"
 codesign --force --sign - "$bundle"
 codesign --verify --strict "$bundle"
+
+xcrun --sdk macosx clang \
+  "${common_flags[@]}" \
+  -fblocks \
+  -DCARDPUTER_AUDIO_DEVELOPMENT=1 \
+  -DCARDPUTER_AUDIO_CONSOLE_UID="$(id -u)" \
+  "$bridge_source/CardputerAudioRing.c" \
+  "$driver_source/CardputerAudioIPC.c" \
+  "$helper_source/CardputerAudioBridgeMain.c" \
+  -framework CoreFoundation \
+  -framework Security \
+  -o "$bridge_helper"
+codesign --force --sign - "$bridge_helper"
+codesign --verify --strict "$bridge_helper"
+cp \
+  "$helper_source/com.lynx.cardputer-audio-bridge.plist" \
+  "$launchd_plist"
 echo "Audio driver: $bundle"
+echo "Audio bridge: $bridge_helper"

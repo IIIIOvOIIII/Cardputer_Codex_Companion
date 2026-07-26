@@ -59,8 +59,10 @@
 - `companion/Sources/CAudioBridge/CardputerAudioRing.c`: C17 atomic ring implementation.
 - `companion/AudioDriver/CardputerAudioDriver.c`: `AudioServerPlugInDriverInterface` and property dispatch.
 - `companion/AudioDriver/CardputerAudioDevice.c/.h`: input-device state and realtime render adapter.
-- `companion/AudioDriver/CardputerAudioIPC.c/.h`: Mach service, caller validation, shared FD, lease.
-- `companion/AudioDriver/Info.plist`: HAL bundle and `AudioServerPlugIn_MachServices`.
+- `companion/AudioDriver/CardputerAudioIPC.c/.h`: launchd bridge server, caller validation, shared FD, lease.
+- `companion/AudioHelper/CardputerAudioBridgeMain.c`: root-owned launchd service entry point.
+- `companion/AudioHelper/com.lynx.cardputer-audio-bridge.plist`: system Mach service registration.
+- `companion/AudioDriver/Info.plist`: HAL bundle and permission to look up the bridge Mach service.
 - `scripts/build_audio_driver.sh`: deterministic driver bundle build.
 - `scripts/install_audio_driver.sh`: root-only atomic install/uninstall helper used by the CLI.
 
@@ -1066,6 +1068,8 @@ git commit -m "feat: add Cardputer virtual microphone driver"
 - Create: `companion/AudioDriver/CardputerAudioIPC.h`
 - Create: `companion/AudioDriver/CardputerAudioIPC.c`
 - Create: `companion/AudioDriver/Tests/CardputerAudioIPCTests.c`
+- Create: `companion/AudioHelper/CardputerAudioBridgeMain.c`
+- Create: `companion/AudioHelper/com.lynx.cardputer-audio-bridge.plist`
 - Create: `companion/Sources/ProductAudio/AudioDriverConnection.swift`
 - Create: `companion/Tests/ProductAudioTests/AudioDriverConnectionTests.swift`
 - Modify: `companion/AudioDriver/CardputerAudioDriver.c`
@@ -1117,9 +1121,11 @@ Expected: FAIL because IPC and connection types are absent.
 
 - [ ] **Step 4: Implement secure XPC and anonymous shared memory**
 
-The driver creates an anonymous `shm_open` object with a random name, unlinks
-it immediately, sizes and maps it, and transfers a duplicate FD over XPC only
-after validation. Do not publish a global writable path or TCP/Unix listener.
+The root-owned launchd bridge creates an anonymous `shm_open` object with a
+random name, unlinks it immediately, sizes and maps it, and transfers duplicate
+FDs over XPC only after validating the Companion producer and Apple
+platform-signed `coreaudiod` consumer. The HAL plug-in and Companion are
+outbound clients. Do not publish a global writable path or TCP/Unix listener.
 
 Validate release builds with Security.framework using the connection audit
 token, bundle identifier, and configured Team ID. Compile ad-hoc acceptance

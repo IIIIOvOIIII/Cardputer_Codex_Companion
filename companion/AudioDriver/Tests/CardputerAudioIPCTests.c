@@ -14,6 +14,7 @@ int main(void) {
       .team_id = "",
       .effective_uid = 501,
       .ad_hoc = true,
+      .apple_platform = false,
   };
   assert(cardputer_audio_ipc_authorize(&development, &peer));
   peer.bundle_id = "com.example.attacker";
@@ -34,6 +35,22 @@ int main(void) {
   assert(!cardputer_audio_ipc_authorize(&release, &peer));
   peer.team_id = "TEAM123456";
   assert(cardputer_audio_ipc_authorize(&release, &peer));
+
+  const CardputerAudioIPCPolicy consumer = {
+      .expected_bundle_id = "com.apple.audio.coreaudiod",
+      .expected_team_id = "",
+      .console_uid = 0,
+      .development = false,
+      .require_apple_platform = true,
+  };
+  peer.bundle_id = "com.apple.audio.coreaudiod";
+  peer.team_id = "";
+  peer.effective_uid = 202;
+  peer.ad_hoc = false;
+  peer.apple_platform = false;
+  assert(!cardputer_audio_ipc_authorize(&consumer, &peer));
+  peer.apple_platform = true;
+  assert(cardputer_audio_ipc_authorize(&consumer, &peer));
 
   CardputerAudioRing ring;
   cardputer_audio_ring_initialize(&ring);

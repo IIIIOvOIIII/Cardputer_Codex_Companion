@@ -29,6 +29,9 @@ int cardputer_audio_xpc_client_claim(
     CardputerAudioXPCClient *client,
     uint32_t version)
     CARDPUTER_SWIFT_NAME("cardputerAudioXPCClientClaim(_:version:)");
+int cardputer_audio_xpc_client_consumer_claim(
+    CardputerAudioXPCClient *client,
+    uint32_t version);
 bool cardputer_audio_xpc_client_heartbeat(
     CardputerAudioXPCClient *client)
     CARDPUTER_SWIFT_NAME("cardputerAudioXPCClientHeartbeat(_:)");

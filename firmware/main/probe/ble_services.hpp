@@ -107,6 +107,11 @@ std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage);
 bool ble_companion_link_allows(bool encrypted, bool authenticated, bool bonded);
 uint8_t ble_bond_store_schema_version();
 bool ble_should_reset_bond_store(uint8_t stored_version);
+uint8_t ble_gatt_database_schema_version();
+bool ble_should_publish_gatt_service_changed(uint8_t stored_version);
+bool ble_should_signal_gatt_database_change(
+    bool migration_pending,
+    bool indicate_enabled);
 bool ble_should_start_advertising(bool connected, bool advertising_active);
 uint32_t ble_stale_link_timeout_ms();
 bool ble_should_reset_stale_link(const BleKeyboardLinkState& state,

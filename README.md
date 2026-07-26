@@ -49,7 +49,11 @@ dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
   run --device https://设备IP --pairing 屏幕八位PIN
 ```
 
-   当前开发包使用 ad-hoc 签名，只适用于这台 Mac。安装或升级 driver 后按安装器提示重启 Core Audio 服务或 Mac；正常 Companion 运行不需要管理员权限。在应用中选择系统输入设备 `Cardputer Codex Microphone`。
+   当前开发包使用 ad-hoc 签名，只适用于这台 Mac。安装命令会部署 HAL driver、由
+   launchd 注册的特权音频桥和对应 LaunchDaemon；Companion 与 HAL 分别作为经过
+   签名校验的 producer/consumer 连接音频桥。安装或升级后按安装器提示重启 Core
+   Audio 服务或 Mac；正常 Companion 运行不需要管理员权限。在应用中选择系统输入
+   设备 `Cardputer Codex Microphone`。
 
 5. 在 Web 中点击键位打开弹窗，把某个按键设为“中文字符串”并填入中文，或设为“组合键”后直接按下 `Alt+V` 这类组合键采集；非直通键会在键帽上显示真实用途，发布后即可使用。Settings 选项卡可修改 PIN 和 Wi‑Fi 信息。
 

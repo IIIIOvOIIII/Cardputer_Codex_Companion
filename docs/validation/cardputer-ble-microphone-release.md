@@ -7,8 +7,12 @@
 - Core Audio format: 48 kHz mono 32-bit float input-only
 - Virtual device: `Cardputer Codex Microphone`
 - Driver signing: current-Mac development ad-hoc signing
-- Installation target:
+- HAL installation target:
   `/Library/Audio/Plug-Ins/HAL/CardputerCodexMicrophone.driver`
+- Audio bridge target:
+  `/Library/PrivilegedHelperTools/com.lynx.cardputer-audio-bridge`
+- LaunchDaemon target:
+  `/Library/LaunchDaemons/com.lynx.cardputer-audio-bridge.plist`
 
 ## Operation and privacy
 
@@ -33,15 +37,19 @@ dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor audio
 
 Normal `run` does not require elevation. The development build validates the
 exact Companion bundle identifier, ad-hoc signature, and current console UID.
+A root-owned launchd Mach service owns the anonymous shared ring and authenticates
+the Companion producer plus Apple platform-signed `coreaudiod` consumer. The HAL
+plug-in does not try to register a Mach service from inside `coreaudiod`.
 A broadly distributable build still requires Developer ID signing and Apple
 notarization.
 
 ## Recovery behavior
 
 The Companion sends sink-not-ready before normal shutdown. If the HAL producer
-heartbeat fails, it suspends the Cardputer sink, rebuilds the XPC/ring lease,
-then sends sink-ready. Firmware returns to `READY`; it does not resume PDM
-capture. The HAL renders digital silence while there is no valid producer.
+heartbeat fails, it suspends the Cardputer sink, rebuilds its launchd audio-bridge
+XPC/ring lease, then sends sink-ready. Firmware returns to `READY`; it does not
+resume PDM capture. The HAL maps the consumer side of the same bridge-owned ring
+and renders digital silence while there is no valid producer.
 
 ## Final evidence
 

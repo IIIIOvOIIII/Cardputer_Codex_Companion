@@ -17,6 +17,16 @@ APP_HELPER = (
     / "dist/CardputerCompanion.app/Contents/Resources"
     / "install_audio_driver.sh"
 )
+APP_BRIDGE = (
+    ROOT
+    / "dist/CardputerCompanion.app/Contents/Resources"
+    / "CardputerAudioBridge"
+)
+APP_LAUNCHD = (
+    ROOT
+    / "dist/CardputerCompanion.app/Contents/Resources"
+    / "com.lynx.cardputer-audio-bridge.plist"
+)
 
 
 def test_companion_bundles_driver_and_root_helper():
@@ -25,6 +35,8 @@ def test_companion_bundles_driver_and_root_helper():
     assert "Contents/Resources" in source
     assert "CardputerCodexMicrophone.driver" in source
     assert "install_audio_driver.sh" in source
+    assert "CardputerAudioBridge" in source
+    assert "com.lynx.cardputer-audio-bridge.plist" in source
 
 
 def test_installer_rejects_non_root_without_test_root():
@@ -53,13 +65,39 @@ def test_installer_stages_validated_bundle_and_uninstalls_exact_target(tmp_path)
             }
         )
     )
+    source_bridge = tmp_path / "CardputerAudioBridge"
+    source_bridge.write_bytes(b"helper")
+    source_bridge.chmod(0o755)
+    source_launchd = tmp_path / "com.lynx.cardputer-audio-bridge.plist"
+    source_launchd.write_bytes(
+        plistlib.dumps(
+            {
+                "Label": "com.lynx.cardputer-audio-bridge",
+                "ProgramArguments": [
+                    (
+                        "/Library/PrivilegedHelperTools/"
+                        "com.lynx.cardputer-audio-bridge"
+                    )
+                ],
+                "MachServices": {
+                    "com.lynx.cardputer-codex-microphone.ipc": True
+                },
+            }
+        )
+    )
     test_root = tmp_path / "root"
     environment = dict(os.environ)
     environment["CARDPUTER_AUDIO_INSTALL_TEST_ROOT"] = str(test_root)
     environment["CARDPUTER_AUDIO_SKIP_SIGNATURE_CHECK"] = "1"
 
     subprocess.run(
-        [str(SCRIPT), "install", str(source_driver)],
+        [
+            str(SCRIPT),
+            "install",
+            str(source_driver),
+            str(source_bridge),
+            str(source_launchd),
+        ],
         check=True,
         env=environment,
         capture_output=True,
@@ -76,6 +114,18 @@ def test_installer_stages_validated_bundle_and_uninstalls_exact_target(tmp_path)
     )["CFBundleIdentifier"] == (
         "com.lynx.cardputer-codex-microphone.driver"
     )
+    installed_bridge = (
+        test_root
+        / "Library/PrivilegedHelperTools"
+        / "com.lynx.cardputer-audio-bridge"
+    )
+    installed_launchd = (
+        test_root
+        / "Library/LaunchDaemons"
+        / "com.lynx.cardputer-audio-bridge.plist"
+    )
+    assert installed_bridge.is_file()
+    assert installed_launchd.is_file()
     assert not list(target.parent.glob(".CardputerCodexMicrophone.*"))
 
     unrelated = target.parent / "Unrelated.driver"
@@ -88,6 +138,8 @@ def test_installer_stages_validated_bundle_and_uninstalls_exact_target(tmp_path)
         text=True,
     )
     assert not target.exists()
+    assert not installed_bridge.exists()
+    assert not installed_launchd.exists()
     assert unrelated.is_dir()
 
 
@@ -101,6 +153,9 @@ def test_built_app_contains_only_its_bundled_driver_source():
     assert APP_DRIVER.is_dir()
     assert APP_HELPER.is_file()
     assert os.access(APP_HELPER, os.X_OK)
+    assert APP_BRIDGE.is_file()
+    assert os.access(APP_BRIDGE, os.X_OK)
+    assert APP_LAUNCHD.is_file()
     source_info = plistlib.loads(
         (
             ROOT

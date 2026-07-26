@@ -1,7 +1,7 @@
 #ifndef CARDPUTER_AUDIO_IPC_H
 #define CARDPUTER_AUDIO_IPC_H
 
-#include "CardputerAudioDevice.h"
+#include "CardputerAudioRing.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,6 +15,7 @@ typedef struct CardputerAudioIPCPolicy {
   const char *expected_team_id;
   uid_t console_uid;
   bool development;
+  bool require_apple_platform;
 } CardputerAudioIPCPolicy;
 
 typedef struct CardputerAudioIPCPeer {
@@ -22,6 +23,7 @@ typedef struct CardputerAudioIPCPeer {
   const char *team_id;
   uid_t effective_uid;
   bool ad_hoc;
+  bool apple_platform;
 } CardputerAudioIPCPeer;
 
 typedef enum CardputerAudioIPCClaimResult {
@@ -54,6 +56,6 @@ bool cardputer_audio_ipc_heartbeat(
 bool cardputer_audio_ipc_release(
     CardputerAudioIPCLease *lease,
     uint64_t owner);
-int cardputer_audio_ipc_server_start(CardputerAudioDevice *device);
+int cardputer_audio_ipc_server_run(void);
 
 #endif

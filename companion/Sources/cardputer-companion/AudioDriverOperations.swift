@@ -154,12 +154,32 @@ enum AudioDriverOperations {
             let driver = resources.appending(
                 path: "CardputerCodexMicrophone.driver"
             )
+            let bridge = resources.appending(path: "CardputerAudioBridge")
+            let launchd = resources.appending(
+                path: "com.lynx.cardputer-audio-bridge.plist"
+            )
             guard FileManager.default.fileExists(atPath: driver.path) else {
                 throw AudioDriverOperationError.missingBundledResource(
                     "CardputerCodexMicrophone.driver"
                 )
             }
-            arguments.append(driver.path)
+            guard FileManager.default.isExecutableFile(
+                atPath: bridge.path
+            ) else {
+                throw AudioDriverOperationError.missingBundledResource(
+                    "CardputerAudioBridge"
+                )
+            }
+            guard FileManager.default.fileExists(atPath: launchd.path) else {
+                throw AudioDriverOperationError.missingBundledResource(
+                    "com.lynx.cardputer-audio-bridge.plist"
+                )
+            }
+            arguments.append(contentsOf: [
+                driver.path,
+                bridge.path,
+                launchd.path,
+            ])
         }
         let process = Process()
         process.executableURL = helper
@@ -182,4 +202,3 @@ enum AudioDriverOperations {
         ) as? String
     }
 }
-

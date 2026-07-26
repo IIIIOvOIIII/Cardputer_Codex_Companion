@@ -24,6 +24,7 @@ constexpr bool kBleKeyboardReadyRequiresSuccessfulEncryption = true;
 constexpr bool kBleKeyboardReadyRequiresAuthenticatedLink = true;
 constexpr bool kBleKeyboardReadyRequiresInputReportSubscription = true;
 constexpr uint8_t kBleBondStoreSchemaVersion = 6;
+constexpr uint8_t kBleGattDatabaseSchemaVersion = 2;
 
 constexpr std::size_t legacy_advertising_payload_bytes(
     std::string_view name) {
@@ -173,6 +174,20 @@ bool ble_should_reset_bond_store(uint8_t stored_version) {
   return stored_version != ble_bond_store_schema_version();
 }
 
+uint8_t ble_gatt_database_schema_version() {
+  return kBleGattDatabaseSchemaVersion;
+}
+
+bool ble_should_publish_gatt_service_changed(uint8_t stored_version) {
+  return stored_version != ble_gatt_database_schema_version();
+}
+
+bool ble_should_signal_gatt_database_change(
+    bool migration_pending,
+    bool indicate_enabled) {
+  return migration_pending && indicate_enabled;
+}
+
 bool ble_should_start_advertising(bool connected, bool advertising_active) {
   return !connected && !advertising_active;
 }
@@ -283,6 +298,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 #include "nimble/nimble_port_freertos.h"
 #include "nvs.h"
 #include "os/os_mbuf.h"
+#include "services/gatt/ble_svc_gatt.h"
 #include "probe/hid_engine.hpp"
 #include "services/gap/ble_svc_gap.h"
 
@@ -294,6 +310,7 @@ constexpr char kTag[] = "phase0-ble";
 constexpr char kNvsNamespace[] = "phase0_id";
 constexpr char kDeviceIdKey[] = "device_id";
 constexpr char kBleStoreSchemaKey[] = "ble_store_v";
+constexpr char kGattDatabaseSchemaKey[] = "gatt_db_v";
 constexpr const char* kDeviceName = kBleAdvertisedName;
 constexpr char kManufacturer[] = "Cardputer";
 constexpr uint16_t kVendorId = 0x16C0;
@@ -327,6 +344,7 @@ std::atomic<bool> g_audio_status_subscribed{false};
 std::atomic<bool> g_audio_companion_bound{false};
 std::atomic<bool> g_audio_encrypted{false};
 std::atomic<bool> g_last_audio_sink_ready{false};
+std::atomic<bool> g_gatt_database_change_pending{false};
 uint16_t g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 std::atomic<uint64_t> g_hid_state_changed_ms{0};
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -478,6 +496,45 @@ esp_err_t migrate_ble_bond_store_if_needed() {
   if (rc == ESP_OK) {
     ESP_LOGI(kTag, "BLE bond store migrated to schema %u",
              static_cast<unsigned>(ble_bond_store_schema_version()));
+  }
+  return rc;
+}
+
+esp_err_t load_gatt_database_migration_state() {
+  nvs_handle_t handle = 0;
+  esp_err_t rc = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
+  if (rc != ESP_OK) {
+    return rc;
+  }
+
+  uint8_t stored_version = 0;
+  rc = nvs_get_u8(handle, kGattDatabaseSchemaKey, &stored_version);
+  if (rc != ESP_OK && rc != ESP_ERR_NVS_NOT_FOUND) {
+    nvs_close(handle);
+    return rc;
+  }
+  g_gatt_database_change_pending.store(
+      ble_should_publish_gatt_service_changed(stored_version));
+  nvs_close(handle);
+  return ESP_OK;
+}
+
+esp_err_t persist_gatt_database_schema_version() {
+  nvs_handle_t handle = 0;
+  esp_err_t rc = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
+  if (rc != ESP_OK) {
+    return rc;
+  }
+  rc = nvs_set_u8(
+      handle, kGattDatabaseSchemaKey, ble_gatt_database_schema_version());
+  if (rc == ESP_OK) {
+    rc = nvs_commit(handle);
+  }
+  nvs_close(handle);
+  if (rc == ESP_OK) {
+    g_gatt_database_change_pending.store(false);
+    ESP_LOGI(kTag, "GATT database migrated to schema %u",
+             static_cast<unsigned>(ble_gatt_database_schema_version()));
   }
   return rc;
 }
@@ -751,6 +808,20 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
                static_cast<unsigned>(event->subscribe.cur_notify),
                static_cast<unsigned>(event->subscribe.prev_indicate),
                static_cast<unsigned>(event->subscribe.cur_indicate));
+      if (event->subscribe.prev_indicate != 0 ||
+          event->subscribe.cur_indicate != 0) {
+        if (ble_should_signal_gatt_database_change(
+                g_gatt_database_change_pending.load(),
+                event->subscribe.cur_indicate != 0)) {
+          ble_svc_gatt_changed(0x0001, 0xffff);
+          rc = persist_gatt_database_schema_version();
+          if (rc != ESP_OK) {
+            ESP_LOGE(kTag, "failed to persist GATT database schema: %s",
+                     esp_err_to_name(rc));
+          }
+        }
+        return 0;
+      }
       if (event->subscribe.attr_handle == g_notify_handle) {
         ESP_LOGI(kTag, "Companion GATT notify subscription ignored for HID readiness");
         return 0;
@@ -1023,6 +1094,10 @@ esp_err_t initialize_ble(
       BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
   ble_store_config_init();
   rc = migrate_ble_bond_store_if_needed();
+  if (rc != ESP_OK) {
+    return rc;
+  }
+  rc = load_gatt_database_migration_state();
   if (rc != ESP_OK) {
     return rc;
   }

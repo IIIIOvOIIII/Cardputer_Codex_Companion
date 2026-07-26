@@ -26,6 +26,7 @@
 #endif
 
 #define CARDPUTER_AUDIO_COMPANION_ID "com.lynx.cardputer-companion"
+#define CARDPUTER_AUDIO_COREAUDIOD_ID "com.apple.audio.coreaudiod"
 #define CARDPUTER_AUDIO_MACH_SERVICE \
   "com.lynx.cardputer-codex-microphone.ipc"
 
@@ -51,6 +52,9 @@ bool cardputer_audio_ipc_authorize(
       peer->bundle_id == NULL ||
       strcmp(policy->expected_bundle_id, peer->bundle_id) != 0) {
     return false;
+  }
+  if (policy->require_apple_platform) {
+    return peer->apple_platform && !peer->ad_hoc;
   }
   if (policy->development) {
     return peer->ad_hoc && peer->effective_uid == policy->console_uid;
@@ -154,6 +158,22 @@ static bool copy_cf_string(
              kCFStringEncodingUTF8);
 }
 
+static bool copy_cf_number(
+    CFDictionaryRef dictionary,
+    CFStringRef key,
+    int *output) {
+  if (dictionary == NULL || output == NULL) {
+    return false;
+  }
+  CFTypeRef value = CFDictionaryGetValue(dictionary, key);
+  return value != NULL &&
+         CFGetTypeID(value) == CFNumberGetTypeID() &&
+         CFNumberGetValue(
+             (CFNumberRef)value,
+             kCFNumberIntType,
+             output);
+}
+
 static bool peer_identity(
     xpc_connection_t connection,
     char bundle_id[256],
@@ -206,6 +226,11 @@ static bool peer_identity(
           kSecCodeInfoTeamIdentifier,
           team_id,
           128);
+  int platform_identifier = 0;
+  (void)copy_cf_number(
+      signing,
+      kSecCodeInfoPlatformIdentifier,
+      &platform_identifier);
   CFRelease(signing);
   if (!has_bundle) {
     return false;
@@ -217,10 +242,11 @@ static bool peer_identity(
   peer->team_id = team_id;
   peer->effective_uid = xpc_connection_get_euid(connection);
   peer->ad_hoc = !has_team;
+  peer->apple_platform = platform_identifier != 0;
   return true;
 }
 
-static bool authorize_connection(xpc_connection_t connection) {
+static bool authorize_producer(xpc_connection_t connection) {
   char bundle_id[256] = {0};
   char team_id[128] = {0};
   CardputerAudioIPCPeer peer = {0};
@@ -232,6 +258,24 @@ static bool authorize_connection(xpc_connection_t connection) {
       .expected_team_id = CARDPUTER_AUDIO_TEAM_ID,
       .console_uid = CARDPUTER_AUDIO_CONSOLE_UID,
       .development = CARDPUTER_AUDIO_DEVELOPMENT != 0,
+      .require_apple_platform = false,
+  };
+  return cardputer_audio_ipc_authorize(&policy, &peer);
+}
+
+static bool authorize_consumer(xpc_connection_t connection) {
+  char bundle_id[256] = {0};
+  char team_id[128] = {0};
+  CardputerAudioIPCPeer peer = {0};
+  if (!peer_identity(connection, bundle_id, team_id, &peer)) {
+    return false;
+  }
+  const CardputerAudioIPCPolicy policy = {
+      .expected_bundle_id = CARDPUTER_AUDIO_COREAUDIOD_ID,
+      .expected_team_id = "",
+      .console_uid = 0,
+      .development = false,
+      .require_apple_platform = true,
   };
   return cardputer_audio_ipc_authorize(&policy, &peer);
 }
@@ -271,16 +315,29 @@ static void handle_message(
   }
   xpc_connection_t remote =
       xpc_dictionary_get_remote_connection(event);
-  if (!authorize_connection(remote)) {
-    send_result(event, false, "unauthorized", -1);
-    return;
-  }
   const char *operation = xpc_dictionary_get_string(event, "op");
   if (operation == NULL) {
     send_result(event, false, "invalid_request", -1);
     return;
   }
   const uint64_t now = monotonic_nanoseconds();
+  if (strcmp(operation, "consumer_claim") == 0) {
+    const uint64_t version =
+        xpc_dictionary_get_uint64(event, "version");
+    const bool accepted =
+        version == CARDPUTER_AUDIO_IPC_PROTOCOL_VERSION &&
+        authorize_consumer(remote);
+    send_result(
+        event,
+        accepted,
+        accepted ? NULL : "unauthorized_or_protocol_mismatch",
+        accepted ? g_server.shared_fd : -1);
+    return;
+  }
+  if (!authorize_producer(remote)) {
+    send_result(event, false, "unauthorized", -1);
+    return;
+  }
   if (strcmp(operation, "hello") == 0) {
     const uint64_t version =
         xpc_dictionary_get_uint64(event, "version");
@@ -341,7 +398,7 @@ static void handle_message(
   send_result(event, false, "unknown_operation", -1);
 }
 
-static int create_shared_ring(CardputerAudioDevice *device) {
+static int create_shared_ring(void) {
   char name[96];
   for (int attempt = 0; attempt < 8; ++attempt) {
     snprintf(
@@ -384,15 +441,14 @@ static int create_shared_ring(CardputerAudioDevice *device) {
   CardputerAudioRing *ring = g_server.mapping;
   cardputer_audio_ring_initialize(ring);
   cardputer_audio_ipc_lease_initialize(&g_server.lease, ring);
-  cardputer_audio_device_set_ring(device, ring);
   return 0;
 }
 
-int cardputer_audio_ipc_server_start(CardputerAudioDevice *device) {
-  if (device == NULL || g_server.listener != NULL) {
-    return device == NULL ? -1 : 0;
+int cardputer_audio_ipc_server_run(void) {
+  if (g_server.listener != NULL) {
+    return 0;
   }
-  if (create_shared_ring(device) != 0) {
+  if (create_shared_ring() != 0) {
     return -1;
   }
   dispatch_queue_t queue = dispatch_queue_create(
@@ -420,5 +476,6 @@ int cardputer_audio_ipc_server_start(CardputerAudioDevice *device) {
         xpc_connection_resume(peer);
       });
   xpc_connection_resume(g_server.listener);
+  dispatch_main();
   return 0;
 }

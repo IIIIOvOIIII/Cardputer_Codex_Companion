@@ -271,3 +271,40 @@
   `9410d5b5410891805dac77a3dfe267be0e2aac7d81649c389e5f4e9a0438165b`。
 - Next step: 自动门禁再次通过后提交 Task 14，安装开发 HAL、重启 Core Audio、
   app-only 刷写并恢复 LaunchAgent；最后才执行实体 G0/HID/30 分钟 HIL。
+
+## 2026-07-26 19:09 HKT
+
+- Current work: 修正 HAL 进程内 Mach listener 架构、完成当前 Mac 安装，并排查
+  `doctor audio` 无法发现新增 BLE 音频特征的问题。
+- Expected result: launchd 系统服务持有匿名共享环；Companion producer 与
+  `coreaudiod` consumer 均通过签名策略连接；旧配对升级后主动刷新 GATT cache；
+  常驻 Agent 恢复时只回到 READY，不自动录音。
+- Result: Achieved。driver 1.1.0、root-owned helper 与 LaunchDaemon 已安装且签名
+  校验通过，Core Audio 枚举 48 kHz mono 输入。原 HAL 内 listener 违反 launchd
+  Mach service 注册模型，已改为独立桥。第二个根因为 Audio v1 在既有 service
+  内增加 0005/0006/0007 时未发布 Service Changed；新增独立 `gatt_db_v` 迁移，
+  并在 macOS 恢复 indication 订阅后发送再落盘。真机串口确认 schema 2，随后
+  `doctor audio` 的 driver、Core Audio、XPC、静音环、BLE characteristics、
+  subscriptions、protocol v1 和 24 kHz 全部通过。停止 Agent 后麦克风变为
+  UNAVAILABLE，重新加载第一次轮询即恢复 READY，未进入 RECORDING。
+- Next step: 更新发布产物并重新跑完整自动门禁，提交架构与 GATT cache 修复；
+  所有非实体工作完成后才开始 G0/HID/30 分钟最终 HIL。
+
+## 2026-07-26 19:13 HKT
+
+- Current work: 完成最终 clean release gate、精确 app-only 重刷和部署后音频诊断。
+- Expected result: 所有自动测试、sanitizer、ESP-IDF clean build、Swift、HAL、
+  helper、签名和打包通过；系统安装内容与 `dist` 一致；刷入镜像 digest 匹配；
+  重启后 BLE/Wi-Fi/Agent/MIC READY。
+- Result: Achieved。Python 168/168、音频专项 17/17、host normal 35/35、
+  ASan/UBSan 35/35、ESP-IDF 5.5.4 clean build、ProductAudio/ProductGATT/
+  ProductConfiguration、C ring/device/IPC、driver/helper/app 签名及 private
+  packaging 全部通过；应用分区保留 49%，DIRAM headroom 145,089 bytes。
+  driver/helper/LaunchDaemon 与最终发布 payload 字节一致。最终 app image
+  SHA-256 `858cbbb5fcf39fe6ca6f30940a31b301d6c1e55fbb11d7c0a768b570d7036a37`
+  已写入 `0x20000` 且独立 `verify_flash` digest matched；private full image
+  SHA-256 `7d724a14e53d128e459b700c7c7f725ae4f0d626074a22ea949443adc309fa71`。
+  冷启动第三次两秒轮询返回 1.1.0、BLE/Wi-Fi/Agent OK、MIC READY；隔离
+  LaunchAgent 后最终 `doctor audio` 八项再次全部通过，恢复 Agent 第一次轮询
+  回到 READY。
+- Next step: 提交最终修复；最后执行实体 G0、并发 HID 与 30 分钟 HIL。

@@ -10,6 +10,8 @@ EXECUTABLE = (
     DRIVER
     / "Contents/MacOS/CardputerCodexMicrophone"
 )
+BRIDGE = REPO_ROOT / "dist/CardputerAudioBridge"
+LAUNCHD = REPO_ROOT / "dist/com.lynx.cardputer-audio-bridge.plist"
 
 
 def test_driver_bundle_manifest_is_input_only():
@@ -41,9 +43,31 @@ def test_driver_binary_is_signed_and_links_required_frameworks():
         capture_output=True,
         text=True,
     ).stdout
-    for framework in ["CoreAudio", "CoreFoundation", "Security"]:
+    for framework in ["CoreAudio", "CoreFoundation"]:
         assert f"/{framework}.framework/" in linked
     assert "/usr/lib/libSystem.B.dylib" in linked
+
+
+def test_audio_bridge_is_launchd_registered_and_signed():
+    assert BRIDGE.is_file()
+    subprocess.run(
+        ["codesign", "--verify", "--strict", str(BRIDGE)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    linked = subprocess.run(
+        ["otool", "-L", str(BRIDGE)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "/Security.framework/" in linked
+    info = plistlib.loads(LAUNCHD.read_bytes())
+    assert info["Label"] == "com.lynx.cardputer-audio-bridge"
+    assert info["MachServices"] == {
+        "com.lynx.cardputer-codex-microphone.ipc": True
+    }
 
 
 def test_driver_bundle_marks_development_signing():

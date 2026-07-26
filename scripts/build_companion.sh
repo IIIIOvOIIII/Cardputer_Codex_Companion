@@ -18,8 +18,13 @@ cp -R "${repo_root}/dist/CardputerCodexMicrophone.driver" \
   "${resources_root}/CardputerCodexMicrophone.driver"
 cp "${repo_root}/scripts/install_audio_driver.sh" \
   "${resources_root}/install_audio_driver.sh"
+cp "${repo_root}/dist/CardputerAudioBridge" \
+  "${resources_root}/CardputerAudioBridge"
+cp "${repo_root}/dist/com.lynx.cardputer-audio-bridge.plist" \
+  "${resources_root}/com.lynx.cardputer-audio-bridge.plist"
 chmod 0755 "${app_root}/Contents/MacOS/cardputer-companion"
 chmod 0755 "${resources_root}/install_audio_driver.sh"
+chmod 0755 "${resources_root}/CardputerAudioBridge"
 
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --sign - \

@@ -63,6 +63,10 @@ test -x \
   dist/CardputerCompanion.app/Contents/Resources/install_audio_driver.sh
 test -f \
   dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/Info.plist
+test -x \
+  dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge
+test -f \
+  dist/CardputerCompanion.app/Contents/Resources/com.lynx.cardputer-audio-bridge.plist
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_driver_bundle.py \
   tools/product/tests/test_audio_driver_installer.py

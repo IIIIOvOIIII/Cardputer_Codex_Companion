@@ -42,6 +42,8 @@ def test_release_gate_covers_audio_components_and_content_exclusion():
         "test_audio_driver_bundle.py",
         "test_audio_driver_installer.py",
         "CardputerCodexMicrophone.driver",
+        "CardputerAudioBridge",
+        "com.lynx.cardputer-audio-bridge.plist",
         "install_audio_driver.sh",
     ):
         assert marker in release

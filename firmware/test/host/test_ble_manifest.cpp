@@ -183,6 +183,12 @@ int main() {
   assert(ble_should_reset_bond_store(4));
   assert(ble_should_reset_bond_store(5));
   assert(!ble_should_reset_bond_store(ble_bond_store_schema_version()));
+  assert(ble_should_publish_gatt_service_changed(0));
+  assert(!ble_should_publish_gatt_service_changed(
+      ble_gatt_database_schema_version()));
+  assert(ble_should_signal_gatt_database_change(true, true));
+  assert(!ble_should_signal_gatt_database_change(false, true));
+  assert(!ble_should_signal_gatt_database_change(true, false));
   assert(ble_should_start_advertising(false, false));
   assert(!ble_should_start_advertising(true, false));
   assert(!ble_should_start_advertising(false, true));
