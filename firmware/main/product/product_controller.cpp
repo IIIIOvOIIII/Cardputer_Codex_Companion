@@ -161,11 +161,11 @@ std::array<uint8_t,
     g_microphone_queue_buffer{};
 QueueHandle_t g_microphone_queue = nullptr;
 StaticTask_t g_macro_task_storage{};
-std::array<StackType_t, 6144> g_macro_task_stack{};
+std::array<StackType_t, 2048> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
 StaticTask_t g_audio_task_storage{};
-std::array<StackType_t, 3072> g_audio_task_stack{};
+std::array<StackType_t, 2048> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_macro_task_handle = nullptr;
 TaskHandle_t g_ui_task_handle = nullptr;

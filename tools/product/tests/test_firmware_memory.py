@@ -68,6 +68,25 @@ def test_pet_display_uses_only_a_single_rgb565_row():
     assert "kPetFrameWidth, 1, pixels.data()" in display
 
 
+def test_product_runtime_uses_measured_static_stack_budgets():
+    controller = (
+        REPO_ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "std::array<StackType_t, 2048> g_macro_task_stack{};"
+        in controller
+    )
+    assert (
+        "std::array<StackType_t, 2048> g_audio_task_stack{};"
+        in controller
+    )
+    assert (
+        "std::array<StackType_t, 4096> g_ui_task_stack{};"
+        in controller
+    )
+
+
 def test_wifi_cfg_partition_is_optional_for_wrong_or_generic_flash_layouts():
     wifi_manager = (REPO_ROOT / "firmware/main/product/wifi_manager.cpp").read_text(
         encoding="utf-8"
