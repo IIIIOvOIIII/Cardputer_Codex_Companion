@@ -4,9 +4,11 @@
 
 The release check covers all Python tests, firmware host tests, an
 AddressSanitizer/UndefinedBehaviorSanitizer host build, a clean ESP32-S3 target
-build, the embedded Web asset, the Swift release executable, the app bundle,
-generic/private image assembly, partition offsets, and secret exclusion from
-Git-tracked files and the generic image.
+build, the embedded Web asset, Swift ProductAudio/ProductGATT/configuration
+executables, the C17 shared ring, the AudioServerPlugIn test build and bundle
+signature, Companion resources, generic/private image assembly, partition
+offsets, audio-content exclusion, and secret exclusion from Git-tracked files
+and the generic image.
 
 The target build runs `idf.py set-target esp32s3` on every release check so an
 ignored or stale local `sdkconfig` cannot select an old partition table. After
@@ -56,3 +58,8 @@ The 30-minute HIL is a real Hardware-in-the-Loop soak: the compiled firmware
 runs on Cardputer while the Mac Companion, BLE HID/GATT, Wi-Fi, HTTPS Web
 control, Codex status synchronization, reconnect cases, latency and resource
 telemetry are exercised together.
+
+For release 1.1.0, that soak additionally requires the installed
+`Cardputer Codex Microphone`, physical G0 start/stop, continuous Core Audio
+consumption, Core Audio/Companion restart recovery, and proof that disconnect
+or reboot never resumes capture.

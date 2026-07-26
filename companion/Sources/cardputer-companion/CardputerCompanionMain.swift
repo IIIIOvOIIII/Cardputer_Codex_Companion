@@ -16,7 +16,7 @@ struct CardputerCompanionMain {
             )
             switch configuration.command {
             case .version:
-                print("cardputer-companion 1.0.0")
+                print("cardputer-companion 1.1.0")
             case .doctor:
                 doctor()
             case .doctorAudio:
@@ -65,12 +65,31 @@ struct CardputerCompanionMain {
         }
         let adapter = CodexAdapter()
         try adapter.start()
-        let audioBridge = AudioDriverOperations.startRuntimeBridge()
+        let audioBridge = AudioBridgeCoordinator()
         let receiver = ProductGATTReceiver()
-        receiver.start(audioSink: audioBridge)
+        let audioRecovery = AudioBridgeRecoveryPolicy()
+        audioBridge.readinessHandler = { ready in
+            switch audioRecovery.bridgeReadinessChanged(ready) {
+            case .none:
+                break
+            case .restartReceiverWithAudio:
+                receiver.stop()
+                receiver.start(audioSink: audioBridge)
+            case .suspendAudio:
+                receiver.suspendAudioSink()
+            case .resumeAudio:
+                receiver.resumeAudioSink()
+            }
+        }
+        _ = audioBridge.reconnectIfNeeded()
+        receiver.start(
+            audioSink: audioRecovery.receiverWillStart()
+                ? audioBridge
+                : nil
+        )
         defer {
             receiver.stop()
-            audioBridge?.stop()
+            audioBridge.stop()
         }
         let bridge = LANBridge(
             baseURL: deviceURL,
@@ -92,6 +111,9 @@ struct CardputerCompanionMain {
         var pinRevision = configuration.pinRevision
         print("Cardputer Companion running for \(deviceURL.host ?? "LAN device")")
         while !Task.isCancelled {
+            if !audioBridge.isReady {
+                _ = audioBridge.reconnectIfNeeded()
+            }
             let now = clock.now
             if petSyncCadence.isDue(at: now) {
                 synchronizedPet = await petSync.synchronize(client: bridge)

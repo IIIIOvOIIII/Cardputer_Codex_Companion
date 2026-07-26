@@ -70,6 +70,14 @@ public final class ProductGATTReceiver: @unchecked Sendable {
         connection.stop()
     }
 
+    public func suspendAudioSink() {
+        connection.suspendAudio()
+    }
+
+    public func resumeAudioSink() {
+        connection.resumeAudio()
+    }
+
     public var audioMetrics: ProductGATTAudioMetrics {
         metricsLock.lock()
         var snapshot = metricsStorage

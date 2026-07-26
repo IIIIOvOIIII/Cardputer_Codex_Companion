@@ -40,6 +40,11 @@ func testUnifiedDiscoveryAndBindingOrder() {
     assert(session.protocolNegotiated)
     session.didWriteSinkReady(succeeded: true)
     assert(session.audioReady)
+    assert(session.beginAudioSuspension() == [.writeSinkNotReady])
+    assert(!session.audioReady)
+    assert(session.resumeAudio() == [.writeSinkReady])
+    session.didWriteSinkReady(succeeded: true)
+    assert(session.audioReady)
 }
 
 func testShutdownAndDisconnectClearAudioWithoutDisablingUnicode() {

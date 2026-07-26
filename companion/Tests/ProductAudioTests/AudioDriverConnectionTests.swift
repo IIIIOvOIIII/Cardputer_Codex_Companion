@@ -6,6 +6,23 @@ private enum FakeDriverError: Error {
     case rejected
 }
 
+private final class ReadinessRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var valuesStorage: [Bool] = []
+
+    func append(_ value: Bool) {
+        lock.lock()
+        valuesStorage.append(value)
+        lock.unlock()
+    }
+
+    var values: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return valuesStorage
+    }
+}
+
 private final class FakeDriverTransport: AudioDriverTransport {
     var operations: [AudioDriverOperation] = []
     var failHeartbeat = false
@@ -64,8 +81,11 @@ func testAudioDriverConnectionRequiresMappedRingAndHeartbeat() throws {
         transport: transport,
         heartbeatInterval: .milliseconds(500)
     )
+    let readiness = ReadinessRecorder()
+    connection.readinessHandler = { readiness.append($0) }
     try connection.start()
     assert(connection.isReady)
+    assert(readiness.values == [true])
     assert(
         transport.operations.prefix(3) ==
         [.hello(version: 1), .claim, .heartbeat]
@@ -81,6 +101,7 @@ func testAudioDriverConnectionRequiresMappedRingAndHeartbeat() throws {
     assert(transport.observer.availableFrames == 0)
     connection.stop()
     assert(!connection.isReady)
+    assert(readiness.values == [true, false])
     assert(transport.operations.last == .release)
 
     let rejected = try FakeDriverTransport()

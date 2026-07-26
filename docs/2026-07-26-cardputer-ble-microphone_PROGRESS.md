@@ -250,3 +250,24 @@
 - Next step: 提交 Task 13；Task 14 增加恢复/版本门禁，统一升级到 1.1.0，
   扩展完整 release gate，安装当前 Mac 的开发 HAL/Companion 并 app-only
   刷写；按用户要求把实体 G0/30 分钟 HIL 留到最后。
+
+## 2026-07-26 18:20 HKT
+
+- Current work: 完成 Task 14 的 1.1.0 版本统一、HAL producer 故障恢复、发布文档
+  和完整自动化 release gate；部署前复核冷启动恢复路径。
+- Expected result: driver 失联时 500 ms 内撤销 sink-ready；恢复后只回到 READY，
+  不自动录音；若 Companion 启动时 HAL 尚不可用，后续 HAL 恢复仍能把现有
+  Unicode-only GATT 会话升级为 Audio 会话；固件、Companion、driver 和文档版本
+  全部为 1.1.0。
+- Result: Achieved for development and automated release gate。首轮自动门禁通过 Python 167/167 加音频显式 16/16、host
+  normal/sanitizer 35/35、ESP-IDF 5.5.4 clean build、ProductAudio、
+  ProductGATT、ProductConfiguration、C ring、HAL/IPC、签名和 private packaging。
+  部署前代码复核发现主循环以首次 XPC 结果固化 `audioEnabled`，会令 HAL 后到达时
+  永久不重试；新增回归测试先得到缺失策略 RED，再实现线程安全恢复策略并使
+  ProductAudio、ProductGATT 和 release build GREEN。修复后完整自动门禁再次全部
+  通过；应用镜像仍保留 49%，DIRAM headroom 145,089 bytes。最终 app image
+  SHA-256 为 `8a1ac0dc6659af1826bbe1b6d11b0120c9bf349f9250dc66fee45c909bcf96c6`，
+  private full image 为
+  `9410d5b5410891805dac77a3dfe267be0e2aac7d81649c389e5f4e9a0438165b`。
+- Next step: 自动门禁再次通过后提交 Task 14，安装开发 HAL、重启 Core Audio、
+  app-only 刷写并恢复 LaunchAgent；最后才执行实体 G0/HID/30 分钟 HIL。

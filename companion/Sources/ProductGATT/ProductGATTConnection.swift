@@ -110,6 +110,21 @@ public struct ProductGATTSessionState: Equatable, Sendable {
         return [.writeSinkNotReady]
     }
 
+    public mutating func beginAudioSuspension()
+        -> [ProductGATTConnectionAction] {
+        guard audioReady else { return [] }
+        audioReady = false
+        return [.writeSinkNotReady]
+    }
+
+    public mutating func resumeAudio() -> [ProductGATTConnectionAction] {
+        guard audioEnabled, audioNotificationsEnabled, protocolNegotiated,
+              !audioReady else {
+            return []
+        }
+        return [.writeSinkReady]
+    }
+
     public mutating func didDisconnect() {
         unicodeEnabled = false
         characteristicsDiscovered = false
@@ -195,7 +210,8 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         case bind
         case hello
         case sinkReady
-        case sinkNotReady
+        case sinkNotReadyDisconnect
+        case sinkNotReadyOnly
     }
 
     private let queue = DispatchQueue(label: "com.lynx.cardputer.gatt")
@@ -207,6 +223,7 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
     private var session = ProductGATTSessionState(audioEnabled: false)
     private var pendingWrite: PendingWrite?
     private var intentionalStop = false
+    private var shutdownWaiter: DispatchSemaphore?
 
     init(delegate: ProductGATTConnectionDelegate) {
         self.delegate = delegate
@@ -223,14 +240,31 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
     }
 
     func stop() {
+        let waiter = DispatchSemaphore(value: 0)
         queue.async { [self] in
             intentionalStop = true
+            shutdownWaiter = waiter
             let actions = session.beginIntentionalShutdown()
+            publishSession()
             if actions.isEmpty {
                 disconnectNow()
+                finishShutdownWait()
             } else {
-                perform(actions)
+                perform(actions, sinkNotReadyDisconnects: true)
             }
+        }
+        _ = waiter.wait(timeout: .now() + .milliseconds(500))
+    }
+
+    func suspendAudio() {
+        queue.async { [self] in
+            publishAndPerform(session.beginAudioSuspension())
+        }
+    }
+
+    func resumeAudio() {
+        queue.async { [self] in
+            publishAndPerform(session.resumeAudio())
         }
     }
 
@@ -250,7 +284,10 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         )
     }
 
-    private func perform(_ actions: [ProductGATTConnectionAction]) {
+    private func perform(
+        _ actions: [ProductGATTConnectionAction],
+        sinkNotReadyDisconnects: Bool = false
+    ) {
         guard let peripheral else { return }
         for action in actions {
             switch action {
@@ -285,7 +322,9 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
                 write(
                     Data([1, 3]),
                     to: .audioControl,
-                    pending: .sinkNotReady,
+                    pending: sinkNotReadyDisconnects
+                        ? .sinkNotReadyDisconnect
+                        : .sinkNotReadyOnly,
                     peripheral: peripheral
                 )
             }
@@ -294,6 +333,18 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
 
     private func publishSession() {
         delegate?.productGATT(self, didUpdate: session)
+    }
+
+    private func publishAndPerform(
+        _ actions: [ProductGATTConnectionAction]
+    ) {
+        publishSession()
+        perform(actions)
+    }
+
+    private func finishShutdownWait() {
+        shutdownWaiter?.signal()
+        shutdownWaiter = nil
     }
 
     private func setNotify(
@@ -380,6 +431,7 @@ extension ProductGATTConnection: CBCentralManagerDelegate {
         pendingWrite = nil
         session.didDisconnect()
         publishSession()
+        finishShutdownWait()
         delegate?.productGATTDidDisconnect(self, intentional: wasIntentional)
         if !wasIntentional {
             beginConnection()
@@ -448,8 +500,11 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         case .sinkReady:
             session.didWriteSinkReady(succeeded: succeeded)
             publishSession()
-        case .sinkNotReady:
+        case .sinkNotReadyDisconnect:
             disconnectNow()
+            finishShutdownWait()
+        case .sinkNotReadyOnly:
+            break
         }
     }
 

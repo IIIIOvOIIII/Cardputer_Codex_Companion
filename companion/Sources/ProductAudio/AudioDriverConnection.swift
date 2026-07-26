@@ -71,6 +71,7 @@ public final class AudioDriverConnection: AudioSampleSink, @unchecked Sendable {
     private var ring: SharedAudioRing?
     private var timer: DispatchSourceTimer?
     private var ready = false
+    private var readinessHandlerStorage: (@Sendable (Bool) -> Void)?
 
     public init(
         transport: AudioDriverTransport,
@@ -88,6 +89,19 @@ public final class AudioDriverConnection: AudioSampleSink, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return ready
+    }
+
+    public var readinessHandler: (@Sendable (Bool) -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return readinessHandlerStorage
+        }
+        set {
+            lock.lock()
+            readinessHandlerStorage = newValue
+            lock.unlock()
+        }
     }
 
     public func start() throws {
@@ -121,8 +135,10 @@ public final class AudioDriverConnection: AudioSampleSink, @unchecked Sendable {
                 self?.sendHeartbeat()
             }
             timer = heartbeat
+            let handler = readinessHandlerStorage
             lock.unlock()
             heartbeat.resume()
+            handler?(true)
         } catch {
             if descriptor >= 0 {
                 close(descriptor)
@@ -139,12 +155,14 @@ public final class AudioDriverConnection: AudioSampleSink, @unchecked Sendable {
         let currentRing = ring
         ring = nil
         let wasReady = ready
+        let handler = readinessHandlerStorage
         ready = false
         lock.unlock()
         currentTimer?.cancel()
         currentRing?.reset()
         if wasReady {
             transport.release()
+            handler?(false)
         }
     }
 

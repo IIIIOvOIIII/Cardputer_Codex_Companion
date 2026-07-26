@@ -16,6 +16,9 @@
 - Device 显示版本及连接状态；Codex 显示活跃会话、Model、Fast、Thinking 和可用限额（缺失项隐藏）；Sync 显示 IP、心跳、宠物同步与当前 Profile。
 - Profile Catalog 支持不可删除的 SAFE 和最多四个自定义 Profile，使用双 bank 事务存储；Web 和设备端切换立即生效并跨重启保持。
 - Settings 使用裸 `; . , /` 选择和进入二级菜单，可切换 Profile、轮换 PIN、扫描/绑定 Wi‑Fi，并设置亮度、自动返回和宠物帧率。
+- Cardputer 的 SPM1423 麦克风通过加密 BLE Audio v1 发送 24 kHz IMA-ADPCM；Mac Companion 解码、抖动缓冲并重采样为 48 kHz mono float，写入系统级 `Cardputer Codex Microphone` 虚拟输入设备。
+- 短按 G0 是唯一录音开关。断开 BLE、退出 Companion、Core Audio producer 失效或设备重启都会立即停录；恢复连接后只回到 READY，不会自动恢复录音。
+- 每页状态栏、PET 红色录音标识、DEVICE 页和 Web Settings 均显示只读麦克风状态；Web、Profile、Wi-Fi、Codex 和宠物操作均不能启动录音。
 
 ## 刷写
 
@@ -39,13 +42,25 @@ python -m esptool --chip esp32s3 -b 460800 \
 ```bash
 scripts/build_companion.sh
 dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor
+sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+  install-audio-driver
+dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor audio
 dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
   run --device https://设备IP --pairing 屏幕八位PIN
 ```
 
+   当前开发包使用 ad-hoc 签名，只适用于这台 Mac。安装或升级 driver 后按安装器提示重启 Core Audio 服务或 Mac；正常 Companion 运行不需要管理员权限。在应用中选择系统输入设备 `Cardputer Codex Microphone`。
+
 5. 在 Web 中点击键位打开弹窗，把某个按键设为“中文字符串”并填入中文，或设为“组合键”后直接按下 `Alt+V` 这类组合键采集；非直通键会在键帽上显示真实用途，发布后即可使用。Settings 选项卡可修改 PIN 和 Wi‑Fi 信息。
 
-短按 G0/Home 在 Keyboard 与 Codex 模式间切换；长按两秒释放所有按键并进入 Safe Profile。
+6. 短按 G0 开始录音，再短按一次停止。G0 没有长按动作。Keyboard/Codex Input Mode 和不可变 SAFE Profile 均在 Cardputer 的 Settings 中选择；选择 SAFE 会先发送 HID Release All。
+
+卸载虚拟麦克风：
+
+```bash
+sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+  uninstall-audio-driver
+```
 
 从旧版本升级且需要保留 PIN、Wi‑Fi、Profile、宠物与 BLE 配对时，只写应用分区：
 

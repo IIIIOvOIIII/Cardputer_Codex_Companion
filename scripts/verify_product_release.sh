@@ -4,7 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
+scripts/build_audio_driver.sh
 PYTHONPATH=. uv run pytest -q
+PYTHONPATH=. uv run pytest -q \
+  tools/product/tests/test_audio_vectors.py \
+  tools/product/tests/test_audio_driver_bundle.py \
+  tools/product/tests/test_audio_driver_installer.py \
+  tools/product/tests/test_audio_release.py
 
 cmake -S firmware/test/host -B build/product-host
 cmake --build build/product-host -j
@@ -37,6 +43,11 @@ python3 tools/product/verify_firmware_memory.py \
   build/product-firmware-size.json
 
 swift build --package-path companion -c release
+swift run --package-path companion -c release product-audio-tests
+swift run --package-path companion -c release product-gatt-tests
+swift run --package-path companion -c release product-configuration-tests
+scripts/test_audio_ring.sh
+scripts/build_audio_driver.sh --test
 companion/.build/release/cardputer-companion --version
 companion/.build/release/cardputer-companion doctor
 
@@ -48,9 +59,24 @@ test "$(stat -f %z build/private/wifi_cfg.bin)" -eq 24576
 test -f dist/cardputer_codex_companion-full.bin
 test -f dist/private/cardputer_codex_companion-private-full.bin
 test -x dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
+test -x \
+  dist/CardputerCompanion.app/Contents/Resources/install_audio_driver.sh
+test -f \
+  dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/Info.plist
+PYTHONPATH=. uv run pytest -q \
+  tools/product/tests/test_audio_driver_bundle.py \
+  tools/product/tests/test_audio_driver_installer.py
+codesign --verify --strict \
+  dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver
+codesign --verify --deep --strict dist/CardputerCompanion.app
 
 if git ls-files | grep -E '^(build|dist)/|wifi_cfg\.bin$' >/dev/null; then
   echo "private or generated artifacts are tracked" >&2
+  exit 1
+fi
+if git ls-files | grep -E -i '\.(wav|aiff|aif|caf|pcm|adpcm|m4a|mp3)$' \
+  >/dev/null; then
+  echo "audio content artifact is tracked" >&2
   exit 1
 fi
 if git grep -n -I -E 'PHASE 0 / NOT FOR RELEASE|NSPasteboard|Command-V' \
