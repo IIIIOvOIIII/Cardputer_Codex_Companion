@@ -322,3 +322,10 @@ add_executable(test_ima_adpcm
 )
 target_include_directories(test_ima_adpcm PRIVATE ../../main)
 add_test(NAME ima_adpcm COMMAND test_ima_adpcm)
+
+add_executable(test_microphone_state
+  test_microphone_state.cpp
+  ../../main/product/microphone_state.cpp
+)
+target_include_directories(test_microphone_state PRIVATE ../../main)
+add_test(NAME microphone_state COMMAND test_microphone_state)

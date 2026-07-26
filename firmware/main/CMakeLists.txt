@@ -70,6 +70,7 @@ idf_component_register(
         "product/companion_protocol.cpp"
         "product/audio_protocol.cpp"
         "product/ima_adpcm.cpp"
+        "product/microphone_state.cpp"
         "product/product_controller.cpp"
         "product/pet_bundle.cpp"
         "product/pet_store.cpp"

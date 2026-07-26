@@ -43,3 +43,15 @@
   因此沿用仓库既有 executable-test 模式，避免让所有历史 XCTest targets 阻塞验证。
 - Next step: Task 3 用纯状态转换测试固定本地 G0 唯一启动权限、断连强制停止、
   重连不恢复，以及 24 kHz 到 16 kHz 的一次性降级。
+
+## 2026-07-26 16:05 HKT
+
+- Current work: 完成 Task 3 纯麦克风状态机，并执行首批协议/codec/state 集成门禁。
+- Expected result: 启动仅来自 READY 状态下的本地 G0 click；hold/repeat 无效；断连与
+  reset 强制停止且不自动恢复；连续两个坏窗口只允许 24→16 kHz 降级一次，16 kHz
+  再失败则停止并进入 ERROR。
+- Result: Achieved。普通 host 31/31、ASan/UBSan 31/31、Python fixture 5/5、
+  Swift debug/release audio tests 和 ESP-IDF 5.5.4 目标构建均通过；固件镜像仍有
+  50% app partition 空间。
+- Next step: 提交 Task 3 并在首批检查点等待复核；下一批从 SPM1423 PDM capture
+  adapter 开始，随后接入加密 Audio GATT 和 G0 controller。
