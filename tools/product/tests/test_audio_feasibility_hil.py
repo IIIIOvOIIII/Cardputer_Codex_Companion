@@ -89,6 +89,47 @@ def test_duration_is_bounded(duration):
         module.validate_duration(duration)
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://192.168.1.195",
+            "https://192.168.1.195/api/v1/status",
+        ),
+        (
+            "https://cardputer.local/",
+            "https://cardputer.local/api/v1/status",
+        ),
+    ],
+)
+def test_device_url_is_local_https_status_endpoint(url, expected):
+    module = load_script()
+    assert module.validate_device_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://192.168.1.195",
+        "https://8.8.8.8",
+        "https://user:password@192.168.1.195",
+        "https://192.168.1.195/config",
+    ],
+)
+def test_device_url_rejects_nonlocal_or_ambiguous_targets(url):
+    module = load_script()
+    with pytest.raises(ValueError, match="local HTTPS"):
+        module.validate_device_url(url)
+
+
+def test_tls_probe_schedule_preserves_steady_window_and_repeats():
+    module = load_script()
+    schedule = module.tls_probe_schedule(600)
+    assert schedule[0] == 8
+    assert schedule[-1] < 600
+    assert max(right - left for left, right in zip(schedule, schedule[1:])) <= 15
+
+
 def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
     module = load_script()
     for key, value in [

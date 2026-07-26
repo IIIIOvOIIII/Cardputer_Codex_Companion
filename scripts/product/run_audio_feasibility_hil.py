@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import select
@@ -13,6 +14,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 
 REQUIRED_REPORT_FIELDS = {
@@ -39,6 +41,33 @@ def validate_duration(duration: int) -> int:
     if not 10 <= duration <= 1800:
         raise ValueError("duration must be within 10..1800 seconds")
     return duration
+
+
+def validate_device_url(value: str) -> str:
+    parsed = urlsplit(value)
+    host = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or host is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("device URL must be a local HTTPS base URL")
+    try:
+        local_host = ipaddress.ip_address(host).is_private
+    except ValueError:
+        local_host = host.lower().endswith(".local")
+    if not local_host:
+        raise ValueError("device URL must be a local HTTPS base URL")
+    authority = host if parsed.port is None else f"{host}:{parsed.port}"
+    return urlunsplit(("https", authority, "/api/v1/status", "", ""))
+
+
+def tls_probe_schedule(duration: int) -> list[int]:
+    return list(range(8, duration, 15))
 
 
 def _contains_content_key(value: Any) -> bool:
@@ -135,6 +164,30 @@ def _read_serial(
         os.close(descriptor)
 
 
+def _exercise_tls(
+    status_url: str,
+    duration: int,
+    started_at: float,
+    stop: threading.Event,
+) -> None:
+    for offset in tls_probe_schedule(duration):
+        wait_seconds = max(0.0, started_at + offset - time.monotonic())
+        if stop.wait(wait_seconds):
+            return
+        subprocess.run(
+            [
+                "/usr/bin/curl",
+                "-sk",
+                "--max-time",
+                "5",
+                status_url,
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 def _stack_passed(samples: list[dict[str, Any]]) -> bool:
     task_rows = [
         task
@@ -215,6 +268,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True, type=Path)
     parser.add_argument("--companion", required=True, type=Path)
+    parser.add_argument(
+        "--device-url",
+        required=True,
+        type=validate_device_url,
+        help="local HTTPS Cardputer base URL",
+    )
     parser.add_argument("--duration", required=True, type=validate_duration)
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args(argv)
@@ -237,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     reader.start()
     print("Press G0 once to start microphone capture.")
+    started_at = time.monotonic()
     process = subprocess.Popen(
         [
             str(args.companion),
@@ -247,6 +307,12 @@ def main(argv: list[str] | None = None) -> int:
             str(companion_metrics),
         ]
     )
+    tls_probe = threading.Thread(
+        target=_exercise_tls,
+        args=(args.device_url, args.duration, started_at, stop),
+        daemon=True,
+    )
+    tls_probe.start()
     try:
         return_code = process.wait(timeout=args.duration + 30)
     except subprocess.TimeoutExpired:
@@ -256,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         stop.set()
         reader.join(timeout=2)
+        tls_probe.join(timeout=6)
     if return_code != 0:
         raise SystemExit(f"audio probe exited with {return_code}")
     companion_report = json.loads(companion_metrics.read_text())
