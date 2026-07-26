@@ -42,6 +42,12 @@ constexpr CompanionGattUuids kCompanionGattUuids{
                 0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
     .identity = {0x7a, 0x10, 0x00, 0x04, 0x2c, 0x4d, 0x4f, 0x20,
                  0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
+    .audio_data = {0x7a, 0x10, 0x00, 0x05, 0x2c, 0x4d, 0x4f, 0x20,
+                   0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
+    .audio_control = {0x7a, 0x10, 0x00, 0x06, 0x2c, 0x4d, 0x4f, 0x20,
+                      0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
+    .audio_status = {0x7a, 0x10, 0x00, 0x07, 0x2c, 0x4d, 0x4f, 0x20,
+                     0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31},
 };
 
 template <size_t N>
@@ -122,6 +128,22 @@ bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state) {
           state.input_report_subscribed);
 }
 
+bool ble_audio_sink_ready_from_state(
+    const BleAudioSubscriptionState& state) {
+  return state.data_notify && state.companion_bound && state.encrypted;
+}
+
+bool ble_audio_control_allowed_from_state(
+    const BleAudioSubscriptionState& state) {
+  return state.companion_bound && state.encrypted;
+}
+
+bool ble_audio_status_ready_from_state(
+    const BleAudioSubscriptionState& state) {
+  return state.status_notify &&
+         ble_audio_control_allowed_from_state(state);
+}
+
 BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
     const BleKeyboardLinkState& current) {
   BleKeyboardLinkState connected = current;
@@ -185,6 +207,10 @@ BleServiceManifest ble_service_manifest() {
       1,
       true,
       false,
+      true,
+      true,
+      true,
+      true,
       true,
       1,
   };
@@ -281,16 +307,26 @@ esp_hid_raw_report_map_t g_keyboard_reports[1]{};
 uint16_t g_notify_handle = 0;
 uint16_t g_control_handle = 0;
 uint16_t g_identity_handle = 0;
+uint16_t g_audio_data_handle = 0;
+uint16_t g_audio_control_handle = 0;
+uint16_t g_audio_status_handle = 0;
 uint16_t g_bound_conn = BLE_HS_CONN_HANDLE_NONE;
 CompanionBindingProof g_binding{};
 BleDisconnectHandler g_disconnect_handler = nullptr;
 CompanionControlHandler g_control_handler = nullptr;
 BleConnectionHandler g_connection_handler = nullptr;
+AudioControlHandler g_audio_control_handler = nullptr;
+AudioSinkStateHandler g_audio_sink_state_handler = nullptr;
 bool g_product_companion_mode = false;
 BleKeyboardLinkState g_hid_state{};
 std::atomic<bool> g_hid_ready{false};
 std::atomic<bool> g_hid_gap_connected{false};
 std::atomic<bool> g_last_hid_ready{false};
+std::atomic<bool> g_audio_data_subscribed{false};
+std::atomic<bool> g_audio_status_subscribed{false};
+std::atomic<bool> g_audio_companion_bound{false};
+std::atomic<bool> g_audio_encrypted{false};
+std::atomic<bool> g_last_audio_sink_ready{false};
 uint16_t g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 std::atomic<uint64_t> g_hid_state_changed_ms{0};
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -313,6 +349,15 @@ const ble_uuid128_t kControlUuid = BLE_UUID128_INIT(
 const ble_uuid128_t kIdentityUuid = BLE_UUID128_INIT(
     0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
     0x20, 0x4f, 0x4d, 0x2c, 0x04, 0x00, 0x10, 0x7a);
+const ble_uuid128_t kAudioDataUuid = BLE_UUID128_INIT(
+    0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
+    0x20, 0x4f, 0x4d, 0x2c, 0x05, 0x00, 0x10, 0x7a);
+const ble_uuid128_t kAudioControlUuid = BLE_UUID128_INIT(
+    0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
+    0x20, 0x4f, 0x4d, 0x2c, 0x06, 0x00, 0x10, 0x7a);
+const ble_uuid128_t kAudioStatusUuid = BLE_UUID128_INIT(
+    0x31, 0x58, 0x45, 0x44, 0x4f, 0x43, 0x20, 0x9f,
+    0x20, 0x4f, 0x4d, 0x2c, 0x07, 0x00, 0x10, 0x7a);
 
 bool has_bonded_secure_state(uint16_t conn_handle) {
   ble_gap_conn_desc desc{};
@@ -330,6 +375,35 @@ bool is_current_companion(uint16_t conn_handle) {
          conn_handle == g_bound_conn &&
          (g_product_companion_mode ||
           companion_binding_proof_is_complete(g_binding));
+}
+
+BleAudioSubscriptionState current_audio_subscription_state() {
+  return {
+      .data_notify = g_audio_data_subscribed.load(),
+      .status_notify = g_audio_status_subscribed.load(),
+      .companion_bound = g_audio_companion_bound.load(),
+      .encrypted = g_audio_encrypted.load(),
+  };
+}
+
+void publish_audio_sink_ready_if_changed() {
+  const bool ready =
+      ble_audio_sink_ready_from_state(current_audio_subscription_state());
+  if (ready == g_last_audio_sink_ready.exchange(ready)) {
+    return;
+  }
+  ESP_LOGI(kTag, "BLE audio sink ready=%d", ready ? 1 : 0);
+  if (g_audio_sink_state_handler != nullptr) {
+    g_audio_sink_state_handler(ready);
+  }
+}
+
+void reset_audio_link_state() {
+  g_audio_data_subscribed.store(false);
+  g_audio_status_subscribed.store(false);
+  g_audio_companion_bound.store(false);
+  g_audio_encrypted.store(false);
+  publish_audio_sink_ready_if_changed();
 }
 
 uint64_t now_ms() {
@@ -432,6 +506,9 @@ int companion_characteristic_access(
           copied == bind.size() &&
           std::memcmp(bind.data(), "BIND1", bind.size()) == 0) {
         g_bound_conn = conn_handle;
+        g_audio_companion_bound.store(true);
+        g_audio_encrypted.store(true);
+        publish_audio_sink_ready_if_changed();
         return 0;
       }
     }
@@ -456,7 +533,38 @@ int companion_characteristic_access(
     return 0;
   }
 
-  if (attr_handle == g_notify_handle) {
+  if (attr_handle == g_audio_control_handle &&
+      ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+    if (!is_current_companion(conn_handle)) {
+      return BLE_ATT_ERR_INSUFFICIENT_AUTHOR;
+    }
+    constexpr size_t kMaxAudioControlBytes = 3;
+    const uint16_t control_size = OS_MBUF_PKTLEN(ctxt->om);
+    if (control_size < 2 || control_size > kMaxAudioControlBytes) {
+      return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    std::array<uint8_t, kMaxAudioControlBytes> bytes{};
+    uint16_t copied = 0;
+    if (ble_hs_mbuf_to_flat(
+            ctxt->om, bytes.data(), bytes.size(), &copied) != 0 ||
+        copied != control_size) {
+      return BLE_ATT_ERR_UNLIKELY;
+    }
+    AudioControlMessage message{};
+    if (decode_audio_control(
+            std::span<const uint8_t>(bytes.data(), copied), &message) !=
+        AudioProtocolError::none) {
+      return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    if (g_audio_control_handler != nullptr) {
+      g_audio_control_handler(message);
+    }
+    return 0;
+  }
+
+  if (attr_handle == g_notify_handle ||
+      attr_handle == g_audio_data_handle ||
+      attr_handle == g_audio_status_handle) {
     return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
   }
   return BLE_ATT_ERR_UNLIKELY;
@@ -494,6 +602,39 @@ ble_gatt_chr_def kCompanionCharacteristics[] = {
                  BLE_GATT_CHR_F_READ_ENC,
         .min_key_size = 16,
         .val_handle = &g_identity_handle,
+        .cpfd = nullptr,
+    },
+    {
+        .uuid = &kAudioDataUuid.u,
+        .access_cb = companion_characteristic_access,
+        .arg = nullptr,
+        .descriptors = nullptr,
+        .flags = BLE_GATT_CHR_F_NOTIFY |
+                 BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
+        .min_key_size = 16,
+        .val_handle = &g_audio_data_handle,
+        .cpfd = nullptr,
+    },
+    {
+        .uuid = &kAudioControlUuid.u,
+        .access_cb = companion_characteristic_access,
+        .arg = nullptr,
+        .descriptors = nullptr,
+        .flags = BLE_GATT_CHR_F_WRITE |
+                 BLE_GATT_CHR_F_WRITE_ENC,
+        .min_key_size = 16,
+        .val_handle = &g_audio_control_handle,
+        .cpfd = nullptr,
+    },
+    {
+        .uuid = &kAudioStatusUuid.u,
+        .access_cb = companion_characteristic_access,
+        .arg = nullptr,
+        .descriptors = nullptr,
+        .flags = BLE_GATT_CHR_F_NOTIFY |
+                 BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
+        .min_key_size = 16,
+        .val_handle = &g_audio_status_handle,
         .cpfd = nullptr,
     },
     {},
@@ -551,6 +692,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         return 0;
       }
       g_hid_conn_handle = event->connect.conn_handle;
+      reset_audio_link_state();
       g_hid_state = ble_keyboard_state_after_gap_connected(g_hid_state);
       mark_hid_state_changed();
       publish_hid_ready_if_changed("gap-connect");
@@ -562,6 +704,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
     case BLE_GAP_EVENT_DISCONNECT:
       ESP_LOGI(kTag, "HID GAP disconnect; reason=%d",
                event->disconnect.reason);
+      reset_audio_link_state();
       reset_hid_link_state("gap-disconnect");
       return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -574,6 +717,8 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
                event->enc_change.status);
       if (ble_should_terminate_after_encryption_change(
               event->enc_change.status)) {
+        g_audio_encrypted.store(false);
+        publish_audio_sink_ready_if_changed();
         g_hid_state.encrypted = false;
         g_hid_state.authenticated = false;
         publish_hid_ready_if_changed("enc-failed");
@@ -586,6 +731,8 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       }
       rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
       if (rc == 0) {
+        g_audio_encrypted.store(desc.sec_state.encrypted);
+        publish_audio_sink_ready_if_changed();
         g_hid_state.encrypted = desc.sec_state.encrypted;
         g_hid_state.authenticated = desc.sec_state.authenticated;
         mark_hid_state_changed();
@@ -606,6 +753,15 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
                static_cast<unsigned>(event->subscribe.cur_indicate));
       if (event->subscribe.attr_handle == g_notify_handle) {
         ESP_LOGI(kTag, "Companion GATT notify subscription ignored for HID readiness");
+        return 0;
+      }
+      if (event->subscribe.attr_handle == g_audio_data_handle) {
+        g_audio_data_subscribed.store(event->subscribe.cur_notify != 0);
+        publish_audio_sink_ready_if_changed();
+        return 0;
+      }
+      if (event->subscribe.attr_handle == g_audio_status_handle) {
+        g_audio_status_subscribed.store(event->subscribe.cur_notify != 0);
         return 0;
       }
       g_hid_state.input_report_subscribed = event->subscribe.cur_notify != 0;
@@ -883,12 +1039,17 @@ esp_err_t bind_current_companion(const CompanionBindingProof& proof) {
   }
   g_binding = proof;
   g_bound_conn = proof.conn_handle;
+  g_audio_companion_bound.store(true);
+  g_audio_encrypted.store(true);
+  publish_audio_sink_ready_if_changed();
   return ESP_OK;
 }
 
 void clear_current_companion_binding() {
   g_bound_conn = BLE_HS_CONN_HANDLE_NONE;
   g_binding = {};
+  g_audio_companion_bound.store(false);
+  publish_audio_sink_ready_if_changed();
 }
 
 void set_ble_disconnect_handler(BleDisconnectHandler handler) {
@@ -901,6 +1062,17 @@ void set_companion_control_handler(CompanionControlHandler handler) {
 
 void set_ble_connection_handler(BleConnectionHandler handler) {
   g_connection_handler = handler;
+}
+
+void set_audio_control_handler(AudioControlHandler handler) {
+  g_audio_control_handler = handler;
+}
+
+void set_audio_sink_state_handler(AudioSinkStateHandler handler) {
+  g_audio_sink_state_handler = handler;
+  if (handler != nullptr) {
+    handler(ble_audio_sink_ready());
+  }
 }
 
 void enable_product_companion_mode() {
@@ -936,6 +1108,16 @@ bool ble_pairing_input_digit(uint8_t digit) {
 
 bool ble_keyboard_ready() {
   return g_hid_ready.load();
+}
+
+bool ble_audio_sink_ready() {
+  return ble_audio_sink_ready_from_state(
+      current_audio_subscription_state());
+}
+
+bool ble_audio_status_ready() {
+  return ble_audio_status_ready_from_state(
+      current_audio_subscription_state());
 }
 
 esp_err_t notify_current_companion(std::span<const uint8_t> frame) {
@@ -974,5 +1156,47 @@ esp_err_t notify_product_utf8(uint32_t operation_id,
     if (result != ESP_OK) return result;
   }
   return ESP_OK;
+}
+
+esp_err_t notify_audio_frame(std::span<const uint8_t> frame) {
+  if (!ble_audio_sink_ready() ||
+      frame.empty() || frame.size() > UINT16_MAX) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  os_mbuf* payload = ble_hs_mbuf_from_flat(
+      frame.data(), static_cast<uint16_t>(frame.size()));
+  if (payload == nullptr) {
+    return ESP_ERR_NO_MEM;
+  }
+  const int rc = ble_gatts_notify_custom(
+      g_bound_conn, g_audio_data_handle, payload);
+  if (rc == 0) {
+    return ESP_OK;
+  }
+  return rc == BLE_HS_ENOMEM || rc == BLE_HS_EBUSY
+             ? ESP_ERR_NO_MEM
+             : ESP_FAIL;
+}
+
+esp_err_t notify_audio_status(std::span<const uint8_t> status) {
+  const BleAudioSubscriptionState state =
+      current_audio_subscription_state();
+  if (!ble_audio_status_ready_from_state(state) ||
+      status.empty() || status.size() > UINT16_MAX) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  os_mbuf* payload = ble_hs_mbuf_from_flat(
+      status.data(), static_cast<uint16_t>(status.size()));
+  if (payload == nullptr) {
+    return ESP_ERR_NO_MEM;
+  }
+  const int rc = ble_gatts_notify_custom(
+      g_bound_conn, g_audio_status_handle, payload);
+  if (rc == 0) {
+    return ESP_OK;
+  }
+  return rc == BLE_HS_ENOMEM || rc == BLE_HS_EBUSY
+             ? ESP_ERR_NO_MEM
+             : ESP_FAIL;
 }
 #endif

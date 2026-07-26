@@ -25,6 +25,10 @@ int main() {
   assert(manifest.identity_read_requires_encryption);
   assert(!manifest.identity_read_requires_authentication);
   assert(manifest.text_write_requires_current_companion);
+  assert(manifest.audio_data_notify_requires_encryption);
+  assert(manifest.audio_control_write_requires_encryption);
+  assert(manifest.audio_status_notify_requires_encryption);
+  assert(manifest.audio_control_requires_current_companion);
   assert(manifest.max_bonds == 1);
 
   const CompanionGattUuids uuids = companion_gatt_uuids();
@@ -40,10 +44,54 @@ int main() {
   constexpr Uuid128 identity{
       0x7a, 0x10, 0x00, 0x04, 0x2c, 0x4d, 0x4f, 0x20,
       0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31};
+  constexpr Uuid128 audio_data{
+      0x7a, 0x10, 0x00, 0x05, 0x2c, 0x4d, 0x4f, 0x20,
+      0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31};
+  constexpr Uuid128 audio_control{
+      0x7a, 0x10, 0x00, 0x06, 0x2c, 0x4d, 0x4f, 0x20,
+      0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31};
+  constexpr Uuid128 audio_status{
+      0x7a, 0x10, 0x00, 0x07, 0x2c, 0x4d, 0x4f, 0x20,
+      0x9f, 0x20, 0x43, 0x4f, 0x44, 0x45, 0x58, 0x31};
   assert(uuids.service == service);
   assert(uuids.notify == notify);
   assert(uuids.control == control);
   assert(uuids.identity == identity);
+  assert(uuids.audio_data == audio_data);
+  assert(uuids.audio_control == audio_control);
+  assert(uuids.audio_status == audio_status);
+
+  assert(!ble_audio_sink_ready_from_state({}));
+  assert(!ble_audio_sink_ready_from_state({
+      .data_notify = true,
+      .status_notify = false,
+      .companion_bound = false,
+      .encrypted = true,
+  }));
+  assert(!ble_audio_sink_ready_from_state({
+      .data_notify = true,
+      .status_notify = false,
+      .companion_bound = true,
+      .encrypted = false,
+  }));
+  assert(ble_audio_sink_ready_from_state({
+      .data_notify = true,
+      .status_notify = false,
+      .companion_bound = true,
+      .encrypted = true,
+  }));
+  assert(!ble_audio_control_allowed_from_state({
+      .data_notify = false,
+      .status_notify = true,
+      .companion_bound = false,
+      .encrypted = true,
+  }));
+  assert(ble_audio_control_allowed_from_state({
+      .data_notify = false,
+      .status_notify = true,
+      .companion_bound = true,
+      .encrypted = true,
+  }));
 
   assert(ble_advertised_name() == "Cardputer Codex");
   assert(ble_device_name() == ble_advertised_name());

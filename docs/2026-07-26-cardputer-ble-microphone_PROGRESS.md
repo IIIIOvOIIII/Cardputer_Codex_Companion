@@ -67,3 +67,15 @@
   声明，不需要向 `idf_component.yml` 添加外部 registry 依赖。
 - Next step: Task 5 扩展现有 Companion service 的三个加密 Audio characteristics，
   并实现单次尝试、压力即丢帧的 HID-priority transport。
+
+## 2026-07-26 16:40 HKT
+
+- Current work: 完成 Task 5 加密 Audio GATT characteristics 与非阻塞 transport。
+- Expected result: Audio Data/Control/Status 使用 UUID 0005/0006/0007；notify/write
+  均要求加密，Control 还要求当前 Companion；Data 和 Status subscription 与 HID、
+  Unicode 及彼此独立；发送只尝试一次，buffer pressure 直接计为 drop。
+- Result: Achieved。`ble_manifest` 与 `ble_audio_transport` host 测试通过，未知或
+  remote-start control opcode 在进入 handler 前被 Audio v1 parser 拒绝；ESP-IDF
+  目标构建通过，镜像 `0x17f790`，app partition 仍有 50% 空间。
+- Next step: Task 6 实现 controller 的 capture→ADPCM→packet→transport 固定路径，
+  把 G0 从旧 mode 切换中移除并接入短按麦克风开关，同时扩展只读 runtime metrics。

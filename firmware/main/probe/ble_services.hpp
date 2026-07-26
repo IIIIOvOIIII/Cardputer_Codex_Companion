@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "product/audio_protocol.hpp"
+
 using DeviceId = std::array<uint8_t, 16>;
 using Uuid128 = std::array<uint8_t, 16>;
 
@@ -33,6 +35,10 @@ struct BleServiceManifest {
   bool identity_read_requires_encryption;
   bool identity_read_requires_authentication;
   bool text_write_requires_current_companion;
+  bool audio_data_notify_requires_encryption;
+  bool audio_control_write_requires_encryption;
+  bool audio_status_notify_requires_encryption;
+  bool audio_control_requires_current_companion;
   uint8_t max_bonds;
 };
 
@@ -41,6 +47,9 @@ struct CompanionGattUuids {
   Uuid128 notify;
   Uuid128 control;
   Uuid128 identity;
+  Uuid128 audio_data;
+  Uuid128 audio_control;
+  Uuid128 audio_status;
 };
 
 struct CompanionBindingProof {
@@ -57,6 +66,13 @@ struct BleKeyboardLinkState {
   bool authenticated = false;
   bool hidd_connected = false;
   bool input_report_subscribed = false;
+};
+
+struct BleAudioSubscriptionState {
+  bool data_notify = false;
+  bool status_notify = false;
+  bool companion_bound = false;
+  bool encrypted = false;
 };
 
 BleServiceManifest ble_service_manifest();
@@ -79,6 +95,12 @@ bool ble_keyboard_ready_requires_authenticated_link();
 bool ble_keyboard_ready_requires_input_report_subscription();
 bool ble_should_terminate_after_encryption_change(int status);
 bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state);
+bool ble_audio_sink_ready_from_state(
+    const BleAudioSubscriptionState& state);
+bool ble_audio_control_allowed_from_state(
+    const BleAudioSubscriptionState& state);
+bool ble_audio_status_ready_from_state(
+    const BleAudioSubscriptionState& state);
 BleKeyboardLinkState ble_keyboard_state_after_gap_connected(
     const BleKeyboardLinkState& current);
 std::optional<uint8_t> ble_pairing_digit_from_hid_usage(uint8_t usage);
@@ -101,6 +123,8 @@ std::vector<uint8_t> encode_product_text_fragment(
 using BleDisconnectHandler = void (*)();
 using CompanionControlHandler = void (*)(std::span<const uint8_t>);
 using BleConnectionHandler = void (*)(bool connected);
+using AudioControlHandler = void (*)(AudioControlMessage message);
+using AudioSinkStateHandler = void (*)(bool ready);
 
 esp_err_t load_or_create_device_id(DeviceId* device_id);
 esp_err_t initialize_ble(
@@ -111,11 +135,17 @@ void clear_current_companion_binding();
 void set_ble_disconnect_handler(BleDisconnectHandler handler);
 void set_companion_control_handler(CompanionControlHandler handler);
 void set_ble_connection_handler(BleConnectionHandler handler);
+void set_audio_control_handler(AudioControlHandler handler);
+void set_audio_sink_state_handler(AudioSinkStateHandler handler);
 void enable_product_companion_mode();
 bool ble_pairing_input_active();
 bool ble_pairing_input_digit(uint8_t digit);
 bool ble_keyboard_ready();
+bool ble_audio_sink_ready();
+bool ble_audio_status_ready();
 esp_err_t notify_current_companion(std::span<const uint8_t> frame);
+esp_err_t notify_audio_frame(std::span<const uint8_t> frame);
+esp_err_t notify_audio_status(std::span<const uint8_t> status);
 esp_err_t notify_product_utf8(uint32_t operation_id,
                               std::span<const uint8_t> utf8);
 #endif

@@ -336,3 +336,11 @@ add_executable(test_audio_capture
 )
 target_include_directories(test_audio_capture PRIVATE ../../main)
 add_test(NAME audio_capture COMMAND test_audio_capture)
+
+add_executable(test_ble_audio_transport
+  test_ble_audio_transport.cpp
+  ../../main/product/ble_audio_transport.cpp
+  ../../main/probe/ble_services.cpp
+)
+target_include_directories(test_ble_audio_transport PRIVATE ../../main)
+add_test(NAME ble_audio_transport COMMAND test_ble_audio_transport)
