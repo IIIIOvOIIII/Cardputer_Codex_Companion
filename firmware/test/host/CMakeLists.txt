@@ -187,6 +187,13 @@ add_executable(test_product_types test_product_types.cpp)
 target_include_directories(test_product_types PRIVATE ../../main)
 add_test(NAME product_types COMMAND test_product_types)
 
+add_executable(test_hil_serial_control
+  test_hil_serial_control.cpp
+  ../../main/product/hil_serial_control.cpp
+)
+target_include_directories(test_hil_serial_control PRIVATE ../../main)
+add_test(NAME hil_serial_control COMMAND test_hil_serial_control)
+
 add_executable(test_ui_model
   test_ui_model.cpp
   ../../main/product/ui_model.cpp
