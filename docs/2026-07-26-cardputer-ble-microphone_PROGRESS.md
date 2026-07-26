@@ -55,3 +55,15 @@
   50% app partition 空间。
 - Next step: 提交 Task 3 并在首批检查点等待复核；下一批从 SPM1423 PDM capture
   adapter 开始，随后接入加密 Audio GATT 和 G0 controller。
+
+## 2026-07-26 16:20 HKT
+
+- Current work: 完成 Task 4 SPM1423 PDM capture adapter 和 host/target 生命周期验证。
+- Expected result: GPIO43 clock、GPIO46 data、16-bit mono PCM，24/16 kHz 固定
+  10 ms 帧；启用前关闭 Speaker；启动后不再配置或分配，stop 幂等并累计 overrun。
+- Result: Achieved。host `audio_capture` 测试通过，ESP-IDF 5.5.4 依照 pinned
+  `i2s_pdm_rx_config_t` ABI 完成 reconfigure/build；镜像大小 `0x17f120`，app
+  partition 仍有 50% 空间。内建 `esp_driver_i2s` 通过 CMake component dependency
+  声明，不需要向 `idf_component.yml` 添加外部 registry 依赖。
+- Next step: Task 5 扩展现有 Companion service 的三个加密 Audio characteristics，
+  并实现单次尝试、压力即丢帧的 HID-priority transport。

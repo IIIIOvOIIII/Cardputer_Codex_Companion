@@ -71,6 +71,7 @@ idf_component_register(
         "product/audio_protocol.cpp"
         "product/ima_adpcm.cpp"
         "product/microphone_state.cpp"
+        "product/audio_capture.cpp"
         "product/product_controller.cpp"
         "product/pet_bundle.cpp"
         "product/pet_store.cpp"
@@ -82,6 +83,7 @@ idf_component_register(
         bt
         esp-tls
         esp_hid
+        esp_driver_i2s
         esp_hw_support
         esp_http_server
         esp_https_server

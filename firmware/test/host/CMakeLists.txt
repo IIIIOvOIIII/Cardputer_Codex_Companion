@@ -329,3 +329,10 @@ add_executable(test_microphone_state
 )
 target_include_directories(test_microphone_state PRIVATE ../../main)
 add_test(NAME microphone_state COMMAND test_microphone_state)
+
+add_executable(test_audio_capture
+  test_audio_capture.cpp
+  ../../main/product/audio_capture.cpp
+)
+target_include_directories(test_audio_capture PRIVATE ../../main)
+add_test(NAME audio_capture COMMAND test_audio_capture)

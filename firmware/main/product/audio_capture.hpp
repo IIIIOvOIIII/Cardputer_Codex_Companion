@@ -1,0 +1,76 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+
+#include "product/audio_protocol.hpp"
+
+struct AudioCaptureConfig {
+  AudioSampleRate rate = AudioSampleRate::hz24000;
+};
+
+enum class AudioCaptureResult : uint8_t {
+  ok,
+  not_started,
+  already_started,
+  invalid_rate,
+  invalid_frame_size,
+  speaker_active,
+  timeout,
+  overrun,
+  backend_error,
+};
+
+class IAudioCapture {
+ public:
+  virtual ~IAudioCapture() = default;
+  virtual AudioCaptureResult start(AudioCaptureConfig config) = 0;
+  virtual AudioCaptureResult read_frame(std::span<int16_t> samples) = 0;
+  virtual AudioCaptureResult stop() = 0;
+  [[nodiscard]] virtual bool running() const = 0;
+  [[nodiscard]] virtual uint32_t overrun_count() const = 0;
+};
+
+class AudioCaptureBackend {
+ public:
+  virtual ~AudioCaptureBackend() = default;
+  [[nodiscard]] virtual bool speaker_running() const = 0;
+  virtual bool stop_speaker() = 0;
+  virtual AudioCaptureResult prepare(uint32_t rate_hz,
+                                     size_t maximum_samples) = 0;
+  virtual AudioCaptureResult enable() = 0;
+  virtual AudioCaptureResult read(std::span<int16_t> samples) = 0;
+  virtual AudioCaptureResult disable() = 0;
+};
+
+class PdmAudioCapture final : public IAudioCapture {
+ public:
+  explicit PdmAudioCapture(AudioCaptureBackend& backend);
+  explicit PdmAudioCapture(std::unique_ptr<AudioCaptureBackend> backend);
+  ~PdmAudioCapture() override;
+
+  AudioCaptureResult start(AudioCaptureConfig config) override;
+  AudioCaptureResult read_frame(std::span<int16_t> samples) override;
+  AudioCaptureResult stop() override;
+  [[nodiscard]] bool running() const override { return running_; }
+  [[nodiscard]] uint32_t overrun_count() const override {
+    return overrun_count_;
+  }
+
+ private:
+  static constexpr size_t kMaximumFrameSamples = 240;
+
+  std::unique_ptr<AudioCaptureBackend> owned_backend_{};
+  AudioCaptureBackend* backend_ = nullptr;
+  std::array<std::array<int16_t, kMaximumFrameSamples>, 2> frame_buffers_{};
+  std::array<int16_t, kMaximumFrameSamples> encoder_input_{};
+  size_t active_frame_samples_ = 0;
+  uint8_t next_buffer_ = 0;
+  uint32_t overrun_count_ = 0;
+  bool running_ = false;
+};
+
+std::unique_ptr<IAudioCapture> make_product_audio_capture();
