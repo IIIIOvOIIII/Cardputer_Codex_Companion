@@ -32,11 +32,13 @@ void ProductController::start() {
 #include <array>
 #include <cinttypes>
 #include <cstdio>
+#include <fcntl.h>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 
 #include "M5Unified.h"
 #include "esp_heap_caps.h"
@@ -55,6 +57,7 @@ void ProductController::start() {
 #include "product/ble_audio_transport.hpp"
 #include "product/display.hpp"
 #include "product/device_settings.hpp"
+#include "product/hil_serial_control.hpp"
 #include "product/input_router.hpp"
 #include "product/keyboard_matrix.hpp"
 #include "product/macro_engine.hpp"
@@ -166,7 +169,7 @@ std::array<StackType_t, 2048> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
 StaticTask_t g_audio_task_storage{};
-std::array<StackType_t, 2048> g_audio_task_stack{};
+std::array<StackType_t, 4096> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_macro_task_handle = nullptr;
 TaskHandle_t g_ui_task_handle = nullptr;
@@ -188,6 +191,7 @@ std::atomic<uint32_t> g_allocation_failures{0};
 std::unique_ptr<IAudioCapture> g_audio_capture;
 std::unique_ptr<IBleAudioTransport> g_audio_transport;
 std::unique_ptr<MicrophoneController> g_microphone;
+HilSerialCommandParser g_hil_serial_parser;
 
 class SemaphoreLock {
  public:
@@ -805,6 +809,36 @@ void enqueue_microphone_event(MicrophoneRuntimeEvent event,
            static_cast<unsigned>(event));
 }
 
+void poll_hil_serial_control() {
+  std::array<uint8_t, 32> input{};
+  const ssize_t count =
+      read(STDIN_FILENO, input.data(), input.size());
+  if (count <= 0) return;
+  for (ssize_t index = 0; index < count; ++index) {
+    const HilMicrophoneCommand command =
+        g_hil_serial_parser.consume(input[static_cast<std::size_t>(index)]);
+    if (command == HilMicrophoneCommand::none) continue;
+    const MicrophoneState state =
+        g_microphone == nullptr
+            ? MicrophoneState::unavailable
+            : g_microphone->snapshot().state;
+    const HilCommandDecision decision =
+        hil_command_decision(command, state);
+    enqueue_microphone_event(
+        decision.event == MicrophoneEventKind::g0_click
+            ? MicrophoneRuntimeEvent::g0_click
+            : MicrophoneRuntimeEvent::g0_ignored);
+    const char* action =
+        command == HilMicrophoneCommand::start ? "START" : "STOP";
+    const char* result =
+        decision.accepted
+            ? "ACCEPTED"
+            : command == HilMicrophoneCommand::start ? "REJECTED"
+                                                     : "NOOP";
+    std::printf("HIL MIC %s %s\n", action, result);
+  }
+}
+
 void publish_microphone_readiness() {
   const bool ready =
       g_audio_data_ready.load() && g_audio_sink_declared.load();
@@ -1044,6 +1078,7 @@ void ui_task(void*) {
   uint64_t g0_pressed_at_ms = 0;
   TickType_t wake = xTaskGetTickCount();
   uint32_t rendered_revision = UINT32_MAX;
+  uint32_t rendered_pet_revision = UINT32_MAX;
   uint64_t next_frame_ms = 0;
   uint8_t frame_index = 0;
   PetState rendered_pet_state = PetState::idle;
@@ -1052,6 +1087,7 @@ void ui_task(void*) {
   uint64_t last_metrics_ms = 0;
   while (true) {
     M5.update();
+    poll_hil_serial_control();
     const uint64_t button_now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
     if (M5.BtnA.wasPressed()) {
@@ -1170,13 +1206,28 @@ void ui_task(void*) {
                 g_companion_state.load() != ServiceState::ok,
                 g_ui.pet_state());
         const uint32_t revision = g_ui.revision();
-        if (revision != rendered_revision) {
+        const uint32_t pet_revision = g_ui.pet_revision();
+        const bool render_page =
+            current_page == UiPage::pet
+                ? pet_revision != rendered_pet_revision
+                : revision != rendered_revision;
+        if (render_page) {
           display_render_page(g_ui);
           rendered_revision = revision;
+          rendered_pet_revision =
+              current_page == UiPage::pet
+                  ? pet_revision
+                  : UINT32_MAX;
         }
       }
     }
-    if (current_page == UiPage::pet && now_ms >= next_frame_ms) {
+    const MicrophoneState microphone_state =
+        g_microphone == nullptr
+            ? MicrophoneState::unavailable
+            : g_microphone->snapshot().state;
+    if (current_page == UiPage::pet &&
+        pet_animation_allowed(microphone_state) &&
+        now_ms >= next_frame_ms) {
       if (current_pet_state != rendered_pet_state) {
         frame_index = 0;
         rendered_pet_state = current_pet_state;
@@ -1410,13 +1461,16 @@ class EspProductStartup final : public ProductStartupBackend {
         display_render_boot(g_ui);
       }
     }
-    g_ui_task_handle = xTaskCreateStatic(
-        ui_task, "product-ui", g_ui_task_stack.size(), nullptr,
-        tskIDLE_PRIORITY + 1, g_ui_task_stack.data(), &g_ui_task_storage);
     if (g_runtime_heap_reserve != nullptr) {
       heap_caps_free(g_runtime_heap_reserve);
       g_runtime_heap_reserve = nullptr;
     }
+    if (!display_prepare_pet_frame_buffer()) {
+      ESP_LOGW(kTag, "pet frame buffer unavailable; using row stream");
+    }
+    g_ui_task_handle = xTaskCreateStatic(
+        ui_task, "product-ui", g_ui_task_stack.size(), nullptr,
+        tskIDLE_PRIORITY + 1, g_ui_task_stack.data(), &g_ui_task_storage);
     update_web_status();
     return g_ui_task_handle != nullptr;
   }
@@ -1453,6 +1507,11 @@ void product_runtime_start() {
       g_companion_mutex == nullptr) {
     ESP_LOGE(kTag, "runtime mutex initialization failed");
     return;
+  }
+  const int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+  if (stdin_flags < 0 ||
+      fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK) < 0) {
+    ESP_LOGW(kTag, "USB HIL serial input could not be non-blocking");
   }
   static EspProductStartup startup;
   static ProductController controller(startup);

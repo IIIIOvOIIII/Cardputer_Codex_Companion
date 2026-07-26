@@ -71,6 +71,7 @@ idf_component_register(
         "product/audio_protocol.cpp"
         "product/ima_adpcm.cpp"
         "product/microphone_state.cpp"
+        "product/hil_serial_control.cpp"
         "product/audio_capture.cpp"
         "product/ble_audio_transport.cpp"
         "product/microphone_controller.cpp"

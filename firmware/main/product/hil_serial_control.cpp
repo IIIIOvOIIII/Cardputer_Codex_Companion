@@ -43,18 +43,29 @@ void HilSerialCommandParser::reset() {
 
 MicrophoneEventKind hil_microphone_event(HilMicrophoneCommand command,
                                          MicrophoneState state) {
+  return hil_command_decision(command, state).event;
+}
+
+HilCommandDecision hil_command_decision(HilMicrophoneCommand command,
+                                        MicrophoneState state) {
   if (command == HilMicrophoneCommand::start &&
       state == MicrophoneState::ready) {
-    return MicrophoneEventKind::g0_click;
+    return {
+        .event = MicrophoneEventKind::g0_click,
+        .accepted = true,
+    };
   }
   if (command == HilMicrophoneCommand::stop &&
       (state == MicrophoneState::starting ||
        state == MicrophoneState::live24 ||
        state == MicrophoneState::live16 ||
        state == MicrophoneState::stopping)) {
-    return MicrophoneEventKind::g0_click;
+    return {
+        .event = MicrophoneEventKind::g0_click,
+        .accepted = true,
+    };
   }
-  return MicrophoneEventKind::g0_ignored;
+  return {};
 }
 
 bool pet_animation_allowed(MicrophoneState state) {

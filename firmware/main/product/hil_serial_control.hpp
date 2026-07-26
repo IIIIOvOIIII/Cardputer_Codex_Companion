@@ -12,6 +12,11 @@ enum class HilMicrophoneCommand : uint8_t {
   stop,
 };
 
+struct HilCommandDecision {
+  MicrophoneEventKind event = MicrophoneEventKind::g0_ignored;
+  bool accepted = false;
+};
+
 class HilSerialCommandParser {
  public:
   HilMicrophoneCommand consume(uint8_t byte);
@@ -26,5 +31,8 @@ class HilSerialCommandParser {
 
 MicrophoneEventKind hil_microphone_event(HilMicrophoneCommand command,
                                          MicrophoneState state);
+
+HilCommandDecision hil_command_decision(HilMicrophoneCommand command,
+                                        MicrophoneState state);
 
 bool pet_animation_allowed(MicrophoneState state);

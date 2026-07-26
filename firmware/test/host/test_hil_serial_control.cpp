@@ -48,6 +48,26 @@ int main() {
                               MicrophoneState::ready) ==
          MicrophoneEventKind::g0_ignored);
 
+  const HilCommandDecision accepted = hil_command_decision(
+      HilMicrophoneCommand::start, MicrophoneState::ready);
+  assert(accepted.event == MicrophoneEventKind::g0_click);
+  assert(accepted.accepted);
+
+  const HilCommandDecision rejected = hil_command_decision(
+      HilMicrophoneCommand::start, MicrophoneState::unavailable);
+  assert(rejected.event == MicrophoneEventKind::g0_ignored);
+  assert(!rejected.accepted);
+
+  const HilCommandDecision stopped = hil_command_decision(
+      HilMicrophoneCommand::stop, MicrophoneState::live16);
+  assert(stopped.event == MicrophoneEventKind::g0_click);
+  assert(stopped.accepted);
+
+  const HilCommandDecision noop = hil_command_decision(
+      HilMicrophoneCommand::stop, MicrophoneState::ready);
+  assert(noop.event == MicrophoneEventKind::g0_ignored);
+  assert(!noop.accepted);
+
   assert(!pet_animation_allowed(MicrophoneState::starting));
   assert(!pet_animation_allowed(MicrophoneState::live24));
   assert(!pet_animation_allowed(MicrophoneState::live16));
