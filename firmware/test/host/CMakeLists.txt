@@ -308,3 +308,10 @@ add_executable(test_pin_rotation
 )
 target_include_directories(test_pin_rotation PRIVATE ../../main)
 add_test(NAME pin_rotation COMMAND test_pin_rotation)
+
+add_executable(test_audio_protocol
+  test_audio_protocol.cpp
+  ../../main/product/audio_protocol.cpp
+)
+target_include_directories(test_audio_protocol PRIVATE ../../main)
+add_test(NAME audio_protocol COMMAND test_audio_protocol)

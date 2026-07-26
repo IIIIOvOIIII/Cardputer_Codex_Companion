@@ -68,6 +68,7 @@ idf_component_register(
         "product/product_web.cpp"
         "product/device_identity.cpp"
         "product/companion_protocol.cpp"
+        "product/audio_protocol.cpp"
         "product/product_controller.cpp"
         "product/pet_bundle.cpp"
         "product/pet_store.cpp"

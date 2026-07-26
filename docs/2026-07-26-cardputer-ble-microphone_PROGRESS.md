@@ -19,3 +19,15 @@
   隔离工作树；24 kHz 十分钟真机门禁位于 HAL 扩展之前，失败时只能固定降为 16 kHz，不能放宽
   HID、堆、栈或丢帧阈值。
 - Next step: 自检实施计划的规格覆盖、占位符和跨任务类型一致性，提交后由用户选择执行方式。
+
+## 2026-07-26 15:31 HKT
+
+- Current work: 完成发布基线门禁，并按 TDD 落地 Audio v1 传输协议、共享 fixture、
+  Python 验证器和固件端无分配编解码器。
+- Expected result: 严格接受 132-byte 24 kHz 与 92-byte 16 kHz 帧，拒绝未知版本、
+  flags、rate、长度和任何远程启动 opcode。
+- Result: Achieved。基线 Python 134/134、host 28/28、sanitizer 28/28、
+  ESP-IDF 与 Companion 发布构建通过；新增 Python 5/5 和 C++ `audio_protocol`
+  测试通过，控制面仅允许五个非启动 opcode。
+- Next step: Task 2 先加入 C++/Swift 失败测试，再实现共享 golden vector 驱动的
+  IMA-ADPCM 跨语言编解码。
