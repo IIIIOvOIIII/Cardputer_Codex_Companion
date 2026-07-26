@@ -118,14 +118,16 @@ def test_ble_watchdog_and_keyboard_use_atomic_link_snapshot():
     assert "return g_hid_ready.load();" in ble
 
 
-def test_pet_renderer_uses_one_bounded_buffer_and_partial_push():
+def test_pet_renderer_streams_bounded_rows_without_full_frame_buffer():
     display = (ROOT / "firmware/main/product/display.cpp").read_text()
-    assert "std::array<uint16_t, 96 * 104> g_pet_frame" in display
+    assert "g_pet_frame" not in display
     assert "constexpr int32_t kPetWidth = 96" in display
     assert "constexpr int32_t kPetHeight = 104" in display
     frame_body = display.split("bool display_render_pet_frame", 1)[1]
     frame_body = frame_body.split("void display_render_placeholder", 1)[0]
-    assert "pushImage(kPetX, kPetY, kPetWidth, kPetHeight" in frame_body
+    assert "store.decode_rows(" in frame_body
+    assert "draw_pet_row" in display
+    assert "kPetFrameWidth, 1, pixels.data()" in display
     assert "fillScreen" not in frame_body
 
 

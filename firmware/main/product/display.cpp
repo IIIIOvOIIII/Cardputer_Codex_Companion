@@ -15,7 +15,14 @@ constexpr int32_t kPetX = 72;
 constexpr int32_t kPetY = 20;
 constexpr int32_t kPetWidth = 96;
 constexpr int32_t kPetHeight = 104;
-std::array<uint16_t, 96 * 104> g_pet_frame{};
+
+bool draw_pet_row(
+    void*, std::size_t row,
+    std::span<const uint16_t, kPetFrameWidth> pixels) {
+  M5.Display.pushImage(kPetX, kPetY + static_cast<int32_t>(row),
+                       kPetFrameWidth, 1, pixels.data());
+  return true;
+}
 
 void begin_page(const char* title) {
   M5.Display.startWrite();
@@ -146,15 +153,14 @@ void display_render_page(const UiModel& model) {
 
 bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
-  if (!store.decode(state, frame_index, g_pet_frame)) return false;
   M5.Display.startWrite();
   const bool previous_swap = M5.Display.getSwapBytes();
   M5.Display.setSwapBytes(true);
-  M5.Display.pushImage(kPetX, kPetY, kPetWidth, kPetHeight,
-                       g_pet_frame.data());
+  const bool decoded =
+      store.decode_rows(state, frame_index, draw_pet_row, nullptr);
   M5.Display.setSwapBytes(previous_swap);
   M5.Display.endWrite();
-  return true;
+  return decoded;
 }
 
 void display_render_placeholder(PetState state) {

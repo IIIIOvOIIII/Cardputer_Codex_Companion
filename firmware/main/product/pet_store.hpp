@@ -72,6 +72,8 @@ class PetStore {
   [[nodiscard]] PetStoreStatus status() const;
   bool decode(PetState state, uint8_t frame,
               std::span<uint16_t, kPetFramePixels> output);
+  bool decode_rows(PetState state, uint8_t frame,
+                   PetRowConsumer consumer, void* context);
 
  private:
   esp_err_t submit_upload_command(uint8_t command);

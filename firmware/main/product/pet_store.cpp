@@ -494,4 +494,17 @@ bool PetStore::decode(
                           output) == PetBundleError::none;
 }
 
+bool PetStore::decode_rows(PetState state, uint8_t frame,
+                           PetRowConsumer consumer, void* context) {
+  if (impl_ == nullptr || consumer == nullptr) return false;
+  Lock lock(impl_->mutex);
+  if (!lock.locked() || impl_->active_slot == PetSlot::none) return false;
+  PartitionSource source(impl_->partition, slot_offset(impl_->active_slot),
+                         impl_->active_size);
+  return source.valid() &&
+         decode_pet_frame_rows(
+             source, impl_->active_metadata, state, frame,
+             consumer, context) == PetBundleError::none;
+}
+
 #endif

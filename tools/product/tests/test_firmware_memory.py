@@ -56,6 +56,18 @@ def test_product_release_uses_product_ble_gap_name():
     assert 'CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="Cardputer Codex"' in defaults
 
 
+def test_pet_display_uses_only_a_single_rgb565_row():
+    display = (
+        REPO_ROOT / "firmware/main/product/display.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "g_pet_frame" not in display
+    assert (
+        "pushImage(kPetX, kPetY + static_cast<int32_t>(row)," in display
+    )
+    assert "kPetFrameWidth, 1, pixels.data()" in display
+
+
 def test_wifi_cfg_partition_is_optional_for_wrong_or_generic_flash_layouts():
     wifi_manager = (REPO_ROOT / "firmware/main/product/wifi_manager.cpp").read_text(
         encoding="utf-8"
