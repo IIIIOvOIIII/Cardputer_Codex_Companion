@@ -140,3 +140,18 @@
   113,529 bytes。
 - Next step: 提交指标修复，随后只刷写 `0x20000` 应用分区，先做短时 boot/metrics
   smoke，再运行十分钟 24 kHz + concurrent HID 真机门禁。
+
+## 2026-07-26 15:30 HKT
+
+- Current work: Task 9 app-only 刷写后执行真实资源 smoke，并对不满足原门槛的结果
+  进行根因分析与最小内存调优设计。
+- Expected result: 保持 64/32/40 KiB heap/largest/TLS 门槛不变，找到不改变产品
+  行为且可量化的内存回收路径。
+- Result: Partial。刷写与独立 `verify_flash` digest matched；设备无 panic、reboot
+  或 allocation failure，五个已报告任务满足 stack 门槛。但实测 stable heap/largest
+  约 38/21 KiB，HTTPS transient 最低约 25 KiB。历史 Phase 0 HIL 明确记录
+  `capture_complete=false`，说明门槛从未在完整产品运行时被证明。主分支对比显示
+  麦克风仅增加约 7 KiB 静态 DIRAM；已批准采用宠物逐行绘制回收 19,968 bytes，
+  并按 high-water 缩减 scanner/macro/audio 栈再回收 9,216 bytes。
+- Next step: 按已批准的内存调优设计执行 RED→GREEN，实现后重新完成全门禁、
+  app-only 刷写与资源 smoke；原门槛全部通过后才开始十分钟音频门禁。
