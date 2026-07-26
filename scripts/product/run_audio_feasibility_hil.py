@@ -27,6 +27,9 @@ REQUIRED_REPORT_FIELDS = {
     "max_gap_ms",
     "sample_rate_hz",
     "ble_reconnects",
+    "hid_generated",
+    "hid_queued",
+    "hid_queue_failures",
     "hid_p95_us",
     "steady_free_internal",
     "steady_largest_internal",
@@ -104,6 +107,18 @@ def validate_report(report: dict[str, Any], expected_duration: int) -> None:
     gates = [
         (int(report["max_gap_ms"]) <= 150, "audio gap exceeds 150 ms"),
         (int(report["ble_reconnects"]) == 0, "BLE reconnect observed"),
+        (
+            int(report["hid_generated"]) >= 1_000,
+            "fewer than 1000 HID events generated",
+        ),
+        (
+            int(report["hid_queued"]) >= int(report["hid_generated"]),
+            "HID event was not queued",
+        ),
+        (
+            int(report["hid_queue_failures"]) == 0,
+            "HID queue failure observed",
+        ),
         (int(report["hid_p95_us"]) <= 20_000, "HID p95 exceeds 20 ms"),
         (
             int(report["steady_free_internal"]) >= 65_536,
@@ -139,30 +154,114 @@ def _parse_json_from_line(line: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _read_serial(
-    port: Path,
-    stop: threading.Event,
-    samples: list[dict[str, Any]],
-) -> None:
-    descriptor = os.open(port, os.O_RDONLY | os.O_NONBLOCK)
-    pending = b""
-    try:
-        while not stop.is_set():
-            ready, _, _ = select.select([descriptor], [], [], 0.25)
-            if not ready:
+class SerialMonitor:
+    def __init__(
+        self,
+        descriptor: int,
+        samples: list[dict[str, Any]],
+    ) -> None:
+        self._descriptor = descriptor
+        self._samples = samples
+        self._stop = threading.Event()
+        self._condition = threading.Condition()
+        self._lines: list[str] = []
+        self._thread = threading.Thread(target=self._read, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+
+    def send(self, command: bytes) -> None:
+        pending = memoryview(command)
+        deadline = time.monotonic() + 5
+        while pending:
+            try:
+                written = os.write(self._descriptor, pending)
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("serial command write timed out")
+                select.select([], [self._descriptor], [], remaining)
                 continue
-            chunk = os.read(descriptor, 4096)
+            if written <= 0:
+                raise OSError("serial command write made no progress")
+            pending = pending[written:]
+
+    def wait_for(self, pattern: str, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                if any(pattern in line for line in self._lines):
+                    return True
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+
+    def _read(self) -> None:
+        pending = b""
+        while not self._stop.is_set():
+            try:
+                ready, _, _ = select.select(
+                    [self._descriptor], [], [], 0.25
+                )
+                if not ready:
+                    continue
+                chunk = os.read(self._descriptor, 4096)
+            except (BlockingIOError, OSError):
+                if self._stop.is_set():
+                    return
+                continue
             if not chunk:
                 continue
             pending += chunk
             while b"\n" in pending:
                 raw, pending = pending.split(b"\n", 1)
-                line = raw.decode("utf-8", errors="replace")
+                line = raw.decode("utf-8", errors="replace").rstrip("\r")
                 value = _parse_json_from_line(line)
                 if value is not None:
-                    samples.append(value)
+                    self._samples.append(value)
+                with self._condition:
+                    self._lines.append(line)
+                    if len(self._lines) > 128:
+                        del self._lines[:-128]
+                    self._condition.notify_all()
+
+
+def run_probe_process(
+    process: subprocess.Popen[Any],
+    monitor: SerialMonitor,
+    timeout: float,
+) -> int:
+    failed = False
+    try:
+        if not monitor.wait_for("BLE audio sink ready=1", timeout=30):
+            process.terminate()
+            process.wait(timeout=5)
+            raise TimeoutError("BLE audio sink readiness timed out")
+        monitor.send(b"HIL MIC START\n")
+        try:
+            return process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            process.terminate()
+            process.wait(timeout=5)
+            raise TimeoutError("audio probe timed out") from error
+    except BaseException:
+        failed = True
+        raise
     finally:
-        os.close(descriptor)
+        try:
+            monitor.send(b"HIL MIC STOP\n")
+        except Exception as cleanup_error:
+            if not failed:
+                raise
+            print(
+                f"warning: microphone STOP failed: {cleanup_error}",
+                file=sys.stderr,
+            )
 
 
 def _exercise_tls(
@@ -236,12 +335,23 @@ def merge_metrics(
         for sample in resource_samples
         if isinstance(sample.get("hid"), dict)
     ]
+    hid_rows = [
+        sample["hid"]
+        for sample in resource_samples
+        if isinstance(sample.get("hid"), dict)
+    ]
+    last_hid = hid_rows[-1] if hid_rows else {}
     report = dict(companion)
     report.update(
         {
             "captured_frames": int(last_audio.get("captured_frames", 0)),
             "source_overruns": int(last_audio.get("source_overruns", 0)),
             "transport_drops": int(last_audio.get("transport_drops", 0)),
+            "hid_generated": int(last_hid.get("generated", 0)),
+            "hid_queued": int(last_hid.get("queued", 0)),
+            "hid_queue_failures": int(
+                last_hid.get("queue_failures", 0)
+            ),
             "hid_p95_us": max(hid_values, default=0),
             "steady_free_internal": min(
                 int(sample.get("free_internal_heap", 0))
@@ -290,13 +400,10 @@ def main(argv: list[str] | None = None) -> int:
     companion_metrics = args.output.with_suffix(".companion.json")
     samples: list[dict[str, Any]] = []
     stop = threading.Event()
-    reader = threading.Thread(
-        target=_read_serial,
-        args=(args.port, stop, samples),
-        daemon=True,
-    )
-    reader.start()
-    print("Press G0 once to start microphone capture.")
+    descriptor = os.open(args.port, os.O_RDWR | os.O_NONBLOCK)
+    monitor = SerialMonitor(descriptor, samples)
+    monitor.start()
+    print("USB HIL control ready; microphone will start automatically.")
     started_at = time.monotonic()
     process = subprocess.Popen(
         [
@@ -315,15 +422,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     tls_probe.start()
     try:
-        return_code = process.wait(timeout=args.duration + 30)
-    except subprocess.TimeoutExpired:
-        process.terminate()
-        process.wait(timeout=5)
-        raise SystemExit("audio probe timed out")
+        return_code = run_probe_process(
+            process,
+            monitor,
+            timeout=args.duration + 30,
+        )
+    except TimeoutError as error:
+        raise SystemExit(str(error)) from error
     finally:
         stop.set()
-        reader.join(timeout=2)
         tls_probe.join(timeout=6)
+        monitor.stop()
+        os.close(descriptor)
     if return_code != 0:
         raise SystemExit(f"audio probe exited with {return_code}")
     companion_report = json.loads(companion_metrics.read_text())

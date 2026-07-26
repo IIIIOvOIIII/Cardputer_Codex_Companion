@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import socket
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,6 +33,9 @@ def valid_report():
         "max_gap_ms": 30,
         "sample_rate_hz": 24_000,
         "ble_reconnects": 0,
+        "hid_generated": 1_000,
+        "hid_queued": 1_000,
+        "hid_queue_failures": 0,
         "hid_p95_us": 15_000,
         "steady_free_internal": 70_000,
         "steady_largest_internal": 35_000,
@@ -51,7 +56,12 @@ def resource_sample(scenario: str, free: int, largest: int):
             "source_overruns": 0,
             "transport_drops": 0,
         },
-        "hid": {"p95_upper_bound_us": 1_000},
+        "hid": {
+            "generated": 1_000,
+            "queued": 1_000,
+            "queue_failures": 0,
+            "p95_upper_bound_us": 1_000,
+        },
         "tasks": [
             {
                 "name": "https",
@@ -155,6 +165,9 @@ def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
         ("transport_drops", 1_000),
         ("max_gap_ms", 151),
         ("ble_reconnects", 1),
+        ("hid_generated", 999),
+        ("hid_queued", 999),
+        ("hid_queue_failures", 1),
         ("hid_p95_us", 20_001),
         ("steady_free_internal", 65_535),
         ("steady_largest_internal", 32_767),
@@ -180,6 +193,9 @@ def test_merge_separates_steady_and_tls_resource_windows():
     assert report["steady_free_internal"] == 70_000
     assert report["steady_largest_internal"] == 33_000
     assert report["tls_burst_free_internal"] == 45_000
+    assert report["hid_generated"] == 1_000
+    assert report["hid_queued"] == 1_000
+    assert report["hid_queue_failures"] == 0
 
 
 @pytest.mark.parametrize("missing", ["steady", "tls_burst"])
@@ -191,3 +207,86 @@ def test_merge_requires_both_resource_windows(missing):
             {},
             [resource_sample(scenario, 70_000, 33_000)],
         )
+
+
+def test_serial_monitor_uses_one_duplex_descriptor():
+    module = load_script()
+    monitor_side, device_side = socket.socketpair()
+    samples = []
+    monitor = module.SerialMonitor(monitor_side.fileno(), samples)
+    try:
+        monitor.start()
+        device_side.sendall(b"BLE audio sink ready=1\n")
+        assert monitor.wait_for("BLE audio sink ready=1", timeout=1)
+        monitor.send(b"HIL MIC START\n")
+        assert device_side.recv(64) == b"HIL MIC START\n"
+    finally:
+        monitor.stop()
+        monitor_side.close()
+        device_side.close()
+
+
+class FakeSerialMonitor:
+    def __init__(self, fail_stop=False):
+        self.commands = []
+        self.fail_stop = fail_stop
+
+    def wait_for(self, pattern, timeout):
+        assert pattern == "BLE audio sink ready=1"
+        assert timeout == 30
+        return True
+
+    def send(self, command):
+        self.commands.append(command)
+        if self.fail_stop and command == b"HIL MIC STOP\n":
+            raise OSError("stop write failed")
+
+
+class FakeProcess:
+    def __init__(self, return_code=0, times_out=False):
+        self.return_code = return_code
+        self.times_out = times_out
+        self.terminated = False
+
+    def wait(self, timeout):
+        if self.times_out and not self.terminated:
+            raise subprocess.TimeoutExpired("audio-probe", timeout)
+        return self.return_code
+
+    def terminate(self):
+        self.terminated = True
+
+
+def test_probe_process_always_stops_microphone():
+    module = load_script()
+    monitor = FakeSerialMonitor()
+    result = module.run_probe_process(
+        FakeProcess(),
+        monitor,
+        timeout=40,
+    )
+    assert result == 0
+    assert monitor.commands == [
+        b"HIL MIC START\n",
+        b"HIL MIC STOP\n",
+    ]
+
+
+def test_probe_timeout_still_stops_microphone():
+    module = load_script()
+    monitor = FakeSerialMonitor()
+    process = FakeProcess(times_out=True)
+    with pytest.raises(TimeoutError, match="timed out"):
+        module.run_probe_process(process, monitor, timeout=40)
+    assert process.terminated
+    assert monitor.commands == [
+        b"HIL MIC START\n",
+        b"HIL MIC STOP\n",
+    ]
+
+
+def test_probe_success_fails_when_stop_cannot_be_sent():
+    module = load_script()
+    monitor = FakeSerialMonitor(fail_stop=True)
+    with pytest.raises(OSError, match="stop write failed"):
+        module.run_probe_process(FakeProcess(), monitor, timeout=40)
