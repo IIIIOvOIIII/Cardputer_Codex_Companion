@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <string>
 #include <string_view>
 
 #include "product/profile.hpp"
@@ -71,6 +73,72 @@ constexpr bool product_web_companion_needs_snapshot(ServiceState state) {
   return state != ServiceState::ok;
 }
 
+enum class ProductWebMicrophoneState : uint8_t {
+  unavailable,
+  ready,
+  live24,
+  live16,
+  error,
+};
+
+enum class ProductWebMicrophoneError : uint8_t {
+  none,
+  mac_not_ready,
+  mic_init_failed,
+  ble_audio_busy,
+  audio_driver_mismatch,
+};
+
+struct ProductWebMicrophoneStatus {
+  ProductWebMicrophoneState state = ProductWebMicrophoneState::unavailable;
+  uint32_t sample_rate_hz = 0;
+  uint8_t drop_percent = 0;
+  ProductWebMicrophoneError last_error = ProductWebMicrophoneError::none;
+};
+
+constexpr std::string_view product_web_microphone_state_name(
+    ProductWebMicrophoneState state) {
+  switch (state) {
+    case ProductWebMicrophoneState::unavailable: return "UNAVAILABLE";
+    case ProductWebMicrophoneState::ready: return "READY";
+    case ProductWebMicrophoneState::live24: return "LIVE24";
+    case ProductWebMicrophoneState::live16: return "LIVE16";
+    case ProductWebMicrophoneState::error: return "ERROR";
+  }
+  return "ERROR";
+}
+
+constexpr std::string_view product_web_microphone_error_name(
+    ProductWebMicrophoneError error) {
+  switch (error) {
+    case ProductWebMicrophoneError::none: return "NONE";
+    case ProductWebMicrophoneError::mac_not_ready: return "MAC_NOT_READY";
+    case ProductWebMicrophoneError::mic_init_failed: return "MIC_INIT_FAILED";
+    case ProductWebMicrophoneError::ble_audio_busy: return "BLE_AUDIO_BUSY";
+    case ProductWebMicrophoneError::audio_driver_mismatch:
+      return "AUDIO_DRIVER_MISMATCH";
+  }
+  return "MIC_INIT_FAILED";
+}
+
+inline std::string product_web_microphone_json(
+    const ProductWebMicrophoneStatus& status) {
+  char json[160]{};
+  const std::string_view state =
+      product_web_microphone_state_name(status.state);
+  const std::string_view error =
+      product_web_microphone_error_name(status.last_error);
+  std::snprintf(
+      json, sizeof(json),
+      "{\"state\":\"%.*s\",\"sample_rate_hz\":%lu,"
+      "\"drop_percent\":%u,\"last_error\":\"%.*s\"}",
+      static_cast<int>(state.size()), state.data(),
+      static_cast<unsigned long>(status.sample_rate_hz),
+      static_cast<unsigned>(status.drop_percent),
+      static_cast<int>(error.size()), error.data());
+  return json;
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;
@@ -107,6 +175,7 @@ bool product_web_tls_resource_window_active();
 const char* product_web_pairing_code();
 void product_web_set_status(ServiceState ble, ServiceState wifi,
                             ServiceState companion);
+void product_web_set_microphone(ProductWebMicrophoneStatus status);
 void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler);
 void product_web_set_companion_heartbeat_handler(

@@ -9,6 +9,8 @@ namespace {
 constexpr uint32_t kBackground = 0x05080d;
 constexpr uint32_t kForeground = 0xe7edf5;
 constexpr uint32_t kAccent = 0x4fd1c5;
+constexpr uint32_t kMicrophoneLive = 0xff4040;
+constexpr uint32_t kMicrophoneDegraded = 0xffa726;
 constexpr uint8_t kDisplayTitleTextSize = 1;
 constexpr uint8_t kDisplayBodyTextSize = 2;
 constexpr int32_t kPetX = 72;
@@ -67,6 +69,29 @@ void draw_page_dots(UiPage active) {
     M5.Display.fillCircle(centers[index], 131, 2, color);
   }
 }
+
+void draw_microphone_status(const UiModel& model, uint32_t background) {
+  uint32_t color = kForeground;
+  if (model.microphone_state() == UiMicrophoneState::live24 ||
+      model.microphone_state() == UiMicrophoneState::error) {
+    color = kMicrophoneLive;
+  } else if (model.microphone_state() == UiMicrophoneState::live16) {
+    color = kMicrophoneDegraded;
+  }
+  M5.Display.setTextColor(color, background);
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(181, 5);
+  M5.Display.print(model.microphone_indicator().data());
+}
+
+void draw_microphone_error(const UiModel& model) {
+  if (model.microphone_error().empty()) return;
+  M5.Display.fillRect(0, 116, 240, 12, kBackground);
+  M5.Display.setTextColor(kMicrophoneLive, kBackground);
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(5, 118);
+  M5.Display.print(model.microphone_error().data());
+}
 }  // namespace
 
 esp_err_t display_start(UiModel* model) {
@@ -122,18 +147,24 @@ void display_render_page(const UiModel& model) {
             : PetState::waiting;
     M5.Display.print(pet_state_name(effective));
     M5.Display.setTextColor(kForeground, 0x0d1820);
-    M5.Display.setCursor(141, 5);
+    M5.Display.setCursor(118, 5);
     M5.Display.printf(
-        "B:%s W:%s M:%s",
+        "B%sW%sM%s",
         model.ble() == ServiceState::ok ? "+" : "-",
         model.wifi() == ServiceState::ok ? "+" : "-",
         model.companion() == ServiceState::ok ? "+" : "-");
+    draw_microphone_status(model, 0x0d1820);
+    if (model.microphone_live()) {
+      M5.Display.fillCircle(174, 8, 3, kMicrophoneLive);
+    }
+    draw_microphone_error(model);
     draw_page_dots(model.page());
     M5.Display.endWrite();
     display_render_placeholder(effective);
     return;
   }
   begin_page(page_title(model.page()));
+  draw_microphone_status(model, kBackground);
   const UiPageContent content = model.page_content();
   const uint8_t visible = model.page() == UiPage::settings ? 5 : 6;
   const uint8_t end = std::min<uint8_t>(
@@ -148,6 +179,7 @@ void display_render_page(const UiModel& model) {
     M5.Display.fillTriangle(223, 116, 233, 116, 228, 122, kAccent);
   }
   draw_page_dots(model.page());
+  draw_microphone_error(model);
   M5.Display.endWrite();
 }
 

@@ -23,6 +23,9 @@ struct Configuration {
     enum Command {
         case version
         case doctor
+        case doctorAudio
+        case installAudioDriver
+        case uninstallAudioDriver
         case run
         case audioProbe(duration: Int, metricsURL: URL)
     }
@@ -34,7 +37,13 @@ struct Configuration {
     let pinRevision: UInt32
 
     static func parse(_ arguments: [String]) throws -> Configuration {
-        if arguments == ["--version"] {
+        let productCommand: CompanionCommand
+        do {
+            productCommand = try CompanionCommand.parse(arguments)
+        } catch {
+            throw ConfigurationError.usage
+        }
+        if productCommand == .version {
             return Configuration(
                 command: .version,
                 deviceURL: nil,
@@ -43,7 +52,7 @@ struct Configuration {
                 pinRevision: 0
             )
         }
-        if arguments == ["doctor"] {
+        if productCommand == .doctor {
             return Configuration(
                 command: .doctor,
                 deviceURL: nil,
@@ -52,7 +61,34 @@ struct Configuration {
                 pinRevision: 0
             )
         }
-        if arguments.first == "audio-probe" {
+        if productCommand == .doctorAudio {
+            return Configuration(
+                command: .doctorAudio,
+                deviceURL: nil,
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
+            )
+        }
+        if productCommand == .installAudioDriver {
+            return Configuration(
+                command: .installAudioDriver,
+                deviceURL: nil,
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
+            )
+        }
+        if productCommand == .uninstallAudioDriver {
+            return Configuration(
+                command: .uninstallAudioDriver,
+                deviceURL: nil,
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
+            )
+        }
+        if productCommand == .audioProbe {
             guard arguments.count == 5,
                   arguments[1] == "--duration",
                   let duration = Int(arguments[2]),
@@ -71,7 +107,7 @@ struct Configuration {
                 pinRevision: 0
             )
         }
-        guard arguments.first == "run" else {
+        guard productCommand == .run else {
             throw ConfigurationError.usage
         }
         var deviceValue: String?

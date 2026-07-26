@@ -36,6 +36,17 @@ int main() {
   assert(product_web_companion_needs_snapshot(ServiceState::offline));
   assert(product_web_companion_needs_snapshot(ServiceState::starting));
   assert(!product_web_companion_needs_snapshot(ServiceState::ok));
+  const ProductWebMicrophoneStatus microphone{
+      .state = ProductWebMicrophoneState::ready,
+      .sample_rate_hz = 0,
+      .drop_percent = 0,
+      .last_error = ProductWebMicrophoneError::none,
+  };
+  const std::string microphone_json =
+      product_web_microphone_json(microphone);
+  assert(microphone_json ==
+         "{\"state\":\"READY\",\"sample_rate_hz\":0,"
+         "\"drop_percent\":0,\"last_error\":\"NONE\"}");
   assert(kProductWebRoutes.size() == 16);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");
@@ -62,6 +73,11 @@ int main() {
   assert(kProductWebRoutes[2].requires_pairing);
   for (std::size_t index = 2; index < kProductWebRoutes.size(); ++index) {
     assert(kProductWebRoutes[index].requires_pairing);
+  }
+  for (const ProductWebRoute& route : kProductWebRoutes) {
+    assert(route.path.find("microphone/start") == std::string_view::npos);
+    assert(route.path.find("microphone/stop") == std::string_view::npos);
+    assert(route.path.find("capture") == std::string_view::npos);
   }
   return 0;
 }

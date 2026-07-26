@@ -81,23 +81,34 @@ int main() {
   constexpr std::array<std::string_view, 2> profile_ids{"SAFE", "CODE"};
   constexpr std::array<std::string_view, 2> profile_names{"Safe", "Coding"};
   hierarchy.set_profile_choices(profile_ids, profile_names);
+  assert(hierarchy.content().lines[0].find("INPUT MODE") != std::string::npos);
+  result = hierarchy.on_key(54, true, false, 790);
+  assert(result.command == SettingsCommandKind::none);
+  hierarchy.on_key(54, false, false, 791);
+  result = hierarchy.on_key(41, true, false, 792);
+  assert(result.command == SettingsCommandKind::apply_input_mode);
+  assert(result.input_mode == InputMode::codex_remote);
+  hierarchy.on_key(41, false, false, 793);
+  hierarchy.set_result("INPUT MODE SAVED");
+  hierarchy.on_key(0, true, false, 794);
+  hierarchy.on_key(0, false, false, 795);
+  hierarchy.on_key(53, true, false, 798);
+  hierarchy.on_key(53, false, false, 799);
   hierarchy.on_key(41, true, false, 800);
   hierarchy.on_key(41, false, false, 801);
   assert(hierarchy.content().count == 2);
-  hierarchy.on_key(53, true, false, 802);
-  hierarchy.on_key(53, false, false, 803);
   result = hierarchy.on_key(41, true, false, 804);
-  assert(result.command == SettingsCommandKind::activate_profile);
-  assert(hierarchy.profile_id() == "CODE");
+  assert(result.command == SettingsCommandKind::activate_safe_profile);
+  assert(hierarchy.profile_id() == "SAFE");
   hierarchy.on_key(41, false, false, 805);
   hierarchy.set_result("PROFILE ACTIVATED");
   hierarchy.on_key(0, true, false, 806);
   hierarchy.on_key(0, false, false, 807);
-  assert(hierarchy.content().count == 7);
+  assert(hierarchy.content().count == 8);
 
-  hierarchy.on_key(53, true, false, 808);
-  hierarchy.on_key(53, false, false, 809);
   hierarchy.on_key(53, true, false, 810);
+  hierarchy.on_key(53, false, false, 811);
+  hierarchy.on_key(53, true, false, 811);
   hierarchy.on_key(53, false, false, 811);
   result = hierarchy.on_key(41, true, false, 812);
   assert(result.command == SettingsCommandKind::scan_wifi);
@@ -118,11 +129,11 @@ int main() {
   SettingsMenu display;
   display.enter();
   const DeviceSettings original = display.device_settings();
-  for (int index = 0; index < 3; ++index) {
+  for (int index = 0; index < 4; ++index) {
     display.on_key(53, true, false, 900 + index * 2);
     display.on_key(53, false, false, 901 + index * 2);
   }
-  assert(display.selected() == 3);
+  assert(display.selected() == 4);
   result = display.on_key(54, true, false, 910);
   assert(result.command == SettingsCommandKind::none);
   assert(display.device_settings().brightness != original.brightness);

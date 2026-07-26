@@ -232,3 +232,21 @@
   signing information；development 再绑定构建时 console UID。
 - Next step: 提交 Task 12；Task 13 实现 driver install/uninstall/doctor、Companion
   bundle resource，以及固件 microphone UI/Settings/Web 只读状态集成。
+
+## 2026-07-26 18:14 HKT
+
+- Current work: 完成 Task 13 HAL 安装/卸载、`doctor audio`、Companion 运行时桥接，
+  以及固件麦克风 UI、Settings 与 Web 只读状态集成。
+- Expected result: 仅管理员变更 `/Library/Audio/Plug-Ins/HAL`；应用只安装自身
+  Resources 中的签名 driver；普通运行不提权；所有页面显示稳定 MIC 状态，PET
+  录音时有红色标识，DEVICE 增加 MIC 行；Input Mode 与 SAFE 迁入 Settings；
+  Web 只读显示状态/采样率/丢帧率/错误且不存在启停路由。
+- Result: Achieved。新增 staged/validated/rollback-safe helper、三条 CLI 命令、
+  HAL 枚举/XPC/共享静音环/GATT subscription 诊断和正常 LaunchAgent 音频桥；
+  非 root 变更以退出码 77 明确要求 sudo。固件 host 目标 3/3、Web/installer/
+  packaging Python 37/37、ProductConfiguration/ProductAudio/ProductGATT、
+  C ring、HAL ASan/UBSan、ad-hoc codesign 与 ESP-IDF 5.5.4 target build
+  全部通过，应用分区仍保留 49%。
+- Next step: 提交 Task 13；Task 14 增加恢复/版本门禁，统一升级到 1.1.0，
+  扩展完整 release gate，安装当前 Mac 的开发 HAL/Companion 并 app-only
+  刷写；按用户要求把实体 G0/30 分钟 HIL 留到最后。

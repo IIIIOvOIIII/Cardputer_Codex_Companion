@@ -31,6 +31,10 @@ int main() {
   model.set_ble(ServiceState::ok);
   model.set_wifi(ServiceState::offline);
   model.set_companion(ServiceState::ok);
+  model.set_microphone(
+      UiMicrophoneState::ready, 0, 0, "NONE", 1000);
+  assert(model.microphone_indicator() == "MIC READY");
+  assert(!model.microphone_live());
   model.set_profile("CODEX");
   model.set_web("192.168.1.88", "12345678");
   model.set_session("agent-loop", "Cardputer_Codex_Companion", "WAITING", 2, 1);
@@ -121,12 +125,13 @@ int main() {
   model.navigate(UiNavAction::next_page);
   model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
-  assert(device.count == 5);
+  assert(device.count == 6);
   assert(device.lines[0] == "VERSION:1.0.31");
   assert(device.lines[1] == "PIN:12345678");
   assert(device.lines[2] == "BLE:OK");
   assert(device.lines[3] == "WIFI:OFF");
   assert(device.lines[4] == "AGENT:OK");
+  assert(device.lines[5] == "MIC:READY");
   std::string joined;
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
@@ -137,8 +142,28 @@ int main() {
   assert(joined.find("BLE:OK") != std::string::npos);
   assert(joined.find("WIFI:OFF") != std::string::npos);
   assert(joined.find("AGENT:OK") != std::string::npos);
+  assert(joined.find("MIC:READY") != std::string::npos);
   model.navigate(UiNavAction::scroll_down);
   assert(model.scroll_offset() <= device.count);
+
+  model.set_microphone(
+      UiMicrophoneState::live24, 24000, 1, "NONE", 2000);
+  assert(model.microphone_indicator() == "MIC 24K");
+  assert(model.microphone_live());
+  model.set_microphone(
+      UiMicrophoneState::live16, 16000, 2, "NONE", 2100);
+  assert(model.microphone_indicator() == "MIC 16K");
+  model.set_microphone(
+      UiMicrophoneState::error, 0, 2, "MIC INIT FAILED", 2200);
+  assert(model.microphone_indicator() == "MIC ERR");
+  assert(model.microphone_error() == "MIC INIT FAILED");
+  model.expire_microphone_error(3199);
+  assert(model.microphone_error() == "MIC INIT FAILED");
+  model.expire_microphone_error(3200);
+  assert(model.microphone_error().empty());
+  model.set_microphone(
+      UiMicrophoneState::unavailable, 0, 0, "NONE", 3300);
+  assert(model.microphone_indicator() == "MIC --");
 
   model.navigate(UiNavAction::next_page);
   model.set_codex("gpt-5.6", "high", false, {});

@@ -82,6 +82,7 @@ struct MacroInvocation {
 struct SettingsInvocation {
   SettingsCommandKind command = SettingsCommandKind::none;
   uint8_t selected = 0;
+  InputMode input_mode = InputMode::keyboard;
   DeviceSettings device_settings{};
   std::array<char, 9> pin{};
   std::array<char, 9> profile_id{};
@@ -300,6 +301,89 @@ void update_web_status() {
   product_web_set_status(g_ble_state, g_wifi_state, g_companion_state.load());
 }
 
+UiMicrophoneState ui_microphone_state(MicrophoneState state) {
+  switch (state) {
+    case MicrophoneState::unavailable:
+      return UiMicrophoneState::unavailable;
+    case MicrophoneState::ready:
+    case MicrophoneState::starting:
+    case MicrophoneState::stopping:
+      return UiMicrophoneState::ready;
+    case MicrophoneState::live24:
+      return UiMicrophoneState::live24;
+    case MicrophoneState::live16:
+      return UiMicrophoneState::live16;
+    case MicrophoneState::error:
+      return UiMicrophoneState::error;
+  }
+  return UiMicrophoneState::error;
+}
+
+ProductWebMicrophoneState web_microphone_state(MicrophoneState state) {
+  switch (state) {
+    case MicrophoneState::unavailable:
+      return ProductWebMicrophoneState::unavailable;
+    case MicrophoneState::ready:
+    case MicrophoneState::starting:
+    case MicrophoneState::stopping:
+      return ProductWebMicrophoneState::ready;
+    case MicrophoneState::live24:
+      return ProductWebMicrophoneState::live24;
+    case MicrophoneState::live16:
+      return ProductWebMicrophoneState::live16;
+    case MicrophoneState::error:
+      return ProductWebMicrophoneState::error;
+  }
+  return ProductWebMicrophoneState::error;
+}
+
+uint8_t microphone_drop_percent(const MicrophoneSnapshot& snapshot) {
+  const uint64_t drops =
+      static_cast<uint64_t>(snapshot.source_overruns) +
+      snapshot.transport_drops;
+  const uint64_t total =
+      static_cast<uint64_t>(snapshot.captured_frames) + drops;
+  if (total == 0) return 0;
+  return static_cast<uint8_t>(
+      std::min<uint64_t>(100, (drops * 100 + total / 2) / total));
+}
+
+void publish_microphone_snapshot(uint64_t now_ms) {
+  const MicrophoneSnapshot snapshot =
+      g_microphone != nullptr
+          ? g_microphone->snapshot()
+          : MicrophoneSnapshot{};
+  const bool live =
+      snapshot.state == MicrophoneState::live24 ||
+      snapshot.state == MicrophoneState::live16;
+  const uint32_t sample_rate =
+      !live
+          ? 0
+          : snapshot.active_rate == AudioSampleRate::hz24000
+                ? 24000
+                : 16000;
+  const uint8_t drop_percent = microphone_drop_percent(snapshot);
+  const ProductWebMicrophoneError web_error =
+      snapshot.state == MicrophoneState::error
+          ? ProductWebMicrophoneError::mic_init_failed
+          : ProductWebMicrophoneError::none;
+  product_web_set_microphone({
+      .state = web_microphone_state(snapshot.state),
+      .sample_rate_hz = sample_rate,
+      .drop_percent = drop_percent,
+      .last_error = web_error,
+  });
+  SemaphoreLock lock(g_ui_mutex);
+  if (!lock.locked()) return;
+  g_ui.set_microphone(
+      ui_microphone_state(snapshot.state), sample_rate, drop_percent,
+      web_error == ProductWebMicrophoneError::none
+          ? "NONE"
+          : "MIC INIT FAILED",
+      now_ms);
+  g_ui.expire_microphone_error(now_ms);
+}
+
 void copy_setting(std::string_view value, std::span<char> output) {
   if (output.empty()) return;
   const std::size_t length = std::min(value.size(), output.size() - 1);
@@ -348,6 +432,7 @@ bool queue_settings_command(const SettingsInputResult& result) {
   SettingsInvocation invocation{
       .command = result.command,
       .selected = g_settings.selected(),
+      .input_mode = result.input_mode,
       .device_settings = result.device_settings,
   };
   copy_setting(g_settings.pin_value(), invocation.pin);
@@ -389,6 +474,16 @@ void release_and_set_mode(bool safe) {
     g_ui.set_mode(g_input_router.mode());
     if (safe) g_ui.set_profile("SAFE");
   }
+}
+
+void release_and_apply_input_mode(InputMode mode) {
+  SemaphoreLock lock(g_input_mutex);
+  if (!lock.locked()) return;
+  if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+  g_input_router.leave_safe_profile();
+  g_input_router.set_mode(mode);
+  SemaphoreLock ui_lock(g_ui_mutex);
+  if (ui_lock.locked()) g_ui.set_mode(mode);
 }
 
 class ProductMacroSink final : public MacroSink {
@@ -470,6 +565,20 @@ void process_settings_command(const SettingsInvocation& invocation) {
   bool success = false;
   const char* result_text = "FAILED";
   switch (invocation.command) {
+    case SettingsCommandKind::apply_input_mode:
+      release_and_apply_input_mode(invocation.input_mode);
+      success = true;
+      result_text = "INPUT MODE SAVED";
+      break;
+    case SettingsCommandKind::activate_safe_profile:
+      success = product_web_activate_profile("SAFE");
+      if (success) {
+        release_and_set_mode(true);
+        result_text = "SAFE PROFILE ACTIVE";
+      } else {
+        result_text = "SAFE PROFILE FAILED";
+      }
+      break;
     case SettingsCommandKind::activate_profile:
       success = product_web_activate_profile(invocation.profile_id.data());
       if (success) {
@@ -964,6 +1073,7 @@ void ui_task(void*) {
 
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    publish_microphone_snapshot(now_ms);
     if (last_metrics_ms == 0 || now_ms - last_metrics_ms >= 1000) {
       emit_runtime_metrics(now_ms * 1000);
       last_metrics_ms = now_ms;
@@ -1128,6 +1238,7 @@ class EspProductStartup final : public ProductStartupBackend {
       g_device_settings_store.load();
       const DeviceSettings settings = g_device_settings_store.current();
       g_settings.set_device_settings(settings);
+      g_settings.set_input_mode(g_input_router.mode());
       const esp_err_t pet_result = g_pet_store.start();
       if (pet_result == ESP_OK) {
         product_web_set_pet_store(&g_pet_store);

@@ -20,7 +20,11 @@ let package = Package(
         .executable(name: "cardputer-companion", targets: ["cardputer-companion"]),
         .executable(name: "product-audio-tests", targets: ["product-audio-tests"]),
         .executable(name: "product-gatt-tests", targets: ["product-gatt-tests"]),
-        .executable(name: "product-telemetry-tests", targets: ["product-telemetry-tests"])
+        .executable(name: "product-telemetry-tests", targets: ["product-telemetry-tests"]),
+        .executable(
+            name: "product-configuration-tests",
+            targets: ["product-configuration-tests"]
+        )
     ],
     targets: [
         .systemLibrary(name: "CSQLite", pkgConfig: "sqlite3"),
@@ -126,6 +130,11 @@ let package = Package(
             name: "product-telemetry-tests",
             dependencies: ["ProductContracts", "CodexAppServer"],
             path: "Tests/ProductTelemetryExecutableTests"
+        ),
+        .executableTarget(
+            name: "product-configuration-tests",
+            dependencies: ["ProductContracts"],
+            path: "Tests/ProductConfigurationExecutableTests"
         ),
         .testTarget(name: "Phase0ContractsTests", dependencies: ["Phase0Contracts"]),
         .testTarget(name: "Phase0LedgerTests", dependencies: ["Phase0Ledger"]),

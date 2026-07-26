@@ -29,6 +29,17 @@ public struct ProductGATTAudioMetrics: Equatable, Sendable {
     public init() {}
 }
 
+public struct ProductGATTAudioLinkStatus: Equatable, Sendable {
+    public var characteristicsDiscovered = false
+    public var notificationsEnabled = false
+    public var protocolNegotiated = false
+    public var audioReady = false
+    public var protocolVersion = 1
+    public var preferredSampleRateHertz = 24_000
+
+    public init() {}
+}
+
 private struct PartialText {
     let count: Int
     var fragments: [Int: Data]
@@ -41,6 +52,7 @@ public final class ProductGATTReceiver: @unchecked Sendable {
     private var partial: [UInt32: PartialText] = [:]
     private var audioPipeline: AudioPipeline?
     private var metricsStorage = ProductGATTAudioMetrics()
+    private var linkStatusStorage = ProductGATTAudioLinkStatus()
     private var lastAudioFrameNanoseconds: UInt64?
 
     public init(injector: UnicodeInjector = UnicodeInjector()) {
@@ -66,6 +78,12 @@ public final class ProductGATTReceiver: @unchecked Sendable {
             snapshot.pipeline = audioPipeline.metrics
         }
         return snapshot
+    }
+
+    public var audioLinkStatus: ProductGATTAudioLinkStatus {
+        metricsLock.lock()
+        defer { metricsLock.unlock() }
+        return linkStatusStorage
     }
 
     private func receiveUnicode(_ data: Data) {
@@ -169,6 +187,20 @@ extension ProductGATTReceiver: ProductGATTConnectionDelegate {
         if !intentional {
             metricsStorage.reconnects &+= 1
         }
+        metricsLock.unlock()
+    }
+
+    func productGATT(
+        _ connection: ProductGATTConnection,
+        didUpdate session: ProductGATTSessionState
+    ) {
+        metricsLock.lock()
+        linkStatusStorage.characteristicsDiscovered =
+            session.characteristicsDiscovered
+        linkStatusStorage.notificationsEnabled =
+            session.audioNotificationsEnabled
+        linkStatusStorage.protocolNegotiated = session.protocolNegotiated
+        linkStatusStorage.audioReady = session.audioReady
         metricsLock.unlock()
     }
 }

@@ -60,6 +60,13 @@ def test_web_ui_has_settings_and_pin_api() -> None:
     assert "/api/v1/pin" in script
     assert "修改 PIN" in html
     assert "Wi-Fi 配置" in html
+    assert 'id="microphone-status"' in html
+    assert "麦克风状态（只读）" in html
+    for field in ("mic-state", "mic-rate", "mic-drop", "mic-error"):
+        assert f'id="{field}"' in html
+    assert "showMicrophoneStatus(state.microphone)" in script
+    assert "microphone/start" not in script
+    assert "microphone/stop" not in script
 
 
 def test_web_ui_uses_chinese_action_labels_and_key_modal() -> None:

@@ -17,6 +17,7 @@ class InputRouter {
   [[nodiscard]] HidReport route(
       const std::array<bool, kPhysicalKeyCount>& pressed) const;
   void toggle_mode();
+  void set_mode(InputMode mode) { mode_ = mode; }
   void enter_safe_profile();
   void leave_safe_profile() { safe_profile_ = false; }
   [[nodiscard]] InputMode mode() const { return mode_; }

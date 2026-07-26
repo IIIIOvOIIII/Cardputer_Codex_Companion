@@ -34,6 +34,17 @@ std::string_view pet_state_name(PetState state) {
   return "IDLE";
 }
 
+std::string_view microphone_state_name(UiMicrophoneState state) {
+  switch (state) {
+    case UiMicrophoneState::unavailable: return "OFFLINE";
+    case UiMicrophoneState::ready: return "READY";
+    case UiMicrophoneState::live24: return "LIVE24";
+    case UiMicrophoneState::live16: return "LIVE16";
+    case UiMicrophoneState::error: return "ERROR";
+  }
+  return "ERROR";
+}
+
 void add_line(UiPageContent& content, std::string line) {
   if (content.count < content.lines.size()) {
     content.lines[content.count++] = std::move(line);
@@ -100,6 +111,51 @@ void UiModel::set_companion(ServiceState state) {
   if (companion_ == state) return;
   companion_ = state;
   ++revision_;
+}
+
+void UiModel::set_microphone(UiMicrophoneState state,
+                             uint32_t sample_rate_hz,
+                             uint8_t drop_percent,
+                             std::string_view last_error,
+                             uint64_t now_ms) {
+  const uint8_t bounded_drop = std::min<uint8_t>(drop_percent, 100);
+  const std::string next_error = clipped(last_error, 28);
+  if (microphone_state_ == state &&
+      microphone_sample_rate_hz_ == sample_rate_hz &&
+      microphone_drop_percent_ == bounded_drop &&
+      microphone_last_error_ == next_error) {
+    return;
+  }
+  microphone_state_ = state;
+  microphone_sample_rate_hz_ = sample_rate_hz;
+  microphone_drop_percent_ = bounded_drop;
+  microphone_last_error_ = next_error;
+  if (state == UiMicrophoneState::error &&
+      !next_error.empty() && next_error != "NONE") {
+    microphone_error_ = next_error;
+    microphone_error_until_ms_ = now_ms + 1000;
+  }
+  ++revision_;
+}
+
+void UiModel::expire_microphone_error(uint64_t now_ms) {
+  if (microphone_error_.empty() || now_ms < microphone_error_until_ms_) {
+    return;
+  }
+  microphone_error_.clear();
+  microphone_error_until_ms_ = 0;
+  ++revision_;
+}
+
+std::string_view UiModel::microphone_indicator() const {
+  switch (microphone_state_) {
+    case UiMicrophoneState::unavailable: return "MIC --";
+    case UiMicrophoneState::ready: return "MIC READY";
+    case UiMicrophoneState::live24: return "MIC 24K";
+    case UiMicrophoneState::live16: return "MIC 16K";
+    case UiMicrophoneState::error: return "MIC ERR";
+  }
+  return "MIC ERR";
 }
 
 void UiModel::set_profile(std::string_view profile) {
@@ -275,6 +331,9 @@ UiPageContent UiModel::page_content() const {
       add_line(content, "BLE:" + std::string(compact_state(ble_)));
       add_line(content, "WIFI:" + std::string(compact_state(wifi_)));
       add_line(content, "AGENT:" + std::string(compact_state(companion_)));
+      add_line(content, "MIC:" +
+                            std::string(microphone_state_name(
+                                microphone_state_)));
       break;
     case UiPage::codex_status:
       add_line(content, "SESSION:" + session_title_);

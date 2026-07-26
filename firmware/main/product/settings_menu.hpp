@@ -12,10 +12,12 @@
 enum class SettingsCommandKind : uint8_t {
   none,
   release_hid,
+  apply_input_mode,
   scan_wifi,
   rotate_pin,
   stage_wifi,
   activate_profile,
+  activate_safe_profile,
   apply_display_settings,
   return_to_pet,
 };
@@ -24,6 +26,7 @@ struct SettingsInputResult {
   bool captured = false;
   SettingsCommandKind command = SettingsCommandKind::none;
   DeviceSettings device_settings{};
+  InputMode input_mode = InputMode::keyboard;
 };
 
 enum class SettingsInteraction : uint8_t {
@@ -66,6 +69,7 @@ class SettingsMenu {
   void set_device_settings(const DeviceSettings& settings) {
     device_settings_ = settings;
   }
+  void set_input_mode(InputMode mode) { input_mode_ = mode; }
 
   [[nodiscard]] bool active() const {
     return interaction_ != SettingsInteraction::inactive;
@@ -119,4 +123,5 @@ class SettingsMenu {
   std::array<std::string, 13> wifi_ssids_{};
   uint8_t wifi_count_ = 0;
   DeviceSettings device_settings_{};
+  InputMode input_mode_ = InputMode::keyboard;
 };

@@ -24,6 +24,7 @@ func testUnifiedDiscoveryAndBindingOrder() {
     var session = ProductGATTSessionState(audioEnabled: true)
     let discovered = session.didDiscoverAllCharacteristics()
     assert(discovered == [.subscribeUnicode, .writeBind])
+    assert(session.characteristicsDiscovered)
     assert(!discovered.contains(.writeSinkReady))
 
     let bound = session.didWriteBind(succeeded: true)
@@ -34,7 +35,11 @@ func testUnifiedDiscoveryAndBindingOrder() {
         session.didSetAudioNotification(.audioStatus, enabled: true) ==
             [.writeAudioHello]
     )
+    assert(session.audioNotificationsEnabled)
     assert(session.didWriteAudioHello(succeeded: true) == [.writeSinkReady])
+    assert(session.protocolNegotiated)
+    session.didWriteSinkReady(succeeded: true)
+    assert(session.audioReady)
 }
 
 func testShutdownAndDisconnectClearAudioWithoutDisablingUnicode() {
@@ -52,6 +57,9 @@ func testShutdownAndDisconnectClearAudioWithoutDisablingUnicode() {
     session.didDisconnect()
     assert(!session.audioReady)
     assert(!session.unicodeEnabled)
+    assert(!session.characteristicsDiscovered)
+    assert(!session.audioNotificationsEnabled)
+    assert(!session.protocolNegotiated)
     assert(session.reconnectCount == 1)
 }
 

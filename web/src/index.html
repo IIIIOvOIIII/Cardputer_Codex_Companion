@@ -63,6 +63,13 @@
 
     <section id="settings-view" class="panel hidden">
       <div class="settings-grid">
+        <section id="microphone-status" class="readonly-status">
+          <h2>麦克风状态（只读）</h2>
+          <p><span>状态</span><strong id="mic-state">-</strong></p>
+          <p><span>采样率</span><strong id="mic-rate">0 Hz</strong></p>
+          <p><span>丢帧率</span><strong id="mic-drop">0%</strong></p>
+          <p><span>最后错误</span><strong id="mic-error">NONE</strong></p>
+        </section>
         <section>
           <h2>修改 PIN</h2>
           <p class="hint">PIN 必须是 8 位数字。保存后，后续 Web 请求立即使用新 PIN。</p>

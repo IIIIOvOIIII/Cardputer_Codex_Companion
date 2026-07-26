@@ -20,6 +20,14 @@ enum class UiPage : uint8_t {
   settings,
 };
 
+enum class UiMicrophoneState : uint8_t {
+  unavailable,
+  ready,
+  live24,
+  live16,
+  error,
+};
+
 constexpr bool ui_page_allows_host_input(UiPage page) {
   return page == UiPage::pet;
 }
@@ -44,6 +52,10 @@ class UiModel {
   void set_ble(ServiceState state);
   void set_wifi(ServiceState state);
   void set_companion(ServiceState state);
+  void set_microphone(UiMicrophoneState state, uint32_t sample_rate_hz,
+                      uint8_t drop_percent, std::string_view last_error,
+                      uint64_t now_ms);
+  void expire_microphone_error(uint64_t now_ms);
   void set_profile(std::string_view profile);
   void set_web(std::string_view ipv4, std::string_view pairing_code);
   void set_session(std::string_view title, std::string_view cwd,
@@ -69,6 +81,17 @@ class UiModel {
   [[nodiscard]] ServiceState ble() const { return ble_; }
   [[nodiscard]] ServiceState wifi() const { return wifi_; }
   [[nodiscard]] ServiceState companion() const { return companion_; }
+  [[nodiscard]] std::string_view microphone_indicator() const;
+  [[nodiscard]] bool microphone_live() const {
+    return microphone_state_ == UiMicrophoneState::live24 ||
+           microphone_state_ == UiMicrophoneState::live16;
+  }
+  [[nodiscard]] UiMicrophoneState microphone_state() const {
+    return microphone_state_;
+  }
+  [[nodiscard]] std::string_view microphone_error() const {
+    return microphone_error_;
+  }
 
  private:
   static constexpr std::size_t stage_index(BootStage stage) {
@@ -80,6 +103,12 @@ class UiModel {
   ServiceState ble_ = ServiceState::offline;
   ServiceState wifi_ = ServiceState::offline;
   ServiceState companion_ = ServiceState::offline;
+  UiMicrophoneState microphone_state_ = UiMicrophoneState::unavailable;
+  uint32_t microphone_sample_rate_hz_ = 0;
+  uint8_t microphone_drop_percent_ = 0;
+  std::string microphone_last_error_ = "NONE";
+  std::string microphone_error_;
+  uint64_t microphone_error_until_ms_ = 0;
   std::string profile_ = "SAFE";
   std::string ipv4_ = "0.0.0.0";
   std::string pairing_code_ = "--------";

@@ -19,6 +19,12 @@ struct CardputerCompanionMain {
                 print("cardputer-companion 1.0.0")
             case .doctor:
                 doctor()
+            case .doctorAudio:
+                try await AudioDriverOperations.doctor()
+            case .installAudioDriver:
+                try AudioDriverOperations.install()
+            case .uninstallAudioDriver:
+                try AudioDriverOperations.uninstall()
             case .run:
                 try await run(configuration)
             case .audioProbe(let duration, let metricsURL):
@@ -33,9 +39,20 @@ struct CardputerCompanionMain {
         } catch ConfigurationError.usage {
             usage()
             Foundation.exit(64)
-        } catch {
+        } catch AudioDriverOperationError.requiresSudo {
             FileHandle.standardError.write(
-                Data("cardputer-companion: \(error)\n".utf8)
+                Data(
+                    (
+                        "cardputer-companion: audio driver mutation " +
+                            "requires sudo\n"
+                    ).utf8
+                )
+            )
+            Foundation.exit(77)
+        } catch {
+            let message = (error as NSError).localizedDescription
+            FileHandle.standardError.write(
+                Data("cardputer-companion: \(message)\n".utf8)
             )
             Foundation.exit(1)
         }
@@ -48,8 +65,13 @@ struct CardputerCompanionMain {
         }
         let adapter = CodexAdapter()
         try adapter.start()
+        let audioBridge = AudioDriverOperations.startRuntimeBridge()
         let receiver = ProductGATTReceiver()
-        receiver.start()
+        receiver.start(audioSink: audioBridge)
+        defer {
+            receiver.stop()
+            audioBridge?.stop()
+        }
         let bridge = LANBridge(
             baseURL: deviceURL,
             pairingCode: pairingCode
@@ -285,6 +307,9 @@ struct CardputerCompanionMain {
                 usage:
                   cardputer-companion --version
                   cardputer-companion doctor
+                  cardputer-companion doctor audio
+                  sudo cardputer-companion install-audio-driver
+                  sudo cardputer-companion uninstall-audio-driver
                   cardputer-companion audio-probe --duration 600 --metrics PATH
                   cardputer-companion run --device https://CARDPUTER-IP --pairing 12345678
                   cardputer-companion run --config ~/Library/Application\\ Support/CardputerCodexCompanion/config.json

@@ -11,10 +11,10 @@ constexpr uint8_t kNextKey = 54;
 constexpr uint8_t kPhysicalEsc = 0;
 constexpr uint8_t kPhysicalBackspace = 13;
 constexpr uint8_t kPhysicalReturn = 41;
-constexpr uint8_t kMenuItems = 7;
+constexpr uint8_t kMenuItems = 8;
 
-constexpr std::array<std::string_view, 3> kFixedRows{
-    "KEYBOARD PROFILE", "CHANGE PIN", "BIND WIFI"};
+constexpr std::array<std::string_view, 4> kFixedRows{
+    "INPUT MODE", "KEYBOARD PROFILE", "CHANGE PIN", "BIND WIFI"};
 }  // namespace
 
 SettingsInputResult SettingsMenu::enter() {
@@ -185,17 +185,22 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
       selected_ = direction < 0
           ? (selected_ == 0 ? item_count - 1 : selected_ - 1)
           : static_cast<uint8_t>((selected_ + 1) % item_count);
-    } else if (selected_ == 3) {
+    } else if (selected_ == 0) {
+      input_mode_ =
+          input_mode_ == InputMode::keyboard
+              ? InputMode::codex_remote
+              : InputMode::keyboard;
+    } else if (selected_ == 4) {
       const uint8_t value =
           static_cast<uint8_t>(device_settings_.brightness);
       device_settings_.brightness = static_cast<Brightness>(
           direction < 0 ? (value + 3) % 4 : (value + 1) % 4);
-    } else if (selected_ == 4) {
+    } else if (selected_ == 5) {
       const uint8_t value =
           static_cast<uint8_t>(device_settings_.return_to_pet);
       device_settings_.return_to_pet = static_cast<ReturnToPet>(
           direction < 0 ? (value + 3) % 4 : (value + 1) % 4);
-    } else if (selected_ == 5) {
+    } else if (selected_ == 6) {
       const uint8_t value =
           static_cast<uint8_t>(device_settings_.pet_frame_rate);
       device_settings_.pet_frame_rate = static_cast<PetFrameRate>(
@@ -206,7 +211,9 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
       selected_profile_id_ = profile_ids_[selected_];
       interaction_ = SettingsInteraction::applying;
       return {.captured = true,
-              .command = SettingsCommandKind::activate_profile};
+              .command = selected_profile_id_ == "SAFE"
+                             ? SettingsCommandKind::activate_safe_profile
+                             : SettingsCommandKind::activate_profile};
     }
     if (screen_ == Screen::wifi) {
       if (selected_ + 1 == wifi_count_) {
@@ -221,28 +228,33 @@ SettingsInputResult SettingsMenu::browse_key(uint8_t physical_key) {
     root_scroll_ = scroll_;
     switch (selected_) {
       case 0:
+        interaction_ = SettingsInteraction::applying;
+        return {.captured = true,
+                .command = SettingsCommandKind::apply_input_mode,
+                .input_mode = input_mode_};
+      case 1:
         screen_ = Screen::profiles;
         selected_ = 0;
         scroll_ = 0;
         break;
-      case 1:
+      case 2:
         begin_pin_edit();
         break;
-      case 2:
-        interaction_ = SettingsInteraction::applying;
-        return {.captured = true,
-                .command = SettingsCommandKind::scan_wifi};
       case 3:
         interaction_ = SettingsInteraction::applying;
         return {.captured = true,
-                .command = SettingsCommandKind::apply_display_settings,
-                .device_settings = device_settings_};
+                .command = SettingsCommandKind::scan_wifi};
       case 4:
         interaction_ = SettingsInteraction::applying;
         return {.captured = true,
                 .command = SettingsCommandKind::apply_display_settings,
                 .device_settings = device_settings_};
       case 5:
+        interaction_ = SettingsInteraction::applying;
+        return {.captured = true,
+                .command = SettingsCommandKind::apply_display_settings,
+                .device_settings = device_settings_};
+      case 6:
         interaction_ = SettingsInteraction::applying;
         return {.captured = true,
                 .command = SettingsCommandKind::apply_display_settings,
@@ -425,19 +437,22 @@ SettingsMenuContent SettingsMenu::content() const {
   for (uint8_t index = 0; index < kFixedRows.size(); ++index) {
     rows[index] = kFixedRows[index];
   }
+  rows[0] += " ";
+  rows[0] +=
+      input_mode_ == InputMode::keyboard ? "KEYBOARD" : "CODEX";
   constexpr std::array brightness{"25%", "50%", "75%", "100%"};
   constexpr std::array timeout{"OFF", "15S", "30S", "60S"};
   constexpr std::array fps{"2", "2.5", "3"};
-  rows[3] = "BRIGHTNESS " +
+  rows[4] = "BRIGHTNESS " +
             std::string(brightness[
                 static_cast<uint8_t>(device_settings_.brightness)]);
-  rows[4] = "RETURN TO PET " +
+  rows[5] = "RETURN TO PET " +
             std::string(timeout[
                 static_cast<uint8_t>(device_settings_.return_to_pet)]);
-  rows[5] = "PET FPS " +
+  rows[6] = "PET FPS " +
             std::string(fps[
                 static_cast<uint8_t>(device_settings_.pet_frame_rate)]);
-  rows[6] = "ABOUT";
+  rows[7] = "ABOUT";
   for (uint8_t index = 0; index < kMenuItems; ++index) {
     output.lines[index] =
         std::string(index == selected_ ? "> " : "  ") + rows[index];

@@ -42,6 +42,12 @@ SemaphoreHandle_t g_profile_mutex = nullptr;
 std::atomic<ServiceState> g_ble{ServiceState::offline};
 std::atomic<ServiceState> g_wifi{ServiceState::offline};
 std::atomic<ServiceState> g_companion{ServiceState::offline};
+std::atomic<ProductWebMicrophoneState> g_microphone_state{
+    ProductWebMicrophoneState::unavailable};
+std::atomic<uint32_t> g_microphone_sample_rate_hz{0};
+std::atomic<uint8_t> g_microphone_drop_percent{0};
+std::atomic<ProductWebMicrophoneError> g_microphone_last_error{
+    ProductWebMicrophoneError::none};
 std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
 std::atomic<uint32_t> g_action_sequence{0};
 std::atomic<std::size_t> g_active_tls_sessions{0};
@@ -423,21 +429,30 @@ esp_err_t root_handler(httpd_req_t* request) {
 }
 
 esp_err_t status_handler(httpd_req_t* request) {
-  char json[192]{};
+  char json[384]{};
   const ServiceState ble = g_ble.load();
   const ServiceState wifi = g_wifi.load();
   const ServiceState companion = g_companion.load();
+  const ProductWebMicrophoneStatus microphone{
+      .state = g_microphone_state.load(),
+      .sample_rate_hz = g_microphone_sample_rate_hz.load(),
+      .drop_percent = g_microphone_drop_percent.load(),
+      .last_error = g_microphone_last_error.load(),
+  };
+  const std::string microphone_json =
+      product_web_microphone_json(microphone);
   std::snprintf(json, sizeof(json),
                 "{\"product\":\"Cardputer Codex Companion\","
                 "\"version\":\"%.*s\",\"ble\":\"%.*s\","
                 "\"wifi\":\"%.*s\",\"companion\":\"%.*s\","
-                "\"ip\":\"%s\"}",
+                "\"ip\":\"%s\",\"microphone\":%s}",
                 static_cast<int>(kProductVersion.size()),
                 kProductVersion.data(),
                 static_cast<int>(to_string(ble).size()), to_string(ble).data(),
                 static_cast<int>(to_string(wifi).size()), to_string(wifi).data(),
                 static_cast<int>(to_string(companion).size()),
-                to_string(companion).data(), product_wifi_ipv4());
+                to_string(companion).data(), product_wifi_ipv4(),
+                microphone_json.c_str());
   return json_response(request, json);
 }
 
@@ -1010,6 +1025,14 @@ void product_web_set_status(ServiceState ble, ServiceState wifi,
   g_ble.store(ble);
   g_wifi.store(wifi);
   g_companion.store(companion);
+}
+
+void product_web_set_microphone(ProductWebMicrophoneStatus status) {
+  g_microphone_state.store(status.state);
+  g_microphone_sample_rate_hz.store(status.sample_rate_hz);
+  g_microphone_drop_percent.store(
+      static_cast<uint8_t>(std::min<unsigned>(status.drop_percent, 100)));
+  g_microphone_last_error.store(status.last_error);
 }
 
 void product_web_set_companion_snapshot_handler(

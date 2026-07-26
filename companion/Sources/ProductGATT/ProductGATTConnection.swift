@@ -45,6 +45,9 @@ public enum ProductGATTContract {
 public struct ProductGATTSessionState: Equatable, Sendable {
     public let audioEnabled: Bool
     public private(set) var unicodeEnabled = false
+    public private(set) var characteristicsDiscovered = false
+    public private(set) var audioNotificationsEnabled = false
+    public private(set) var protocolNegotiated = false
     public private(set) var audioReady = false
     public private(set) var reconnectCount: UInt32 = 0
     private var bindComplete = false
@@ -59,6 +62,7 @@ public struct ProductGATTSessionState: Equatable, Sendable {
     public mutating func didDiscoverAllCharacteristics()
         -> [ProductGATTConnectionAction] {
         unicodeEnabled = true
+        characteristicsDiscovered = audioEnabled
         return [.subscribeUnicode, .writeBind]
     }
 
@@ -83,6 +87,7 @@ public struct ProductGATTSessionState: Equatable, Sendable {
               audioStatusEnabled, !helloComplete else {
             return []
         }
+        audioNotificationsEnabled = true
         return [.writeAudioHello]
     }
 
@@ -90,6 +95,7 @@ public struct ProductGATTSessionState: Equatable, Sendable {
         succeeded: Bool
     ) -> [ProductGATTConnectionAction] {
         helloComplete = succeeded
+        protocolNegotiated = succeeded
         return succeeded ? [.writeSinkReady] : []
     }
 
@@ -106,6 +112,9 @@ public struct ProductGATTSessionState: Equatable, Sendable {
 
     public mutating func didDisconnect() {
         unicodeEnabled = false
+        characteristicsDiscovered = false
+        audioNotificationsEnabled = false
+        protocolNegotiated = false
         audioReady = false
         bindComplete = false
         audioDataEnabled = false
@@ -153,6 +162,10 @@ protocol ProductGATTConnectionDelegate: AnyObject {
     func productGATTDidDisconnect(
         _ connection: ProductGATTConnection,
         intentional: Bool
+    )
+    func productGATT(
+        _ connection: ProductGATTConnection,
+        didUpdate session: ProductGATTSessionState
     )
 }
 
@@ -279,6 +292,10 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         }
     }
 
+    private func publishSession() {
+        delegate?.productGATT(self, didUpdate: session)
+    }
+
     private func setNotify(
         _ kind: ProductGATTCharacteristic,
         peripheral: CBPeripheral
@@ -362,6 +379,7 @@ extension ProductGATTConnection: CBCentralManagerDelegate {
         characteristics.removeAll(keepingCapacity: true)
         pendingWrite = nil
         session.didDisconnect()
+        publishSession()
         delegate?.productGATTDidDisconnect(self, intentional: wasIntentional)
         if !wasIntentional {
             beginConnection()
@@ -405,7 +423,9 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         }) else {
             return
         }
-        perform(session.didDiscoverAllCharacteristics())
+        let actions = session.didDiscoverAllCharacteristics()
+        publishSession()
+        perform(actions)
     }
 
     func peripheral(
@@ -418,11 +438,16 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         let succeeded = error == nil
         switch completed {
         case .bind:
-            perform(session.didWriteBind(succeeded: succeeded))
+            let actions = session.didWriteBind(succeeded: succeeded)
+            publishSession()
+            perform(actions)
         case .hello:
-            perform(session.didWriteAudioHello(succeeded: succeeded))
+            let actions = session.didWriteAudioHello(succeeded: succeeded)
+            publishSession()
+            perform(actions)
         case .sinkReady:
             session.didWriteSinkReady(succeeded: succeeded)
+            publishSession()
         case .sinkNotReady:
             disconnectNow()
         }
@@ -438,10 +463,12 @@ extension ProductGATTConnection: CBPeripheralDelegate {
               kind == .audioData || kind == .audioStatus else {
             return
         }
-        perform(session.didSetAudioNotification(
+        let actions = session.didSetAudioNotification(
             kind,
             enabled: characteristic.isNotifying
-        ))
+        )
+        publishSession()
+        perform(actions)
     }
 
     func peripheral(
