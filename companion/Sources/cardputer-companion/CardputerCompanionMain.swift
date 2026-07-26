@@ -16,7 +16,7 @@ struct CardputerCompanionMain {
             )
             switch configuration.command {
             case .version:
-                print("cardputer-companion 1.1.0")
+                print("cardputer-companion 1.1.1")
             case .doctor:
                 doctor()
             case .doctorAudio:
@@ -225,14 +225,6 @@ struct CardputerCompanionMain {
         print("LAN: provide an RFC1918 or .local Cardputer URL")
     }
 
-    private final class NullAudioSink: AudioSampleSink {
-        func write(samples: UnsafeBufferPointer<Float>) -> Int {
-            samples.count
-        }
-
-        func reset() {}
-    }
-
     private struct AudioProbeReport: Encodable {
         let durationSeconds: Int
         let capturedFrames: UInt64
@@ -262,8 +254,25 @@ struct CardputerCompanionMain {
         metricsURL: URL
     ) async throws {
         let receiver = ProductGATTReceiver()
-        receiver.start(audioSink: NullAudioSink())
-        print("Audio probe ready; press G0 to start capture")
+        let audioBridge = AudioBridgeCoordinator()
+        defer {
+            receiver.stop()
+            audioBridge.stop()
+        }
+        var sinkGate = AudioProbeSinkGate(timeoutSeconds: 30)
+        bridgeLoop: while true {
+            let bridgeReady = audioBridge.reconnectIfNeeded()
+            switch sinkGate.observe(bridgeReady: bridgeReady) {
+            case .waiting:
+                try await Task.sleep(for: .seconds(1))
+            case .ready:
+                break bridgeLoop
+            case .timedOut:
+                throw AudioProbeError.audioBridgeUnavailable
+            }
+        }
+        receiver.start(audioSink: audioBridge)
+        print("Audio probe ready; USB HIL will start capture")
         var startGate = AudioProbeStartGate(timeoutSeconds: 120)
         startLoop: while true {
             try await Task.sleep(for: .seconds(1))
@@ -275,7 +284,6 @@ struct CardputerCompanionMain {
                 print("Audio capture started; beginning \(duration)-second gate")
                 break startLoop
             case .timedOut:
-                receiver.stop()
                 throw AudioProbeError.captureStartTimedOut
             }
         }
@@ -294,7 +302,6 @@ struct CardputerCompanionMain {
             }
         }
         let metrics = receiver.audioMetrics
-        receiver.stop()
         let receivedFrames = metrics.receivedFrames - baseline.receivedFrames
         let sequenceGaps =
             metrics.pipeline.sequenceGaps - baseline.pipeline.sequenceGaps
@@ -319,6 +326,7 @@ struct CardputerCompanionMain {
     }
 
     private enum AudioProbeError: Error {
+        case audioBridgeUnavailable
         case captureStartTimedOut
     }
 
