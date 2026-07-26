@@ -155,3 +155,20 @@
   并按 high-water 缩减 scanner/macro/audio 栈再回收 9,216 bytes。
 - Next step: 按已批准的内存调优设计执行 RED→GREEN，实现后重新完成全门禁、
   app-only 刷写与资源 smoke；原门槛全部通过后才开始十分钟音频门禁。
+
+## 2026-07-26 16:30 HKT
+
+- Current work: 完成已批准的最小运行时内存调优、全量发布验证，并将最终构建重新
+  刷入 Cardputer 后执行串口与 HTTPS 并发烟测。
+- Expected result: 宠物逐行解码与绘制不保留整帧；按实测 high-water 缩减静态栈；
+  证书临时缓冲在 HTTPS 启动后释放；启动顺序与一次性连续堆保留块避免 BLE/TLS
+  碎片化；稳态、TLS 窗口、栈和 allocation gate 全部通过。
+- Result: Achieved。Python 148 项、host normal 35/35、ASan/UBSan 35/35、
+  ProductAudio/ProductGATT/ProductPet/ProductTelemetry 和 ESP-IDF release build
+  全部通过；静态 DIRAM headroom 为 145,185 bytes。60 秒真实压力窗口中稳态
+  free heap 最低 65,764、largest block 最低 36,864；TLS 窗口 free heap 最低
+  60,780；allocation failures 为 0；各任务 stack free 均不低于 1,104 bytes。
+  最终 app 镜像 `0x186670` 已 app-only 刷入，独立 verify_flash digest matched；
+  额外 HTTPS 烟测无 reboot、panic 或 allocation failure。
+- Next step: 提交调优改动；为十分钟音频 HIL runner 增加自动 HTTPS 请求，随后执行
+  G0 激活的 24 kHz 音频、并发 HID 与 TLS 真机门禁。

@@ -2,8 +2,10 @@
 
 #ifdef ESP_PLATFORM
 
+#include <algorithm>
 #include <array>
 #include <cstring>
+#include <new>
 #include <span>
 
 #include "esp_random.h"
@@ -16,8 +18,6 @@ namespace {
 constexpr char kNamespace[] = "product_tls";
 constexpr char kCertificateKey[] = "certificate";
 constexpr char kPrivateKeyKey[] = "private_key";
-std::array<uint8_t, 2048> g_certificate{};
-std::array<uint8_t, 512> g_private_key{};
 
 int random_bytes(void*, unsigned char* output, std::size_t length) {
   esp_fill_random(output, length);
@@ -36,7 +36,9 @@ bool load_pem(nvs_handle_t handle, const char* key,
   return true;
 }
 
-esp_err_t generate_identity(std::size_t* certificate_length,
+esp_err_t generate_identity(std::span<uint8_t> certificate_output,
+                            std::span<uint8_t> private_key_output,
+                            std::size_t* certificate_length,
                             std::size_t* private_key_length) {
   mbedtls_pk_context key;
   mbedtls_pk_init(&key);
@@ -77,16 +79,18 @@ esp_err_t generate_identity(std::size_t* certificate_length,
       mbedtls_x509write_crt_set_key_usage(
           &certificate, MBEDTLS_X509_KU_DIGITAL_SIGNATURE) != 0 ||
       mbedtls_x509write_crt_pem(
-          &certificate, g_certificate.data(), g_certificate.size(),
+          &certificate, certificate_output.data(), certificate_output.size(),
           random_bytes, nullptr) != 0 ||
       mbedtls_pk_write_key_pem(
-          &key, g_private_key.data(), g_private_key.size()) != 0) {
+          &key, private_key_output.data(), private_key_output.size()) != 0) {
     goto cleanup;
   }
   *certificate_length =
-      std::strlen(reinterpret_cast<const char*>(g_certificate.data())) + 1;
+      std::strlen(
+          reinterpret_cast<const char*>(certificate_output.data())) + 1;
   *private_key_length =
-      std::strlen(reinterpret_cast<const char*>(g_private_key.data())) + 1;
+      std::strlen(
+          reinterpret_cast<const char*>(private_key_output.data())) + 1;
   result = ESP_OK;
 
 cleanup:
@@ -98,6 +102,17 @@ cleanup:
 
 esp_err_t load_or_create_device_tls_identity(DeviceTlsIdentity* identity) {
   if (identity == nullptr) return ESP_ERR_INVALID_ARG;
+  auto certificate = std::unique_ptr<uint8_t[]>(
+      new (std::nothrow) uint8_t[kDeviceCertificateBufferBytes]());
+  auto private_key = std::unique_ptr<uint8_t[]>(
+      new (std::nothrow) uint8_t[kDevicePrivateKeyBufferBytes]());
+  if (certificate == nullptr || private_key == nullptr) {
+    return ESP_ERR_NO_MEM;
+  }
+  const std::span<uint8_t> certificate_output(
+      certificate.get(), kDeviceCertificateBufferBytes);
+  const std::span<uint8_t> private_key_output(
+      private_key.get(), kDevicePrivateKeyBufferBytes);
   nvs_handle_t handle = 0;
   esp_err_t result =
       nvs_open(kNamespace, NVS_READWRITE, &handle);
@@ -105,19 +120,21 @@ esp_err_t load_or_create_device_tls_identity(DeviceTlsIdentity* identity) {
 
   std::size_t certificate_length = 0;
   std::size_t private_key_length = 0;
-  if (!load_pem(handle, kCertificateKey, g_certificate,
+  if (!load_pem(handle, kCertificateKey, certificate_output,
                 &certificate_length) ||
-      !load_pem(handle, kPrivateKeyKey, g_private_key,
+      !load_pem(handle, kPrivateKeyKey, private_key_output,
                 &private_key_length)) {
-    g_certificate.fill(0);
-    g_private_key.fill(0);
-    result = generate_identity(&certificate_length, &private_key_length);
+    std::fill(certificate_output.begin(), certificate_output.end(), 0);
+    std::fill(private_key_output.begin(), private_key_output.end(), 0);
+    result = generate_identity(
+        certificate_output, private_key_output,
+        &certificate_length, &private_key_length);
     if (result == ESP_OK) {
-      result = nvs_set_blob(handle, kCertificateKey, g_certificate.data(),
+      result = nvs_set_blob(handle, kCertificateKey, certificate_output.data(),
                             certificate_length);
     }
     if (result == ESP_OK) {
-      result = nvs_set_blob(handle, kPrivateKeyKey, g_private_key.data(),
+      result = nvs_set_blob(handle, kPrivateKeyKey, private_key_output.data(),
                             private_key_length);
     }
     if (result == ESP_OK) result = nvs_commit(handle);
@@ -125,12 +142,12 @@ esp_err_t load_or_create_device_tls_identity(DeviceTlsIdentity* identity) {
   nvs_close(handle);
   if (result != ESP_OK) return result;
 
-  *identity = {
-      .certificate = g_certificate.data(),
-      .certificate_length = certificate_length,
-      .private_key = g_private_key.data(),
-      .private_key_length = private_key_length,
-  };
+  identity->certificate_storage = std::move(certificate);
+  identity->private_key_storage = std::move(private_key);
+  identity->certificate = identity->certificate_storage.get();
+  identity->certificate_length = certificate_length;
+  identity->private_key = identity->private_key_storage.get();
+  identity->private_key_length = private_key_length;
   return ESP_OK;
 }
 

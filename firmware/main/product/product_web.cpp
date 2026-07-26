@@ -9,6 +9,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <unistd.h>
 
 #include "cJSON.h"
 #include "esp_https_server.h"
@@ -43,11 +44,40 @@ std::atomic<ServiceState> g_wifi{ServiceState::offline};
 std::atomic<ServiceState> g_companion{ServiceState::offline};
 std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
 std::atomic<uint32_t> g_action_sequence{0};
+std::atomic<std::size_t> g_active_tls_sessions{0};
+std::atomic<uint64_t> g_tls_cleanup_until_us{0};
+std::array<int, 3> g_tls_session_fds{-1, -1, -1};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
 PetStore* g_pet_store = nullptr;
 ProfileCatalogStore* g_profile_catalog = nullptr;
 PinRotationState g_pin_rotation;
+
+esp_err_t tls_session_opened(httpd_handle_t, int sockfd) {
+  for (int& slot : g_tls_session_fds) {
+    if (slot == -1) {
+      slot = sockfd;
+      g_active_tls_sessions.fetch_add(1, std::memory_order_release);
+      break;
+    }
+  }
+  return ESP_OK;
+}
+
+void tls_session_closed(httpd_handle_t, int sockfd) {
+  for (int& slot : g_tls_session_fds) {
+    if (slot == sockfd) {
+      slot = -1;
+      g_tls_cleanup_until_us.store(
+          static_cast<uint64_t>(esp_timer_get_time()) +
+              kProductWebTlsCleanupWindowUs,
+          std::memory_order_release);
+      g_active_tls_sessions.fetch_sub(1, std::memory_order_release);
+      break;
+    }
+  }
+  close(sockfd);
+}
 
 class ProfileLock {
  public:
@@ -916,9 +946,11 @@ esp_err_t product_web_start() {
   httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
   config.httpd.server_port = 443;
   config.httpd.max_uri_handlers = kProductWebRoutes.size();
-  config.httpd.stack_size = 10240;
+  config.httpd.stack_size = kProductWebTaskStackBytes;
   config.httpd.max_open_sockets = 3;
   config.httpd.lru_purge_enable = true;
+  config.httpd.open_fn = tls_session_opened;
+  config.httpd.close_fn = tls_session_closed;
   config.servercert = identity.certificate;
   config.servercert_len = identity.certificate_length;
   config.prvtkey_pem = identity.private_key;
@@ -960,6 +992,13 @@ esp_err_t product_web_start() {
     if (result != ESP_OK) return result;
   }
   return ESP_OK;
+}
+
+bool product_web_tls_resource_window_active() {
+  return product_web_tls_resource_window_active(
+      g_active_tls_sessions.load(std::memory_order_acquire),
+      static_cast<uint64_t>(esp_timer_get_time()),
+      g_tls_cleanup_until_us.load(std::memory_order_acquire));
 }
 
 const char* product_web_pairing_code() {

@@ -9,9 +9,9 @@ void ProductController::start() {
       {BootStage::display, &ProductStartupBackend::display},
       {BootStage::config, &ProductStartupBackend::config},
       {BootStage::keyboard, &ProductStartupBackend::keyboard},
-      {BootStage::ble, &ProductStartupBackend::ble},
       {BootStage::wifi, &ProductStartupBackend::wifi},
       {BootStage::web, &ProductStartupBackend::web},
+      {BootStage::ble, &ProductStartupBackend::ble},
       {BootStage::companion, &ProductStartupBackend::companion},
   }};
   for (const StartupStep& step : steps) {
@@ -169,6 +169,7 @@ std::array<StackType_t, 2048> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_macro_task_handle = nullptr;
 TaskHandle_t g_ui_task_handle = nullptr;
+void* g_runtime_heap_reserve = nullptr;
 TaskHandle_t g_profile_catalog_task_handle = nullptr;
 StaticSemaphore_t g_profile_catalog_initialization_done_storage{};
 SemaphoreHandle_t g_profile_catalog_initialization_done = nullptr;
@@ -234,8 +235,10 @@ void emit_runtime_metrics(uint64_t now_us) {
       kHidSenderTaskStackBytes * sizeof(StackType_t);
   const uint32_t capabilities =
       MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  const std::string_view scenario = product_web_resource_scenario(
+      product_web_tls_resource_window_active() ? 1 : 0);
   std::printf(
-      "{\"scenario\":\"transient\",\"monotonic_us\":%" PRIu64
+      "{\"scenario\":\"%s\",\"monotonic_us\":%" PRIu64
       ",\"free_internal_heap\":%u,\"largest_internal_block\":%u,"
       "\"allocation_failures\":%u,"
       "\"hid\":{\"generated\":%u,\"queued\":%u,"
@@ -252,7 +255,10 @@ void emit_runtime_metrics(uint64_t now_us) {
       "{\"name\":\"audio\",\"configured\":%zu,"
       "\"high_water_free_bytes\":%u},"
       "{\"name\":\"ui\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"https\",\"configured\":%zu,"
       "\"high_water_free_bytes\":%u}]}\n",
+      scenario.data(),
       now_us,
       static_cast<unsigned>(
           heap_caps_get_free_size(capabilities)),
@@ -283,7 +289,10 @@ void emit_runtime_metrics(uint64_t now_us) {
           task_stack_free_bytes(g_audio_task_handle)),
       sizeof(g_ui_task_stack),
       static_cast<unsigned>(
-          task_stack_free_bytes(g_ui_task_handle)));
+          task_stack_free_bytes(g_ui_task_handle)),
+      kProductWebTaskStackBytes,
+      static_cast<unsigned>(
+          task_stack_free_bytes(xTaskGetHandle("httpd"))));
   std::fflush(stdout);
 }
 
@@ -1155,6 +1164,14 @@ class EspProductStartup final : public ProductStartupBackend {
         }
       }
     }
+    if (result == ESP_OK) {
+      g_runtime_heap_reserve = heap_caps_malloc(
+          kProductRuntimeHeapReserveBytes,
+          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (g_runtime_heap_reserve == nullptr) {
+        result = ESP_ERR_NO_MEM;
+      }
+    }
     set_stage(BootStage::config, result);
     return result == ESP_OK;
   }
@@ -1285,6 +1302,10 @@ class EspProductStartup final : public ProductStartupBackend {
     g_ui_task_handle = xTaskCreateStatic(
         ui_task, "product-ui", g_ui_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 1, g_ui_task_stack.data(), &g_ui_task_storage);
+    if (g_runtime_heap_reserve != nullptr) {
+      heap_caps_free(g_runtime_heap_reserve);
+      g_runtime_heap_reserve = nullptr;
+    }
     update_web_status();
     return g_ui_task_handle != nullptr;
   }

@@ -4,6 +4,8 @@
 
 #include "product/product_types.hpp"
 
+inline constexpr std::size_t kProductRuntimeHeapReserveBytes = 44 * 1024;
+
 class ProductStartupBackend {
  public:
   virtual ~ProductStartupBackend() = default;

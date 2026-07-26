@@ -255,6 +255,10 @@ add_executable(test_product_web test_product_web.cpp)
 target_include_directories(test_product_web PRIVATE ../../main)
 add_test(NAME product_web COMMAND test_product_web)
 
+add_executable(test_device_identity test_device_identity.cpp)
+target_include_directories(test_device_identity PRIVATE ../../main)
+add_test(NAME device_identity COMMAND test_device_identity)
+
 add_executable(test_companion_protocol
   test_companion_protocol.cpp
   ../../main/product/companion_protocol.cpp

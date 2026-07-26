@@ -5,6 +5,14 @@
 
 int main() {
   assert(kProductWebUsesTls);
+  assert(kProductWebTaskStackBytes == 7168);
+  assert(kProductWebTlsCleanupWindowUs == 5'000'000);
+  assert(product_web_resource_scenario(0) == "steady");
+  assert(product_web_resource_scenario(1) == "tls_burst");
+  assert(product_web_resource_scenario(3) == "tls_burst");
+  assert(!product_web_tls_resource_window_active(0, 200, 200));
+  assert(product_web_tls_resource_window_active(0, 199, 200));
+  assert(product_web_tls_resource_window_active(1, 200, 0));
   assert(product_web_pin_is_valid("12345678"));
   assert(!product_web_pin_is_valid("1234567"));
   assert(!product_web_pin_is_valid("123456789"));

@@ -15,13 +15,14 @@ struct FakeStartup final : ProductStartupBackend {
 };
 
 int main() {
+  static_assert(kProductRuntimeHeapReserveBytes == 44 * 1024);
   FakeStartup startup;
   ProductController controller(startup);
   controller.start();
   assert(startup.calls.size() == 7);
   const std::array expected{
       BootStage::display, BootStage::config, BootStage::keyboard,
-      BootStage::ble, BootStage::wifi, BootStage::web,
+      BootStage::wifi, BootStage::web, BootStage::ble,
       BootStage::companion,
   };
   assert(startup.calls == std::vector<BootStage>(

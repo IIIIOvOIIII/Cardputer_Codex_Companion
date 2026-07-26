@@ -40,6 +40,28 @@ def valid_report():
     }
 
 
+def resource_sample(scenario: str, free: int, largest: int):
+    return {
+        "scenario": scenario,
+        "free_internal_heap": free,
+        "largest_internal_block": largest,
+        "allocation_failures": 0,
+        "audio": {
+            "captured_frames": 100,
+            "source_overruns": 0,
+            "transport_drops": 0,
+        },
+        "hid": {"p95_upper_bound_us": 1_000},
+        "tasks": [
+            {
+                "name": "https",
+                "configured": 7_168,
+                "high_water_free_bytes": 3_000,
+            }
+        ],
+    }
+
+
 def test_report_contract_contains_metrics_only():
     module = load_script()
     report = valid_report()
@@ -84,3 +106,28 @@ def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
         report[key] = value
         with pytest.raises(ValueError):
             module.validate_report(report, expected_duration=600)
+
+
+def test_merge_separates_steady_and_tls_resource_windows():
+    module = load_script()
+    report = module.merge_metrics(
+        {},
+        [
+            resource_sample("steady", 70_000, 33_000),
+            resource_sample("tls_burst", 45_000, 20_000),
+        ],
+    )
+    assert report["steady_free_internal"] == 70_000
+    assert report["steady_largest_internal"] == 33_000
+    assert report["tls_burst_free_internal"] == 45_000
+
+
+@pytest.mark.parametrize("missing", ["steady", "tls_burst"])
+def test_merge_requires_both_resource_windows(missing):
+    module = load_script()
+    scenario = "tls_burst" if missing == "steady" else "steady"
+    with pytest.raises(ValueError, match=missing):
+        module.merge_metrics(
+            {},
+            [resource_sample(scenario, 70_000, 33_000)],
+        )

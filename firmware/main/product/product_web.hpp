@@ -11,7 +11,21 @@
 
 enum class ProductHttpMethod : uint8_t { get, post, put, delete_ };
 inline constexpr bool kProductWebUsesTls = true;
+inline constexpr std::size_t kProductWebTaskStackBytes = 7168;
+inline constexpr uint64_t kProductWebTlsCleanupWindowUs = 5'000'000;
 inline constexpr std::size_t kProductWebPinLength = 8;
+
+constexpr std::string_view product_web_resource_scenario(
+    std::size_t active_tls_sessions) {
+  return active_tls_sessions == 0 ? "steady" : "tls_burst";
+}
+
+constexpr bool product_web_tls_resource_window_active(
+    std::size_t active_tls_sessions,
+    uint64_t now_us,
+    uint64_t cleanup_until_us) {
+  return active_tls_sessions > 0 || now_us < cleanup_until_us;
+}
 
 constexpr bool product_web_pin_is_valid(std::string_view pin) {
   if (pin.size() != kProductWebPinLength) return false;
@@ -89,6 +103,7 @@ using ProductCompanionSnapshotHandler = void (*)(std::string_view json);
 using ProductCompanionHeartbeatHandler = void (*)();
 
 esp_err_t product_web_start();
+bool product_web_tls_resource_window_active();
 const char* product_web_pairing_code();
 void product_web_set_status(ServiceState ble, ServiceState wifi,
                             ServiceState companion);

@@ -162,6 +162,20 @@ def merge_metrics(
     ]
     if not audio_rows:
         raise ValueError("firmware resource samples contain no audio metrics")
+    steady_samples = [
+        sample
+        for sample in resource_samples
+        if sample.get("scenario") == "steady"
+    ]
+    if not steady_samples:
+        raise ValueError("no steady firmware resource samples captured")
+    tls_samples = [
+        sample
+        for sample in resource_samples
+        if sample.get("scenario") in {"tls_burst", "transient"}
+    ]
+    if not tls_samples:
+        raise ValueError("no tls_burst firmware resource samples captured")
     last_audio = audio_rows[-1]
     hid_values = [
         int(sample.get("hid", {}).get("p95_upper_bound_us", 0))
@@ -177,16 +191,15 @@ def merge_metrics(
             "hid_p95_us": max(hid_values, default=0),
             "steady_free_internal": min(
                 int(sample.get("free_internal_heap", 0))
-                for sample in resource_samples
+                for sample in steady_samples
             ),
             "steady_largest_internal": min(
                 int(sample.get("largest_internal_block", 0))
-                for sample in resource_samples
+                for sample in steady_samples
             ),
             "tls_burst_free_internal": min(
                 int(sample.get("free_internal_heap", 0))
-                for sample in resource_samples
-                if sample.get("scenario") in {"tls_burst", "transient"}
+                for sample in tls_samples
             ),
             "allocation_failures": max(
                 int(sample.get("allocation_failures", 0))
