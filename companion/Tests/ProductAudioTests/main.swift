@@ -1,0 +1,5 @@
+try testParsesBothCommittedPacketSizesAndFields()
+try testRejectsMalformedFieldsBeforeCodecUse()
+try testDecodesCommittedGoldenVectorsExactly()
+testRejectsTruncatedAndUnsupportedSampleCounts()
+print("ProductAudio tests passed")

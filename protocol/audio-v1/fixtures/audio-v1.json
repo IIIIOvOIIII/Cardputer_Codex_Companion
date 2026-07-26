@@ -43,5 +43,19 @@
     {"name": "sink_not_ready", "value": 3},
     {"name": "set_preferred_rate", "value": 4},
     {"name": "reset_statistics", "value": 5}
+  ],
+  "codec_vectors": [
+    {
+      "name": "positive_unit_steps",
+      "sample_count": 9,
+      "block_hex": "0000000011111111",
+      "decoded_samples": [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    },
+    {
+      "name": "negative_unit_steps",
+      "sample_count": 9,
+      "block_hex": "0000000099999999",
+      "decoded_samples": [0, -1, -2, -3, -4, -5, -6, -7, -8]
+    }
   ]
 }

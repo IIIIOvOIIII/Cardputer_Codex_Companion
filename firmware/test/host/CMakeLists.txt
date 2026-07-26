@@ -315,3 +315,10 @@ add_executable(test_audio_protocol
 )
 target_include_directories(test_audio_protocol PRIVATE ../../main)
 add_test(NAME audio_protocol COMMAND test_audio_protocol)
+
+add_executable(test_ima_adpcm
+  test_ima_adpcm.cpp
+  ../../main/product/ima_adpcm.cpp
+)
+target_include_directories(test_ima_adpcm PRIVATE ../../main)
+add_test(NAME ima_adpcm COMMAND test_ima_adpcm)

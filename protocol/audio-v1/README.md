@@ -38,6 +38,13 @@ The only valid combinations are:
 Unknown flags, versions, rates, durations, and mismatched lengths are rejected.
 Sequence `65535` is followed by `0`.
 
+Each ADPCM payload begins with a little-endian signed 16-bit predictor, a
+one-byte step index, and one reserved zero byte. Remaining samples are encoded
+with the standard 89-entry IMA step table and 16-entry index-adjustment table,
+low nibble first and then high nibble. Predictor and step index are clamped
+after every nibble. Every packet starts a new block, so packet loss cannot
+corrupt later frames.
+
 ## Audio Control
 
 Control messages start with protocol version `1`, followed by one opcode.

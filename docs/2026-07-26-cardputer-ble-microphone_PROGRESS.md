@@ -31,3 +31,15 @@
   测试通过，控制面仅允许五个非启动 opcode。
 - Next step: Task 2 先加入 C++/Swift 失败测试，再实现共享 golden vector 驱动的
   IMA-ADPCM 跨语言编解码。
+
+## 2026-07-26 15:45 HKT
+
+- Current work: 完成 Task 2 的无分配 C++ IMA-ADPCM 编码器、Swift 严格帧解析与
+  解码器，以及共享 golden vectors。
+- Expected result: 160/240 样本分别固定输出 84/124 bytes，跨语言按 low-nibble
+  first 逐样本一致，非法 sample count、块长度、step index 和保留字节被拒绝。
+- Result: Achieved。C++ 正常与 ASan/UBSan 测试通过；Swift debug/release 可执行
+  测试均通过。当前仅安装 CommandLineTools，不提供可导入 XCTest/Testing module，
+  因此沿用仓库既有 executable-test 模式，避免让所有历史 XCTest targets 阻塞验证。
+- Next step: Task 3 用纯状态转换测试固定本地 G0 唯一启动权限、断连强制停止、
+  重连不恢复，以及 24 kHz 到 16 kHz 的一次性降级。
