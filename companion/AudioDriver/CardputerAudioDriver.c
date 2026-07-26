@@ -1,4 +1,5 @@
 #include "CardputerAudioDevice.h"
+#include "CardputerAudioIPC.h"
 
 #include <CoreAudio/AudioHardware.h>
 #include <CoreAudio/AudioServerPlugIn.h>
@@ -260,6 +261,7 @@ static OSStatus driver_initialize(
   g_host_ticks_per_frame = ticks_per_second / 48000.0;
   atomic_store_explicit(
       &g_anchor_host_time, mach_absolute_time(), memory_order_release);
+  (void)cardputer_audio_ipc_server_start(&g_device);
   return noErr;
 }
 

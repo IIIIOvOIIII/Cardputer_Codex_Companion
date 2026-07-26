@@ -214,3 +214,21 @@
   `XPC.framework` 假设经 SDK 证实不存在，已更正为由 libSystem 提供 XPC C API。
 - Next step: 提交 Task 11；Task 12 实现 audit-token policy、匿名 shm、单 producer
   两秒 lease、XPC FD transfer 和 Swift 500 ms heartbeat client。
+
+## 2026-07-26 18:03 HKT
+
+- Current work: 完成 Task 12 authenticated XPC producer lease、共享 FD transfer
+  与 Swift `AudioDriverConnection`。
+- Expected result: development build 仅接受准确 Companion bundle ID、ad-hoc
+  签名和当前 console UID；release policy 还要求 Team ID；协议版本不符不返回 FD；
+  两秒单 producer lease、500 ms heartbeat、stale replacement、release/reset/silence
+  全部成立，首个 heartbeat 前不发布 sink-ready。
+- Result: Achieved。纯 C IPC policy/lease tests 在 ASan/UBSan 下通过错误 bundle、
+  UID、Team ID、protocol、busy/stale lease、heartbeat 与 release 清环；Swift
+  debug/release tests 通过 `hello→claim→heartbeat→ready`、共享映射写入、reset、
+  release 和 heartbeat failure 不 ready。driver bundle 重建、签名和 tests 3/3
+  通过，`nm` 验证实际引用 public XPC 与 Security signing APIs。当前 SDK 不公开
+  audit-token getter，因此 runtime 采用 XPC 建连时冻结的 EUID/PID 加 Security
+  signing information；development 再绑定构建时 console UID。
+- Next step: 提交 Task 12；Task 13 实现 driver install/uninstall/doctor、Companion
+  bundle resource，以及固件 microphone UI/Settings/Web 只读状态集成。

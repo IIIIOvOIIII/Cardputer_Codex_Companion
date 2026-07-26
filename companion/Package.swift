@@ -60,7 +60,7 @@ let package = Package(
             name: "CAudioBridge",
             path: "Sources/CAudioBridge",
             publicHeadersPath: "include",
-            cSettings: [.unsafeFlags(["-std=c17"])]
+            cSettings: [.unsafeFlags(["-std=c17", "-fblocks"])]
         ),
         .target(
             name: "ProductPet",

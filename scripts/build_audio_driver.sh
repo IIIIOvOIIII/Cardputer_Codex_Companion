@@ -39,6 +39,20 @@ if [[ "$run_tests" == true ]]; then
     -o "$test_dir/cardputer-audio-device-tests"
   "$test_dir/cardputer-audio-device-tests"
   echo "CardputerAudioDevice tests passed"
+  xcrun --sdk macosx clang \
+    "${common_flags[@]}" \
+    -fblocks \
+    -fsanitize=address,undefined \
+    -fno-omit-frame-pointer \
+    "$bridge_source/CardputerAudioRing.c" \
+    "$driver_source/CardputerAudioDevice.c" \
+    "$driver_source/CardputerAudioIPC.c" \
+    "$driver_source/Tests/CardputerAudioIPCTests.c" \
+    -framework CoreFoundation \
+    -framework Security \
+    -o "$test_dir/cardputer-audio-ipc-tests"
+  "$test_dir/cardputer-audio-ipc-tests"
+  echo "CardputerAudioIPC tests passed"
 fi
 
 mkdir -p "$bundle/Contents/MacOS"
@@ -46,9 +60,13 @@ cp "$driver_source/Info.plist" "$bundle/Contents/Info.plist"
 xcrun --sdk macosx clang \
   "${common_flags[@]}" \
   -fvisibility=hidden \
+  -fblocks \
+  -DCARDPUTER_AUDIO_DEVELOPMENT=1 \
+  -DCARDPUTER_AUDIO_CONSOLE_UID="$(id -u)" \
   -bundle \
   "$bridge_source/CardputerAudioRing.c" \
   "$driver_source/CardputerAudioDevice.c" \
+  "$driver_source/CardputerAudioIPC.c" \
   "$driver_source/CardputerAudioDriver.c" \
   -framework CoreAudio \
   -framework CoreFoundation \
