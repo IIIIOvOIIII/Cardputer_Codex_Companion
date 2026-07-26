@@ -249,30 +249,37 @@ PetBundleError validate_pet_bundle(
   return PetBundleError::none;
 }
 
-PetBundleError decode_pet_frame(
+PetBundleError decode_pet_frame_rows(
     const PetByteSource& source,
     const PetBundleMetadata& metadata,
     PetState state,
     uint8_t frame,
-    std::span<uint16_t, kPetFramePixels> output) {
+    PetRowConsumer consumer,
+    void* context) {
+  if (consumer == nullptr) return PetBundleError::bounds;
   const std::size_t state_index = static_cast<std::size_t>(state);
   if (state_index >= metadata.frames.size() || frame >= 8) {
     return PetBundleError::bounds;
   }
   const PetFrameRecord record = metadata.frames[state_index][frame];
+  std::array<uint16_t, kPetFrameWidth> row_pixels{};
   if (record.encoding == PetFrameEncoding::raw_rgb565) {
     if (record.stored_length != kDecodedFrameBytes) {
       return PetBundleError::decoded_length;
     }
-    std::array<uint8_t, kPetFrameWidth * 2> row_bytes{};
+    std::span<uint8_t> row_bytes(
+        reinterpret_cast<uint8_t*>(row_pixels.data()),
+        sizeof(row_pixels));
     for (std::size_t row = 0; row < kPetFrameHeight; ++row) {
       if (!source.read(
               record.payload_offset + row * row_bytes.size(), row_bytes)) {
         return PetBundleError::truncated;
       }
       for (std::size_t column = 0; column < kPetFrameWidth; ++column) {
-        output[row * kPetFrameWidth + column] =
-            read16(row_bytes, column * 2);
+        row_pixels[column] = read16(row_bytes, column * 2);
+      }
+      if (!consumer(context, row, row_pixels)) {
+        return PetBundleError::consumer;
       }
     }
     return PetBundleError::none;
@@ -282,7 +289,6 @@ PetBundleError decode_pet_frame(
   }
   std::size_t cursor = record.payload_offset;
   const std::size_t end = record.payload_offset + record.stored_length;
-  std::size_t output_cursor = 0;
   std::array<uint8_t, 4> encoded{};
   for (std::size_t row = 0; row < kPetFrameHeight; ++row) {
     if (!range_valid(cursor, 2, end) ||
@@ -291,7 +297,7 @@ PetBundleError decode_pet_frame(
     }
     const uint16_t run_count = read16(encoded, 0);
     cursor += 2;
-    std::size_t row_pixels = 0;
+    std::size_t row_pixel_count = 0;
     for (uint16_t run = 0; run < run_count; ++run) {
       if (!range_valid(cursor, 4, end) ||
           !source.read(cursor, encoded)) {
@@ -300,17 +306,47 @@ PetBundleError decode_pet_frame(
       const uint16_t count = read16(encoded, 0);
       const uint16_t pixel = read16(encoded, 2);
       cursor += 4;
-      if (count == 0 || count > kPetFrameWidth - row_pixels) {
+      if (count == 0 || count > kPetFrameWidth - row_pixel_count) {
         return PetBundleError::rle;
       }
-      std::fill_n(output.begin() + output_cursor, count, pixel);
-      output_cursor += count;
-      row_pixels += count;
+      std::fill_n(
+          row_pixels.begin() +
+              static_cast<std::ptrdiff_t>(row_pixel_count),
+          count, pixel);
+      row_pixel_count += count;
     }
-    if (row_pixels != kPetFrameWidth) return PetBundleError::rle;
+    if (row_pixel_count != kPetFrameWidth) return PetBundleError::rle;
+    if (!consumer(context, row, row_pixels)) {
+      return PetBundleError::consumer;
+    }
   }
-  if (cursor != end || output_cursor != output.size()) {
-    return PetBundleError::rle;
-  }
-  return PetBundleError::none;
+  return cursor == end ? PetBundleError::none : PetBundleError::rle;
+}
+
+namespace {
+struct FullFrameConsumer {
+  std::span<uint16_t, kPetFramePixels> output;
+};
+
+bool collect_pet_row(
+    void* context, std::size_t row,
+    std::span<const uint16_t, kPetFrameWidth> pixels) {
+  auto& collector = *static_cast<FullFrameConsumer*>(context);
+  std::copy(
+      pixels.begin(), pixels.end(),
+      collector.output.begin() +
+          static_cast<std::ptrdiff_t>(row * kPetFrameWidth));
+  return true;
+}
+}  // namespace
+
+PetBundleError decode_pet_frame(
+    const PetByteSource& source,
+    const PetBundleMetadata& metadata,
+    PetState state,
+    uint8_t frame,
+    std::span<uint16_t, kPetFramePixels> output) {
+  FullFrameConsumer consumer{output};
+  return decode_pet_frame_rows(
+      source, metadata, state, frame, collect_pet_row, &consumer);
 }

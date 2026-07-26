@@ -57,6 +57,7 @@ enum class PetBundleError : uint8_t {
   encoding,
   decoded_length,
   rle,
+  consumer,
 };
 
 class PetByteSource {
@@ -78,3 +79,15 @@ PetBundleError decode_pet_frame(
     PetState state,
     uint8_t frame,
     std::span<uint16_t, kPetFramePixels> output);
+
+using PetRowConsumer = bool (*)(
+    void* context, std::size_t row,
+    std::span<const uint16_t, kPetFrameWidth> pixels);
+
+PetBundleError decode_pet_frame_rows(
+    const PetByteSource& source,
+    const PetBundleMetadata& metadata,
+    PetState state,
+    uint8_t frame,
+    PetRowConsumer consumer,
+    void* context);

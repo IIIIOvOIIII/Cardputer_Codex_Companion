@@ -268,10 +268,12 @@ def test_authenticated_companion_handlers_refresh_heartbeat():
 
 def test_pet_frame_decode_does_not_allocate_from_runtime_heap():
     bundle = (ROOT / "firmware/main/product/pet_bundle.cpp").read_text()
-    decode = bundle.split("PetBundleError decode_pet_frame", 1)[1]
+    rows = bundle.split("PetBundleError decode_pet_frame_rows", 1)[1]
+    decode = bundle.split("PetBundleError decode_pet_frame(", 1)[1]
 
-    assert "std::vector<uint8_t>" not in decode
-    assert "std::array<uint8_t, kPetFrameWidth * 2>" in decode
+    assert "std::vector" not in rows
+    assert "std::vector" not in decode
+    assert "std::array<uint16_t, kPetFrameWidth> row_pixels" in rows
 
 
 def test_pet_digest_uses_bounded_worker_stack():

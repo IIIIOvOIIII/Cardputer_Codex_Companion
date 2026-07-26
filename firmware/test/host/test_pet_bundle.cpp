@@ -88,16 +88,37 @@ class MemorySource final : public PetByteSource {
   explicit MemorySource(const std::vector<uint8_t>& data) : data_(data) {}
   std::size_t size() const override { return data_.size(); }
   bool read(std::size_t offset, std::span<uint8_t> output) const override {
+    max_read_size_ = std::max(max_read_size_, output.size());
     if (offset > data_.size() || output.size() > data_.size() - offset) {
       return false;
     }
     std::copy_n(data_.begin() + offset, output.size(), output.begin());
     return true;
   }
+  std::size_t max_read_size() const { return max_read_size_; }
+  void reset_max_read_size() const { max_read_size_ = 0; }
 
  private:
   const std::vector<uint8_t>& data_;
+  mutable std::size_t max_read_size_ = 0;
 };
+
+struct RowCollector {
+  std::array<uint16_t, kPetFramePixels> pixels{};
+  std::size_t rows = 0;
+  bool reject_row_2 = false;
+};
+
+bool collect_row(
+    void* context, std::size_t row,
+    std::span<const uint16_t, kPetFrameWidth> pixels) {
+  auto& collector = *static_cast<RowCollector*>(context);
+  if (collector.reject_row_2 && row == 2) return false;
+  std::copy(pixels.begin(), pixels.end(),
+            collector.pixels.begin() + row * kPetFrameWidth);
+  ++collector.rows;
+  return true;
+}
 }  // namespace
 
 int main() {
@@ -111,10 +132,25 @@ int main() {
     assert(metadata.pet_id == "rocky");
     assert(metadata.width == 96);
     std::array<uint16_t, 96 * 104> decoded{};
+    source.reset_max_read_size();
     assert(decode_pet_frame(source, metadata, PetState::working, 3, decoded) ==
            PetBundleError::none);
     assert(decoded.front() == 0x100b);
     assert(decoded.back() == 0x100b);
+    RowCollector collector;
+    assert(decode_pet_frame_rows(
+               source, metadata, PetState::working, 3,
+               collect_row, &collector) == PetBundleError::none);
+    assert(collector.rows == kPetFrameHeight);
+    assert(collector.pixels == decoded);
+    assert(source.max_read_size() <= kPetFrameWidth * 2);
+
+    RowCollector rejected;
+    rejected.reject_row_2 = true;
+    assert(decode_pet_frame_rows(
+               source, metadata, PetState::working, 3,
+               collect_row, &rejected) == PetBundleError::consumer);
+    assert(rejected.rows == 2);
   }
 
   {
@@ -144,6 +180,11 @@ int main() {
     std::array<uint16_t, 96 * 104> decoded{};
     assert(decode_pet_frame(source, metadata, PetState::idle, 0, decoded) ==
            PetBundleError::rle);
+    RowCollector collector;
+    assert(decode_pet_frame_rows(
+               source, metadata, PetState::idle, 0,
+               collect_row, &collector) == PetBundleError::rle);
+    assert(collector.rows == 0);
   }
   {
     auto bytes = valid_bundle(false);
