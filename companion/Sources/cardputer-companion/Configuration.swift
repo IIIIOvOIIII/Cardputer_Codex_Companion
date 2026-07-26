@@ -5,6 +5,7 @@ enum ConfigurationError: Error {
     case usage
     case invalidDeviceURL
     case invalidPairingCode
+    case invalidDuration
 }
 
 struct CompanionConfigFile: Decodable {
@@ -23,6 +24,7 @@ struct Configuration {
         case version
         case doctor
         case run
+        case audioProbe(duration: Int, metricsURL: URL)
     }
 
     let command: Command
@@ -44,6 +46,25 @@ struct Configuration {
         if arguments == ["doctor"] {
             return Configuration(
                 command: .doctor,
+                deviceURL: nil,
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
+            )
+        }
+        if arguments.first == "audio-probe" {
+            guard arguments.count == 5,
+                  arguments[1] == "--duration",
+                  let duration = Int(arguments[2]),
+                  (10...1800).contains(duration),
+                  arguments[3] == "--metrics" else {
+                throw ConfigurationError.invalidDuration
+            }
+            return Configuration(
+                command: .audioProbe(
+                    duration: duration,
+                    metricsURL: URL(fileURLWithPath: arguments[4])
+                ),
                 deviceURL: nil,
                 pairingCode: nil,
                 configURL: nil,

@@ -1,18 +1,7 @@
-@preconcurrency import CoreBluetooth
+import Dispatch
 import Foundation
+import ProductAudio
 import ProductUnicode
-
-private enum ProductUUID {
-    static let service = CBUUID(
-        string: "7A100001-2C4D-4F20-9F20-434F44455831"
-    )
-    static let notify = CBUUID(
-        string: "7A100002-2C4D-4F20-9F20-434F44455831"
-    )
-    static let control = CBUUID(
-        string: "7A100003-2C4D-4F20-9F20-434F44455831"
-    )
-}
 
 public enum ProductGATTDeviceIdentity {
     public static let currentName = "Cardputer Codex"
@@ -29,45 +18,57 @@ public enum ProductGATTDeviceIdentity {
     }
 }
 
+public struct ProductGATTAudioMetrics: Equatable, Sendable {
+    public var receivedFrames: UInt64 = 0
+    public var parseErrors: UInt64 = 0
+    public var reconnects: UInt64 = 0
+    public var maximumGapMilliseconds: UInt64 = 0
+    public var sampleRateHertz: Int = 0
+    public var pipeline = AudioPipelineMetrics()
+
+    public init() {}
+}
+
 private struct PartialText {
     let count: Int
     var fragments: [Int: Data]
 }
 
-public final class ProductGATTReceiver: NSObject, @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.lynx.cardputer.gatt")
+public final class ProductGATTReceiver: @unchecked Sendable {
     private let injector: UnicodeInjector
-    private var central: CBCentralManager!
-    private var peripheral: CBPeripheral?
-    private var notifyCharacteristic: CBCharacteristic?
-    private var controlCharacteristic: CBCharacteristic?
+    private let metricsLock = NSLock()
+    private lazy var connection = ProductGATTConnection(delegate: self)
     private var partial: [UInt32: PartialText] = [:]
+    private var audioPipeline: AudioPipeline?
+    private var metricsStorage = ProductGATTAudioMetrics()
+    private var lastAudioFrameNanoseconds: UInt64?
 
     public init(injector: UnicodeInjector = UnicodeInjector()) {
         self.injector = injector
-        super.init()
-        central = CBCentralManager(delegate: self, queue: queue)
     }
 
-    public func start() {
-        queue.async { [weak self] in
-            guard let self, self.central.state == .poweredOn else { return }
-            if let connected = self.central.retrieveConnectedPeripherals(
-                withServices: [ProductUUID.service]
-            ).first {
-                self.peripheral = connected
-                connected.delegate = self
-                self.central.connect(connected)
-                return
-            }
-            self.central.scanForPeripherals(
-                withServices: nil,
-                options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
-            )
+    public func start(audioSink: AudioSampleSink? = nil) {
+        if let audioSink {
+            audioPipeline = AudioPipeline(sink: audioSink)
         }
+        connection.start(audioEnabled: audioSink != nil)
     }
 
-    private func receive(_ data: Data) {
+    public func stop() {
+        connection.stop()
+    }
+
+    public var audioMetrics: ProductGATTAudioMetrics {
+        metricsLock.lock()
+        var snapshot = metricsStorage
+        metricsLock.unlock()
+        if let audioPipeline {
+            snapshot.pipeline = audioPipeline.metrics
+        }
+        return snapshot
+    }
+
+    private func receiveUnicode(_ data: Data) {
         guard data.count >= 10,
               data[0] == 1,
               data[1] == 1 else {
@@ -109,101 +110,65 @@ public final class ProductGATTReceiver: NSObject, @unchecked Sendable {
             try? injector.inject(text)
         }
     }
-}
 
-extension ProductGATTReceiver: CBCentralManagerDelegate {
-    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        guard central.state == .poweredOn else { return }
-        start()
-    }
-
-    public func centralManager(
-        _ central: CBCentralManager,
-        didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
-        rssi RSSI: NSNumber
-    ) {
-        let advertisedName =
-            advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        guard ProductGATTDeviceIdentity.accepts(
-            peripheralName: peripheral.name,
-            advertisedName: advertisedName
-        ) else {
-            return
-        }
-        central.stopScan()
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        central.connect(peripheral)
-    }
-
-    public func centralManager(
-        _ central: CBCentralManager,
-        didConnect peripheral: CBPeripheral
-    ) {
-        peripheral.discoverServices([ProductUUID.service])
-    }
-
-    public func centralManager(
-        _ central: CBCentralManager,
-        didDisconnectPeripheral peripheral: CBPeripheral,
-        timestamp: CFAbsoluteTime,
-        isReconnecting: Bool,
-        error: (any Error)?
-    ) {
-        self.peripheral = nil
-        notifyCharacteristic = nil
-        controlCharacteristic = nil
-        start()
-    }
-}
-
-extension ProductGATTReceiver: CBPeripheralDelegate {
-    public func peripheral(
-        _ peripheral: CBPeripheral,
-        didDiscoverServices error: (any Error)?
-    ) {
-        guard error == nil else { return }
-        for service in peripheral.services ?? []
-        where service.uuid == ProductUUID.service {
-            peripheral.discoverCharacteristics(
-                [ProductUUID.notify, ProductUUID.control],
-                for: service
+    private func receiveAudio(_ frame: AudioWireFrame) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        metricsLock.lock()
+        metricsStorage.receivedFrames &+= 1
+        metricsStorage.sampleRateHertz =
+            frame.sampleRate == .hz24000 ? 24_000 : 16_000
+        let streamReset = !frame.flags.intersection([
+            .start, .discontinuity
+        ]).isEmpty
+        if !streamReset,
+           let previous = lastAudioFrameNanoseconds,
+           now >= previous {
+            let gap = (now - previous) / 1_000_000
+            metricsStorage.maximumGapMilliseconds = max(
+                metricsStorage.maximumGapMilliseconds,
+                gap
             )
         }
+        lastAudioFrameNanoseconds = now
+        metricsLock.unlock()
+        audioPipeline?.receive(frame)
     }
+}
 
-    public func peripheral(
-        _ peripheral: CBPeripheral,
-        didDiscoverCharacteristicsFor service: CBService,
-        error: (any Error)?
+extension ProductGATTReceiver: ProductGATTConnectionDelegate {
+    func productGATT(
+        _ connection: ProductGATTConnection,
+        didReceive characteristic: ProductGATTCharacteristic,
+        value: Data
     ) {
-        guard error == nil else { return }
-        for characteristic in service.characteristics ?? [] {
-            if characteristic.uuid == ProductUUID.notify {
-                notifyCharacteristic = characteristic
-                peripheral.setNotifyValue(true, for: characteristic)
-            } else if characteristic.uuid == ProductUUID.control {
-                controlCharacteristic = characteristic
-                peripheral.writeValue(
-                    Data("BIND1".utf8),
-                    for: characteristic,
-                    type: .withResponse
-                )
-            }
+        switch ProductGATTValueRouter.route(
+            characteristic: characteristic,
+            value: value
+        ) {
+        case .unicode:
+            receiveUnicode(value)
+        case .audio(let frame):
+            receiveAudio(frame)
+        case .invalidAudio:
+            metricsLock.lock()
+            metricsStorage.parseErrors &+= 1
+            metricsLock.unlock()
+        case .audioStatus, .ignored:
+            break
         }
     }
 
-    public func peripheral(
-        _ peripheral: CBPeripheral,
-        didUpdateValueFor characteristic: CBCharacteristic,
-        error: (any Error)?
+    func productGATTDidDisconnect(
+        _ connection: ProductGATTConnection,
+        intentional: Bool
     ) {
-        guard error == nil,
-              characteristic.uuid == ProductUUID.notify,
-              let value = characteristic.value else {
-            return
+        partial.removeAll(keepingCapacity: true)
+        audioPipeline?.reset()
+        metricsLock.lock()
+        lastAudioFrameNanoseconds = nil
+        if !intentional {
+            metricsStorage.reconnects &+= 1
         }
-        receive(value)
+        metricsLock.unlock()
     }
 }

@@ -109,3 +109,19 @@
 - Next step: 提交 Task 7；Task 8 将 Unicode 与 Audio 收敛到同一个
   `CBCentralManager`/peripheral owner，并在真机 HAL 扩展前执行十分钟 BLE
   可行性门禁。
+
+## 2026-07-26 17:45 HKT
+
+- Current work: 完成 Task 8 统一 ProductGATT owner、BLE 音频接收、metrics-only
+  `audio-probe` CLI 和 Python HIL gate runner。
+- Expected result: 仅一个 `CBCentralManager` 与一个 peripheral；Unicode 和 Audio
+  characteristics 同次发现；BIND1 成功后才启用 Audio notify，两个 subscription
+  生效后依次写 hello/sink-ready；主动退出先写 sink-not-ready；断连 reset pipeline
+  且仅意外断连计 reconnect；报告禁止 PCM/ADPCM/payload/sample 内容。
+- Result: Achieved。ProductGATT executable tests debug/release 通过，Python HIL
+  tests 4/4 通过；Companion release App 构建、ad-hoc codesign、`--version` 和
+  `doctor` 通过；`audio-probe --duration 9` 以 EX_USAGE 64 拒绝且未创建报告。
+  为保留兼容性，无 audio sink 的常规 Unicode 模式仍只要求原有 0002/0003
+  characteristics。XCTest 仍受本机 CommandLineTools 缺少 module 的既有边界限制。
+- Next step: 提交 Task 8；Task 9 执行 pre-flash 全门禁、app-only 刷写和十分钟
+  24 kHz + concurrent HID 真机可行性验证，失败时仅允许固定降为 16 kHz。

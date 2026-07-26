@@ -19,6 +19,7 @@ let package = Package(
         .executable(name: "cardputer-phase0-probe", targets: ["cardputer-phase0-probe"]),
         .executable(name: "cardputer-companion", targets: ["cardputer-companion"]),
         .executable(name: "product-audio-tests", targets: ["product-audio-tests"]),
+        .executable(name: "product-gatt-tests", targets: ["product-gatt-tests"]),
         .executable(name: "product-telemetry-tests", targets: ["product-telemetry-tests"])
     ],
     targets: [
@@ -73,7 +74,7 @@ let package = Package(
         ),
         .target(
             name: "ProductGATT",
-            dependencies: ["ProductUnicode"],
+            dependencies: ["ProductAudio", "ProductUnicode"],
             linkerSettings: [
                 .linkedFramework("CoreBluetooth")
             ]
@@ -95,6 +96,7 @@ let package = Package(
                 "ProductContracts",
                 "CodexAppServer",
                 "ProductPet",
+                "ProductAudio",
                 "ProductGATT",
                 "ProductUnicode"
             ]
@@ -108,6 +110,11 @@ let package = Package(
             name: "product-audio-tests",
             dependencies: ["ProductAudio"],
             path: "Tests/ProductAudioTests"
+        ),
+        .executableTarget(
+            name: "product-gatt-tests",
+            dependencies: ["ProductAudio", "ProductGATT"],
+            path: "Tests/ProductGATTExecutableTests"
         ),
         .executableTarget(
             name: "product-telemetry-tests",

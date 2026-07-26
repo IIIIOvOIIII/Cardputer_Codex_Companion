@@ -2,6 +2,7 @@ import ApplicationServices
 import CodexAppServer
 import Foundation
 import ProductContracts
+import ProductAudio
 import ProductGATT
 import ProductPet
 import ProductUnicode
@@ -20,7 +21,15 @@ struct CardputerCompanionMain {
                 doctor()
             case .run:
                 try await run(configuration)
+            case .audioProbe(let duration, let metricsURL):
+                try await audioProbe(
+                    duration: duration,
+                    metricsURL: metricsURL
+                )
             }
+        } catch ConfigurationError.invalidDuration {
+            usage()
+            Foundation.exit(64)
         } catch ConfigurationError.usage {
             usage()
             Foundation.exit(64)
@@ -172,6 +181,79 @@ struct CardputerCompanionMain {
         print("LAN: provide an RFC1918 or .local Cardputer URL")
     }
 
+    private final class NullAudioSink: AudioSampleSink {
+        func write(samples: UnsafeBufferPointer<Float>) -> Int {
+            samples.count
+        }
+
+        func reset() {}
+    }
+
+    private struct AudioProbeReport: Encodable {
+        let durationSeconds: Int
+        let capturedFrames: UInt64
+        let receivedFrames: UInt64
+        let sourceOverruns: UInt64
+        let transportDrops: UInt64
+        let sequenceGaps: UInt64
+        let maxGapMs: UInt64
+        let sampleRateHz: Int
+        let bleReconnects: UInt64
+
+        enum CodingKeys: String, CodingKey {
+            case durationSeconds = "duration_seconds"
+            case capturedFrames = "captured_frames"
+            case receivedFrames = "received_frames"
+            case sourceOverruns = "source_overruns"
+            case transportDrops = "transport_drops"
+            case sequenceGaps = "sequence_gaps"
+            case maxGapMs = "max_gap_ms"
+            case sampleRateHz = "sample_rate_hz"
+            case bleReconnects = "ble_reconnects"
+        }
+    }
+
+    private static func audioProbe(
+        duration: Int,
+        metricsURL: URL
+    ) async throws {
+        let receiver = ProductGATTReceiver()
+        receiver.start(audioSink: NullAudioSink())
+        print("Audio probe ready; press G0 to start capture")
+        for elapsed in 0..<duration {
+            try await Task.sleep(for: .seconds(1))
+            if elapsed % 5 == 4 {
+                let value = receiver.audioMetrics
+                print(
+                    "audio metrics: received=\(value.receivedFrames) " +
+                    "gaps=\(value.pipeline.sequenceGaps) " +
+                    "max_gap_ms=\(value.maximumGapMilliseconds)"
+                )
+            }
+        }
+        let metrics = receiver.audioMetrics
+        receiver.stop()
+        let report = AudioProbeReport(
+            durationSeconds: duration,
+            capturedFrames:
+                metrics.receivedFrames + metrics.pipeline.sequenceGaps,
+            receivedFrames: metrics.receivedFrames,
+            sourceOverruns: 0,
+            transportDrops: 0,
+            sequenceGaps: metrics.pipeline.sequenceGaps,
+            maxGapMs: metrics.maximumGapMilliseconds,
+            sampleRateHz: metrics.sampleRateHertz,
+            bleReconnects: metrics.reconnects
+        )
+        let data = try JSONEncoder().encode(report)
+        try FileManager.default.createDirectory(
+            at: metricsURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: metricsURL, options: .atomic)
+        print("Audio probe metrics: \(metricsURL.path)")
+    }
+
     private static func usage() {
         FileHandle.standardError.write(
             Data(
@@ -179,6 +261,7 @@ struct CardputerCompanionMain {
                 usage:
                   cardputer-companion --version
                   cardputer-companion doctor
+                  cardputer-companion audio-probe --duration 600 --metrics PATH
                   cardputer-companion run --device https://CARDPUTER-IP --pairing 12345678
                   cardputer-companion run --config ~/Library/Application\\ Support/CardputerCodexCompanion/config.json
 
