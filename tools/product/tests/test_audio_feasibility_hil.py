@@ -130,6 +130,25 @@ def test_tls_probe_schedule_preserves_steady_window_and_repeats():
     assert max(right - left for left, right in zip(schedule, schedule[1:])) <= 15
 
 
+def test_cli_parses_duration_as_an_integer(tmp_path):
+    module = load_script()
+    args = module.parse_args(
+        [
+            "--port",
+            "/dev/null",
+            "--companion",
+            "/usr/bin/true",
+            "--device-url",
+            "https://192.168.1.195",
+            "--duration",
+            "600",
+            "--output",
+            str(tmp_path / "report.json"),
+        ]
+    )
+    assert args.duration == 600
+
+
 def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
     module = load_script()
     for key, value in [

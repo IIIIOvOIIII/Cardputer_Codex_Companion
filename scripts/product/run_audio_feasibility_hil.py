@@ -37,10 +37,11 @@ REQUIRED_REPORT_FIELDS = {
 FORBIDDEN_CONTENT_KEYS = {"audio", "pcm", "adpcm", "payload", "samples"}
 
 
-def validate_duration(duration: int) -> int:
-    if not 10 <= duration <= 1800:
+def validate_duration(duration: int | str) -> int:
+    parsed = int(duration)
+    if not 10 <= parsed <= 1800:
         raise ValueError("duration must be within 10..1800 seconds")
-    return duration
+    return parsed
 
 
 def validate_device_url(value: str) -> str:

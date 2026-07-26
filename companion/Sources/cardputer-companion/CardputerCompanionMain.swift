@@ -220,30 +220,50 @@ struct CardputerCompanionMain {
         let receiver = ProductGATTReceiver()
         receiver.start(audioSink: NullAudioSink())
         print("Audio probe ready; press G0 to start capture")
+        var startGate = AudioProbeStartGate(timeoutSeconds: 120)
+        startLoop: while true {
+            try await Task.sleep(for: .seconds(1))
+            let metrics = receiver.audioMetrics
+            switch startGate.observe(receivedFrames: metrics.receivedFrames) {
+            case .waiting:
+                continue
+            case .started:
+                print("Audio capture started; beginning \(duration)-second gate")
+                break startLoop
+            case .timedOut:
+                receiver.stop()
+                throw AudioProbeError.captureStartTimedOut
+            }
+        }
+        let baseline = receiver.audioMetrics
         for elapsed in 0..<duration {
             try await Task.sleep(for: .seconds(1))
             if elapsed % 5 == 4 {
                 let value = receiver.audioMetrics
                 print(
-                    "audio metrics: received=\(value.receivedFrames) " +
-                    "gaps=\(value.pipeline.sequenceGaps) " +
+                    "audio metrics: received=" +
+                    "\(value.receivedFrames - baseline.receivedFrames) " +
+                    "gaps=" +
+                    "\(value.pipeline.sequenceGaps - baseline.pipeline.sequenceGaps) " +
                     "max_gap_ms=\(value.maximumGapMilliseconds)"
                 )
             }
         }
         let metrics = receiver.audioMetrics
         receiver.stop()
+        let receivedFrames = metrics.receivedFrames - baseline.receivedFrames
+        let sequenceGaps =
+            metrics.pipeline.sequenceGaps - baseline.pipeline.sequenceGaps
         let report = AudioProbeReport(
             durationSeconds: duration,
-            capturedFrames:
-                metrics.receivedFrames + metrics.pipeline.sequenceGaps,
-            receivedFrames: metrics.receivedFrames,
+            capturedFrames: receivedFrames + sequenceGaps,
+            receivedFrames: receivedFrames,
             sourceOverruns: 0,
             transportDrops: 0,
-            sequenceGaps: metrics.pipeline.sequenceGaps,
+            sequenceGaps: sequenceGaps,
             maxGapMs: metrics.maximumGapMilliseconds,
             sampleRateHz: metrics.sampleRateHertz,
-            bleReconnects: metrics.reconnects
+            bleReconnects: metrics.reconnects - baseline.reconnects
         )
         let data = try JSONEncoder().encode(report)
         try FileManager.default.createDirectory(
@@ -252,6 +272,10 @@ struct CardputerCompanionMain {
         )
         try data.write(to: metricsURL, options: .atomic)
         print("Audio probe metrics: \(metricsURL.path)")
+    }
+
+    private enum AudioProbeError: Error {
+        case captureStartTimedOut
     }
 
     private static func usage() {
