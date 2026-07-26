@@ -57,6 +57,12 @@ let package = Package(
         .target(name: "ProductContracts"),
         .target(name: "CodexAppServer", dependencies: ["ProductContracts"]),
         .target(
+            name: "CAudioBridge",
+            path: "Sources/CAudioBridge",
+            publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-std=c17"])]
+        ),
+        .target(
             name: "ProductPet",
             dependencies: ["ProductContracts"],
             linkerSettings: [
@@ -79,7 +85,7 @@ let package = Package(
                 .linkedFramework("CoreBluetooth")
             ]
         ),
-        .target(name: "ProductAudio"),
+        .target(name: "ProductAudio", dependencies: ["CAudioBridge"]),
         .executableTarget(
             name: "cardputer-phase0-probe",
             dependencies: [

@@ -186,3 +186,17 @@
   Codex 为 BLE connected，状态 API 返回 HTTP 200，宠物同步恢复。
 - Next step: 用户设备在手边时重新运行十分钟 HIL，短按一次 G0，并在录音期间输入
   普通按键；通过全部 loss/gap/reconnect/HID/heap/TLS/stack gate 后再进入 Task 10。
+
+## 2026-07-26 17:52 HKT
+
+- Current work: 按用户要求将实体门禁移到最后，完成 Task 10 跨进程固定容量原子音频环。
+- Expected result: C17 SPSC 环使用 acquire/release 原子计数，容量固定 16,384 帧；
+  溢出丢弃最新输入，欠载精确补零；支持 reset、producer heartbeat、匿名 FD mmap，
+  并作为 Swift `AudioSampleSink` 接入。
+- Result: Achieved。C ABI 测试覆盖容量、回绕、partial read/write、overflow、
+  underflow、reset、heartbeat 和 100,000 帧并发 producer/consumer，ASan/UBSan
+  通过；Swift debug/release executable tests 均通过匿名已 unlink 文件映射、480 帧
+  零拷贝边界读写和 header 校验。release 测试还定位并修正了 assert 中副作用会被优化
+  删除的问题。
+- Next step: 提交 Task 10；Task 11 实现 48 kHz mono input-only Core Audio HAL
+  device、纯 C render adapter、确定性 bundle 构建与签名验证。
