@@ -94,3 +94,18 @@
   目标构建均通过。镜像大小 `0x185860`，app partition 仍有 49% 空间。
 - Next step: 提交 Task 6；Task 7 在 Mac 侧实现 ADPCM frame decode 后的 jitter
   buffer、24/16→48 kHz 自适应重采样和无锁音频 pipeline。
+
+## 2026-07-26 17:20 HKT
+
+- Current work: 完成 Task 7 Mac 音频核心，包括固定容量 jitter buffer、自适应
+  48 kHz mono resampler、专用串行 AudioPipeline 和只含非内容计数的 metrics。
+- Expected result: 60–100 ms 目标深度；缺一帧补精确 10 ms 静音；重复、迟到帧
+  丢弃且不重传；sequence wrap 正确；start/discontinuity/rate change flush；24/16 kHz
+  一秒输入均精确产生 48,000 samples，watermark 修正限制在 ±500 ppm。
+- Result: Achieved。新增 executable tests 覆盖顺序、gap、duplicate、late、wrap、
+  flush、bit-exact silence、ppm 边界、fixture decode、sink write size 和 metrics；
+  Swift debug 与 release 构建均输出 `ProductAudio tests passed`。当前
+  CommandLineTools 环境继续采用仓库既有 executable-test 方式。
+- Next step: 提交 Task 7；Task 8 将 Unicode 与 Audio 收敛到同一个
+  `CBCentralManager`/peripheral owner，并在真机 HAL 扩展前执行十分钟 BLE
+  可行性门禁。
