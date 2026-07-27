@@ -4,7 +4,8 @@ import ProductAudio
 func makeAudioFrame(
     sequence: UInt16,
     rate: AudioSampleRate = .hz24000,
-    flags: AudioFrameFlags = []
+    flags: AudioFrameFlags = [],
+    predictor: Int16 = 0
 ) throws -> AudioWireFrame {
     var bytes = [UInt8](repeating: 0, count: 8 + rate.payloadLength)
     bytes[0] = AudioWireFrame.protocolVersion
@@ -15,6 +16,9 @@ func makeAudioFrame(
     bytes[5] = UInt8(rate.durationMilliseconds)
     bytes[6] = UInt8(rate.payloadLength & 0xFF)
     bytes[7] = UInt8(rate.payloadLength >> 8)
+    let predictorBits = UInt16(bitPattern: predictor)
+    bytes[8] = UInt8(predictorBits & 0xFF)
+    bytes[9] = UInt8(predictorBits >> 8)
     return try AudioWireFrame(data: Data(bytes))
 }
 

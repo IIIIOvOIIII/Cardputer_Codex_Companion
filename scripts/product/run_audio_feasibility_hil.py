@@ -27,6 +27,9 @@ REQUIRED_REPORT_FIELDS = {
     "max_gap_ms",
     "sample_rate_hz",
     "ble_reconnects",
+    "signal_peak",
+    "signal_rms",
+    "nonzero_sample_percent",
     "hid_generated",
     "hid_queued",
     "hid_queue_failures",
@@ -121,6 +124,12 @@ def validate_report(report: dict[str, Any], expected_duration: int) -> None:
     gates = [
         (int(report["max_gap_ms"]) <= 150, "audio gap exceeds 150 ms"),
         (int(report["ble_reconnects"]) == 0, "BLE reconnect observed"),
+        (int(report["signal_peak"]) > 0, "microphone signal peak is zero"),
+        (float(report["signal_rms"]) > 0, "microphone signal RMS is zero"),
+        (
+            0 < float(report["nonzero_sample_percent"]) <= 100,
+            "microphone nonzero sample percentage is invalid",
+        ),
         (
             int(report["hid_generated"]) >= 1_000,
             "fewer than 1000 HID events generated",

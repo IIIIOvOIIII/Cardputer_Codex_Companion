@@ -235,6 +235,9 @@ struct CardputerCompanionMain {
         let maxGapMs: UInt64
         let sampleRateHz: Int
         let bleReconnects: UInt64
+        let signalPeak: Int32
+        let signalRms: Double
+        let nonzeroSamplePercent: Double
 
         enum CodingKeys: String, CodingKey {
             case durationSeconds = "duration_seconds"
@@ -246,6 +249,9 @@ struct CardputerCompanionMain {
             case maxGapMs = "max_gap_ms"
             case sampleRateHz = "sample_rate_hz"
             case bleReconnects = "ble_reconnects"
+            case signalPeak = "signal_peak"
+            case signalRms = "signal_rms"
+            case nonzeroSamplePercent = "nonzero_sample_percent"
         }
     }
 
@@ -325,6 +331,22 @@ struct CardputerCompanionMain {
         let receivedFrames = metrics.receivedFrames - baseline.receivedFrames
         let sequenceGaps =
             metrics.pipeline.sequenceGaps - baseline.pipeline.sequenceGaps
+        let signalValueCount =
+            metrics.pipeline.signalValueCount -
+            baseline.pipeline.signalValueCount
+        let signalNonzeroValues =
+            metrics.pipeline.signalNonzeroValues -
+            baseline.pipeline.signalNonzeroValues
+        let signalSquareSum =
+            metrics.pipeline.signalSquareSum -
+            baseline.pipeline.signalSquareSum
+        let signalRms = signalValueCount == 0
+            ? 0
+            : sqrt(signalSquareSum / Double(signalValueCount))
+        let nonzeroSamplePercent = signalValueCount == 0
+            ? 0
+            : Double(signalNonzeroValues) * 100 /
+                Double(signalValueCount)
         let report = AudioProbeReport(
             durationSeconds: duration,
             capturedFrames: receivedFrames + sequenceGaps,
@@ -334,7 +356,10 @@ struct CardputerCompanionMain {
             sequenceGaps: sequenceGaps,
             maxGapMs: metrics.maximumGapMilliseconds,
             sampleRateHz: metrics.sampleRateHertz,
-            bleReconnects: metrics.reconnects - baseline.reconnects
+            bleReconnects: metrics.reconnects - baseline.reconnects,
+            signalPeak: metrics.pipeline.signalPeak,
+            signalRms: signalRms,
+            nonzeroSamplePercent: nonzeroSamplePercent
         )
         let data = try JSONEncoder().encode(report)
         try FileManager.default.createDirectory(

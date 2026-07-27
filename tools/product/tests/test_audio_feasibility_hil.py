@@ -34,6 +34,9 @@ def valid_report():
         "max_gap_ms": 30,
         "sample_rate_hz": 24_000,
         "ble_reconnects": 0,
+        "signal_peak": 12_000,
+        "signal_rms": 2_500.0,
+        "nonzero_sample_percent": 82.5,
         "hid_generated": 1_000,
         "hid_queued": 1_000,
         "hid_queue_failures": 0,
@@ -92,6 +95,9 @@ def test_report_contract_contains_metrics_only():
         "sequence_gaps",
         "max_gap_ms",
         "sample_rate_hz",
+        "signal_peak",
+        "signal_rms",
+        "nonzero_sample_percent",
     }
     assert set(report) >= required
     assert "audio" not in report
@@ -197,6 +203,9 @@ def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
         ("tls_burst_free_internal", 40_959),
         ("allocation_failures", 1),
         ("stack_passed", False),
+        ("signal_peak", 0),
+        ("signal_rms", 0),
+        ("nonzero_sample_percent", 0),
     ]:
         report = valid_report()
         report[key] = value

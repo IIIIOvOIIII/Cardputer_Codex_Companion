@@ -26,7 +26,8 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
     for sequence: UInt16 in [0, 2, 3, 4, 5, 6, 7] {
         pipeline.receive(try makeAudioFrame(
             sequence: sequence,
-            flags: sequence == 0 ? [.start] : []
+            flags: sequence == 0 ? [.start] : [],
+            predictor: sequence == 0 ? 1_000 : 0
         ))
     }
     pipeline.waitUntilIdle()
@@ -38,6 +39,10 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
     assert(metrics.sequenceGaps == 1)
     assert(metrics.outputSamples == 1_824)
     assert(metrics.sinkShortWrites == 0)
+    assert(metrics.signalValueCount == 456)
+    assert(metrics.signalNonzeroValues > 0)
+    assert(metrics.signalPeak > 0)
+    assert(metrics.signalSquareSum > 0)
     assert(sink.writes.map(\.count) == [912, 912])
     assert(sink.writes[1].allSatisfy {
         $0.bitPattern == Float.zero.bitPattern
@@ -48,7 +53,8 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
             sequence: sequence,
             rate: .hz16000,
             flags: sequence == 100 ? [.discontinuity, .degradedRate]
-                                   : [.degradedRate]
+                                   : [.degradedRate],
+            predictor: sequence == 100 ? -1_000 : 0
         ))
     }
     pipeline.waitUntilIdle()
@@ -57,6 +63,10 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
     assert(metrics.streamResets == 2)
     assert(metrics.decodedFrames == 2)
     assert(metrics.decodedSourceSamples == 904)
+    assert(metrics.signalValueCount == 904)
+    assert(metrics.signalNonzeroValues > 0)
+    assert(metrics.signalPeak > 0)
+    assert(metrics.signalSquareSum > 0)
     assert(sink.resetCount == 2)
     assert(sink.writes.map(\.count) == [1_344])
 

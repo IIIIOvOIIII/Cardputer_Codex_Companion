@@ -19,6 +19,10 @@ public struct AudioPipelineMetrics: Equatable, Sendable {
     public var rateChanges: UInt64 = 0
     public var outputSamples: UInt64 = 0
     public var sinkShortWrites: UInt64 = 0
+    public var signalValueCount: UInt64 = 0
+    public var signalNonzeroValues: UInt64 = 0
+    public var signalPeak: Int32 = 0
+    public var signalSquareSum: Double = 0
 
     public init() {}
 }
@@ -119,6 +123,20 @@ public final class AudioPipeline: @unchecked Sendable {
                 metricsStorage.decodedFrames &+= 1
                 metricsStorage.decodedSourceSamples &+=
                     UInt64(source.count)
+                for value in source {
+                    let signed = Int32(value)
+                    let magnitude = signed < 0 ? -signed : signed
+                    metricsStorage.signalPeak = max(
+                        metricsStorage.signalPeak,
+                        magnitude
+                    )
+                    metricsStorage.signalSquareSum +=
+                        Double(signed) * Double(signed)
+                    metricsStorage.signalValueCount &+= 1
+                    if value != 0 {
+                        metricsStorage.signalNonzeroValues &+= 1
+                    }
+                }
             } catch {
                 metricsStorage.decodeErrors &+= 1
                 return
