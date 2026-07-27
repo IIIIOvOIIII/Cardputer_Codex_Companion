@@ -62,6 +62,7 @@ void ProductController::start() {
 #include "product/keyboard_matrix.hpp"
 #include "product/macro_engine.hpp"
 #include "product/microphone_controller.hpp"
+#include "product/onboarding.hpp"
 #include "product/pet_store.hpp"
 #include "product/profile_catalog.hpp"
 #include "product/product_web.hpp"
@@ -74,6 +75,7 @@ namespace {
 constexpr char kTag[] = "cardputer-product";
 constexpr std::size_t kMacroQueueDepth = 16;
 constexpr std::size_t kSettingsQueueDepth = 4;
+constexpr std::size_t kOnboardingQueueDepth = 2;
 constexpr std::size_t kMicrophoneQueueDepth = 8;
 constexpr char kSettingsNvsNamespace[] = "product";
 constexpr UBaseType_t kAudioTaskPriority = tskIDLE_PRIORITY + 6;
@@ -92,6 +94,12 @@ struct SettingsInvocation {
   std::array<char, 9> profile_id{};
   std::array<char, 33> ssid{};
   std::array<char, 65> password{};
+};
+
+struct OnboardingInvocation {
+  OnboardingCommandKind command = OnboardingCommandKind::none;
+  std::array<char, 33> ssid{};
+  std::array<char, 64> password{};
 };
 
 enum class MicrophoneRuntimeEvent : uint8_t {
@@ -144,6 +152,9 @@ ProfileCatalogStore g_profile_catalog(g_profile_catalog_backend);
 NvsDeviceSettingsBackend g_device_settings_backend;
 DeviceSettingsStore g_device_settings_store(g_device_settings_backend);
 SettingsMenu g_settings;
+EspOnboardingBackend g_onboarding_backend;
+OnboardingStateMachine g_onboarding_state(g_onboarding_backend);
+OnboardingController g_onboarding(g_onboarding_state);
 std::optional<KeyboardProbe> g_keyboard;
 std::array<bool, kPhysicalKeyCount> g_pressed{};
 StaticSemaphore_t g_ui_mutex_storage{};
@@ -160,6 +171,10 @@ StaticQueue_t g_settings_queue_storage{};
 std::array<uint8_t, kSettingsQueueDepth * sizeof(SettingsInvocation)>
     g_settings_queue_buffer{};
 QueueHandle_t g_settings_queue = nullptr;
+StaticQueue_t g_onboarding_queue_storage{};
+std::array<uint8_t, kOnboardingQueueDepth * sizeof(OnboardingInvocation)>
+    g_onboarding_queue_buffer{};
+QueueHandle_t g_onboarding_queue = nullptr;
 StaticQueue_t g_microphone_queue_storage{};
 std::array<uint8_t,
            kMicrophoneQueueDepth * sizeof(MicrophoneRuntimeEvent)>
@@ -435,6 +450,23 @@ void update_settings_ui_locked() {
   }
 }
 
+void update_onboarding_ui_locked() {
+  const OnboardingContent content = g_onboarding.content();
+  std::array<std::string_view, 12> rows{};
+  for (uint8_t index = 0; index < content.count; ++index) {
+    rows[index] = content.lines[index];
+  }
+  SemaphoreLock ui_lock(g_ui_mutex);
+  if (!ui_lock.locked()) return;
+  if (g_onboarding.active()) {
+    g_ui.show_onboarding(
+        std::span<const std::string_view>(rows.data(), content.count),
+        content.selected, content.scroll);
+  } else {
+    g_ui.finish_onboarding();
+  }
+}
+
 void refresh_profile_choices_locked() {
   std::array<ProfileSummary, 5> profiles{};
   std::size_t count = 0;
@@ -477,9 +509,42 @@ bool queue_settings_command(const SettingsInputResult& result) {
   return true;
 }
 
+bool queue_onboarding_command(const OnboardingInputResult& result) {
+  if (result.command == OnboardingCommandKind::none) return true;
+  if (g_onboarding_queue == nullptr) {
+    ESP_LOGE(kTag, "onboarding command queue unavailable");
+    return false;
+  }
+  OnboardingInvocation invocation{.command = result.command};
+  copy_setting(g_onboarding.ssid_value(), invocation.ssid);
+  copy_setting(g_onboarding.password_value(), invocation.password);
+  if (xQueueSend(g_onboarding_queue, &invocation, 0) != pdTRUE) {
+    ESP_LOGE(kTag, "onboarding command queue full: command=%u",
+             static_cast<unsigned>(result.command));
+    return false;
+  }
+  return true;
+}
+
 void wifi_scan_finished(std::span<const WifiScanEntry> entries) {
   SemaphoreLock lock(g_input_mutex);
   if (!lock.locked()) return;
+  if (g_onboarding.active() &&
+      g_onboarding_state.step() == OnboardingStep::wifi_scan) {
+    std::array<OnboardingNetwork, 12> networks{};
+    const std::size_t count = std::min(entries.size(), networks.size());
+    for (std::size_t index = 0; index < count; ++index) {
+      networks[index] = {
+          .ssid = entries[index].ssid.data(),
+          .rssi = entries[index].rssi,
+          .secured = entries[index].secured,
+      };
+    }
+    g_onboarding.set_networks(
+        std::span<const OnboardingNetwork>(networks.data(), count));
+    update_onboarding_ui_locked();
+    return;
+  }
   std::array<std::string_view, 12> ssids{};
   const std::size_t count = std::min(entries.size(), ssids.size());
   for (std::size_t index = 0; index < count; ++index) {
@@ -688,6 +753,32 @@ void process_settings_command(const SettingsInvocation& invocation) {
   update_settings_ui_locked();
 }
 
+void process_onboarding_command(const OnboardingInvocation& invocation) {
+  esp_err_t result = ESP_OK;
+  switch (invocation.command) {
+    case OnboardingCommandKind::scan_wifi:
+      result = product_wifi_scan(wifi_scan_finished);
+      break;
+    case OnboardingCommandKind::connect_wifi:
+      result = product_wifi_save(
+          invocation.ssid.data(), invocation.password.data());
+      break;
+    case OnboardingCommandKind::none:
+      return;
+  }
+  if (result == ESP_OK) return;
+  ESP_LOGE(kTag, "onboarding command failed: command=%u error=%s",
+           static_cast<unsigned>(invocation.command),
+           esp_err_to_name(result));
+  SemaphoreLock lock(g_input_mutex);
+  if (!lock.locked()) return;
+  g_onboarding.wifi_failed(
+      invocation.command == OnboardingCommandKind::scan_wifi
+          ? "WIFI SCAN FAILED"
+          : "WIFI CONNECT FAILED");
+  update_onboarding_ui_locked();
+}
+
 uint8_t current_profile_layer_locked() {
   return active_profile_layer(g_input_router.mode(),
                               g_pressed[kFnPhysicalKey]);
@@ -732,6 +823,20 @@ void keyboard_event(const MatrixKeyEvent& event) {
       }
       return;
     }
+  }
+
+  if (g_onboarding.active()) {
+    const OnboardingInputResult onboarding_result = g_onboarding.on_key(
+        event.physical_key, event.pressed, g_pressed[kFnPhysicalKey]);
+    if (event.pressed) {
+      g_last_ui_input_ms.store(
+          static_cast<uint64_t>(esp_timer_get_time()) / 1000);
+    }
+    if (!queue_onboarding_command(onboarding_result)) {
+      g_onboarding.wifi_failed("COMMAND QUEUE FAILED");
+    }
+    update_onboarding_ui_locked();
+    return;
   }
 
   UiPage page = UiPage::pet;
@@ -1046,6 +1151,21 @@ void wifi_status_changed(WifiState state, const char* detail) {
       break;
   }
   {
+    SemaphoreLock lock(g_input_mutex);
+    if (lock.locked() && g_onboarding.active()) {
+      if (state == WifiState::online &&
+          g_onboarding_state.step() ==
+              OnboardingStep::wifi_connect_verify) {
+        g_onboarding.wifi_connected();
+      } else if (state == WifiState::offline &&
+                 g_onboarding_state.step() ==
+                     OnboardingStep::wifi_connect_verify) {
+        g_onboarding.wifi_failed("WIFI CONNECT FAILED");
+      }
+      update_onboarding_ui_locked();
+    }
+  }
+  {
     SemaphoreLock lock(g_ui_mutex);
     if (lock.locked()) {
       g_ui.set_wifi(g_wifi_state);
@@ -1158,12 +1278,20 @@ void ui_task(void*) {
                pdTRUE) {
       process_settings_command(settings_invocation);
     }
+    OnboardingInvocation onboarding_invocation;
+    while (g_onboarding_queue != nullptr &&
+           xQueueReceive(
+               g_onboarding_queue, &onboarding_invocation, 0) == pdTRUE) {
+      process_onboarding_command(onboarding_invocation);
+    }
     const uint32_t return_timeout = g_return_to_pet_ms.load();
     bool timeout_suspended = false;
     {
       SemaphoreLock lock(g_input_mutex);
       timeout_suspended =
-          lock.locked() && g_settings.return_timeout_suspended();
+          lock.locked() &&
+          (g_onboarding.active() ||
+           g_settings.return_timeout_suspended());
     }
     if (return_timeout != 0 && !timeout_suspended &&
         g_last_ui_input_ms.load() != 0 &&
@@ -1332,6 +1460,15 @@ class EspProductStartup final : public ProductStartupBackend {
       if (result == ESP_OK) result = nvs_flash_init();
     }
     if (result == ESP_OK) {
+      const OnboardingLoadResult onboarding_result =
+          g_onboarding_state.load(product_wifi_has_saved_credentials());
+      ESP_LOGI(kTag, "onboarding load result=%u step=%u",
+               static_cast<unsigned>(onboarding_result),
+               static_cast<unsigned>(g_onboarding_state.step()));
+      if (g_onboarding.active()) {
+        SemaphoreLock lock(g_input_mutex);
+        if (lock.locked()) update_onboarding_ui_locked();
+      }
       g_device_settings_store.load();
       const DeviceSettings settings = g_device_settings_store.current();
       g_settings.set_device_settings(settings);
@@ -1399,6 +1536,13 @@ class EspProductStartup final : public ProductStartupBackend {
       set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
       return false;
     }
+    g_onboarding_queue = xQueueCreateStatic(
+        kOnboardingQueueDepth, sizeof(OnboardingInvocation),
+        g_onboarding_queue_buffer.data(), &g_onboarding_queue_storage);
+    if (g_onboarding_queue == nullptr) {
+      set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
+      return false;
+    }
     g_macro_task_handle = xTaskCreateStatic(
         macro_task, "product-macro", g_macro_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 2, g_macro_task_stack.data(), &g_macro_task_storage);
@@ -1456,8 +1600,22 @@ class EspProductStartup final : public ProductStartupBackend {
 
   bool wifi() override {
     const bool recovery_mode = M5.BtnA.isPressed();
-    const esp_err_t result =
+    esp_err_t result =
         product_wifi_start(recovery_mode, wifi_status_changed);
+    if (result == ESP_OK && g_onboarding.active()) {
+      OnboardingInputResult onboarding_result;
+      {
+        SemaphoreLock lock(g_input_mutex);
+        if (lock.locked()) {
+          onboarding_result = g_onboarding.begin();
+          update_onboarding_ui_locked();
+        }
+      }
+      if (onboarding_result.command ==
+          OnboardingCommandKind::scan_wifi) {
+        result = product_wifi_scan(wifi_scan_finished);
+      }
+    }
     set_stage(BootStage::wifi, result);
     return result == ESP_OK;
   }

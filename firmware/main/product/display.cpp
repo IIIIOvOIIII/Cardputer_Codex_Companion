@@ -51,6 +51,7 @@ const char* page_title(UiPage page) {
     case UiPage::codex_status: return "CODEX";
     case UiPage::sync_status: return "SYNC";
     case UiPage::settings: return "SETTINGS";
+    case UiPage::onboarding: return "SETUP";
   }
   return "PET";
 }
@@ -157,12 +158,18 @@ void display_render_page(const UiModel& model) {
     return;
   }
   begin_page(page_title(model.page()));
-  draw_microphone_status(model, kBackground);
+  if (model.page() != UiPage::onboarding) {
+    draw_microphone_status(model, kBackground);
+  }
   M5.Display.setTextColor(kForeground, kBackground);
   M5.Display.setTextSize(kDisplayBodyTextSize);
   M5.Display.setCursor(0, 20);
   const UiPageContent content = model.page_content();
-  const uint8_t visible = model.page() == UiPage::settings ? 5 : 6;
+  const uint8_t visible =
+      model.page() == UiPage::settings ||
+              model.page() == UiPage::onboarding
+          ? 5
+          : 6;
   const uint8_t end = std::min<uint8_t>(
       content.count, model.scroll_offset() + visible);
   for (uint8_t index = model.scroll_offset(); index < end; ++index) {
@@ -174,8 +181,10 @@ void display_render_page(const UiModel& model) {
   if (end < content.count) {
     M5.Display.fillTriangle(223, 116, 233, 116, 228, 122, kAccent);
   }
-  draw_page_dots(model.page());
-  draw_microphone_error(model);
+  if (model.page() != UiPage::onboarding) {
+    draw_page_dots(model.page());
+    draw_microphone_error(model);
+  }
   M5.Display.endWrite();
 }
 

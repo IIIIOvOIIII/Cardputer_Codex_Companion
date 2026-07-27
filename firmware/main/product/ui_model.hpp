@@ -18,6 +18,7 @@ enum class UiPage : uint8_t {
   codex_status,
   sync_status,
   settings,
+  onboarding,
 };
 
 enum class UiMicrophoneState : uint8_t {
@@ -70,6 +71,9 @@ class UiModel {
   void set_pet_sync_age(uint32_t seconds);
   void set_settings_content(std::span<const std::string_view> rows,
                             uint8_t selected, uint8_t scroll);
+  void show_onboarding(std::span<const std::string_view> rows,
+                       uint8_t selected, uint8_t scroll);
+  void finish_onboarding();
   void navigate(UiNavAction action);
   void return_to_pet();
   [[nodiscard]] uint32_t revision() const { return revision_; }
@@ -139,6 +143,10 @@ class UiModel {
   uint8_t settings_count_ = 0;
   uint8_t settings_selected_ = 0;
   uint8_t settings_scroll_ = 0;
+  std::array<std::string, 12> onboarding_rows_{};
+  uint8_t onboarding_count_ = 0;
+  uint8_t onboarding_selected_ = 0;
+  uint8_t onboarding_scroll_ = 0;
   uint32_t revision_ = 0;
   uint32_t pet_revision_ = 0;
 };

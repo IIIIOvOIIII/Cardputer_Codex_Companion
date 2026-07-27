@@ -284,7 +284,40 @@ void UiModel::set_settings_content(
   ++revision_;
 }
 
+void UiModel::show_onboarding(
+    std::span<const std::string_view> rows,
+    uint8_t selected,
+    uint8_t scroll
+) {
+  const uint8_t count =
+      static_cast<uint8_t>(std::min(rows.size(), onboarding_rows_.size()));
+  std::array<std::string, 12> next{};
+  for (uint8_t index = 0; index < count; ++index) {
+    next[index] = clipped(rows[index], 32);
+  }
+  const bool changed =
+      onboarding_rows_ != next || onboarding_count_ != count ||
+      onboarding_selected_ != selected || onboarding_scroll_ != scroll ||
+      page_ != UiPage::onboarding;
+  if (!changed) return;
+  onboarding_rows_ = std::move(next);
+  onboarding_count_ = count;
+  onboarding_selected_ = selected;
+  onboarding_scroll_ = scroll;
+  page_ = UiPage::onboarding;
+  scroll_offset_ = scroll;
+  ++revision_;
+}
+
+void UiModel::finish_onboarding() {
+  if (page_ != UiPage::onboarding) return;
+  page_ = UiPage::pet;
+  scroll_offset_ = 0;
+  ++revision_;
+}
+
 void UiModel::navigate(UiNavAction action) {
+  if (page_ == UiPage::onboarding) return;
   constexpr uint8_t count = 5;
   if (action == UiNavAction::previous_page ||
       action == UiNavAction::next_page) {
@@ -391,6 +424,11 @@ UiPageContent UiModel::page_content() const {
         for (uint8_t index = 0; index < settings_count_; ++index) {
           add_line(content, settings_rows_[index]);
         }
+      }
+      break;
+    case UiPage::onboarding:
+      for (uint8_t index = 0; index < onboarding_count_; ++index) {
+        add_line(content, onboarding_rows_[index]);
       }
       break;
   }

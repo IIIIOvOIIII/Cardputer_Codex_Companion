@@ -28,7 +28,7 @@ WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
     return WifiCommand::connect_runtime;
   }
   state_ = WifiState::provisioning;
-  return WifiCommand::start_provisioning_ap;
+  return WifiCommand::start_onboarding_station;
 }
 
 WifiCommand WifiStateMachine::tick(uint64_t now_ms) {
@@ -318,6 +318,12 @@ void start_provisioning() {
   notify(WifiState::provisioning, g_ap_password.data());
 }
 
+void start_onboarding_station() {
+  esp_wifi_set_mode(WIFI_MODE_STA);
+  esp_wifi_start();
+  notify(WifiState::provisioning, nullptr);
+}
+
 void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const auto* event = static_cast<ip_event_got_ip_t*>(data);
@@ -416,6 +422,8 @@ esp_err_t product_wifi_start(bool recovery_mode, WifiStatusHandler handler) {
       static_cast<uint64_t>(esp_timer_get_time()) / 1000, recovery_mode);
   if (command == WifiCommand::start_provisioning_ap) {
     start_provisioning();
+  } else if (command == WifiCommand::start_onboarding_station) {
+    start_onboarding_station();
   } else {
     connect_selected();
   }
@@ -427,7 +435,7 @@ esp_err_t product_wifi_start(bool recovery_mode, WifiStatusHandler handler) {
 
 esp_err_t product_wifi_save(std::string_view ssid,
                             std::string_view password) {
-  if (ssid.empty() || ssid.size() > 32 || password.size() > 64) {
+  if (!wifi_credentials_valid(ssid, password)) {
     return ESP_ERR_INVALID_ARG;
   }
   const std::string ssid_copy(ssid);
@@ -459,6 +467,12 @@ esp_err_t product_wifi_reconnect() {
   esp_wifi_disconnect();
   connect_selected();
   return ESP_OK;
+}
+
+bool product_wifi_has_saved_credentials() {
+  if (init_optional_wifi_config_partition() != ESP_OK) return false;
+  return g_credentials.load_runtime().has_value() ||
+         g_credentials.load_private().has_value();
 }
 
 WifiState product_wifi_state() {

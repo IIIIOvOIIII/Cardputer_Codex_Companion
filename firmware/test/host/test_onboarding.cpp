@@ -2,6 +2,8 @@
 #include <array>
 #include <cassert>
 #include <span>
+#include <string>
+#include <string_view>
 
 #include "product/onboarding.hpp"
 
@@ -25,6 +27,30 @@ struct MemoryOnboardingBackend final : OnboardingBackend {
     return true;
   }
 };
+
+OnboardingInputResult press(
+    OnboardingController& controller,
+    uint8_t key,
+    bool shift = false
+) {
+  const OnboardingInputResult result =
+      controller.on_key(key, true, shift);
+  const OnboardingInputResult released =
+      controller.on_key(key, false, shift);
+  assert(result.captured);
+  assert(released.captured);
+  return result;
+}
+
+bool content_contains(
+    const OnboardingContent& content,
+    std::string_view value
+) {
+  for (uint8_t index = 0; index < content.count; ++index) {
+    if (content.lines[index].find(value) != std::string::npos) return true;
+  }
+  return false;
+}
 
 int main() {
   static_assert(kOnboardingStorageKey.size() <= 15);
@@ -143,6 +169,91 @@ int main() {
   auto bad_crc = encoded;
   bad_crc.back() ^= 1;
   assert(!decode_onboarding_record(bad_crc, &decoded));
+
+  MemoryOnboardingBackend ui_backend;
+  OnboardingStateMachine ui_machine(ui_backend);
+  assert(ui_machine.load(false) == OnboardingLoadResult::first_run);
+  OnboardingController controller(ui_machine);
+  assert(controller.begin().command == OnboardingCommandKind::scan_wifi);
+  constexpr std::array<OnboardingNetwork, 3> networks{{
+      {.ssid = "Weak", .rssi = -80, .secured = true},
+      {.ssid = "Strong", .rssi = -40, .secured = true},
+      {.ssid = "Weak", .rssi = -50, .secured = true},
+  }};
+  controller.set_networks(networks);
+  OnboardingContent content = controller.content();
+  assert(content.count == 4);
+  assert(content.lines[0].find("Strong") != std::string::npos);
+  assert(content.lines[1].find("Weak") != std::string::npos);
+  assert(content.lines[2].find("HIDDEN NETWORK") != std::string::npos);
+  assert(content.lines[3].find("RESCAN") != std::string::npos);
+  assert(press(controller, 41).command == OnboardingCommandKind::none);
+  assert(ui_machine.step() == OnboardingStep::wifi_password);
+  for (int index = 0; index < 7; ++index) press(controller, 30);
+  assert(press(controller, 41).command == OnboardingCommandKind::none);
+  assert(ui_machine.step() == OnboardingStep::wifi_password);
+  assert(content_contains(controller.content(), "8-63"));
+  press(controller, 30);
+  const OnboardingInputResult connect = press(controller, 41);
+  assert(connect.command == OnboardingCommandKind::connect_wifi);
+  assert(controller.ssid_value() == "Strong");
+  assert(controller.password_value() == "aaaaaaaa");
+  content = controller.content();
+  assert(content_contains(content, "********"));
+  assert(!content_contains(content, "aaaaaaaa"));
+  controller.wifi_failed("AUTH FAILED");
+  assert(ui_machine.step() == OnboardingStep::wifi_password);
+  assert(content_contains(controller.content(), "AUTH FAILED"));
+  assert(!content_contains(controller.content(), "aaaaaaaa"));
+  assert(press(controller, 41).command ==
+         OnboardingCommandKind::connect_wifi);
+  assert(controller.wifi_connected() == OnboardingResult::ok);
+  assert(ui_machine.step() == OnboardingStep::ble_pair_guide);
+
+  MemoryOnboardingBackend open_backend;
+  OnboardingStateMachine open_machine(open_backend);
+  assert(open_machine.load(false) == OnboardingLoadResult::first_run);
+  OnboardingController open_controller(open_machine);
+  open_controller.begin();
+  constexpr std::array<OnboardingNetwork, 1> open_network{{
+      {.ssid = "Guest", .rssi = -30, .secured = false},
+  }};
+  open_controller.set_networks(open_network);
+  assert(press(open_controller, 41).command ==
+         OnboardingCommandKind::connect_wifi);
+  assert(open_controller.ssid_value() == "Guest");
+  assert(open_controller.password_value().empty());
+
+  MemoryOnboardingBackend hidden_backend;
+  OnboardingStateMachine hidden_machine(hidden_backend);
+  assert(hidden_machine.load(false) == OnboardingLoadResult::first_run);
+  OnboardingController hidden_controller(hidden_machine);
+  hidden_controller.begin();
+  hidden_controller.set_networks(open_network);
+  press(hidden_controller, 53);
+  press(hidden_controller, 41);
+  assert(content_contains(hidden_controller.content(), "WIFI SSID"));
+  press(hidden_controller, 30);
+  press(hidden_controller, 41);
+  assert(content_contains(hidden_controller.content(), "WIFI PASSWORD"));
+  assert(press(hidden_controller, 41).command ==
+         OnboardingCommandKind::connect_wifi);
+  assert(hidden_controller.ssid_value() == "a");
+  assert(hidden_controller.password_value().empty());
+
+  MemoryOnboardingBackend rescan_backend;
+  OnboardingStateMachine rescan_machine(rescan_backend);
+  assert(rescan_machine.load(false) == OnboardingLoadResult::first_run);
+  OnboardingController rescan_controller(rescan_machine);
+  rescan_controller.begin();
+  rescan_controller.set_networks(open_network);
+  press(rescan_controller, 53);
+  press(rescan_controller, 53);
+  assert(press(rescan_controller, 41).command ==
+         OnboardingCommandKind::scan_wifi);
+  assert(rescan_machine.step() == OnboardingStep::wifi_scan);
+  assert(rescan_controller.on_key(30, true, false).captured);
+  assert(rescan_controller.on_key(30, false, false).captured);
 
   return 0;
 }

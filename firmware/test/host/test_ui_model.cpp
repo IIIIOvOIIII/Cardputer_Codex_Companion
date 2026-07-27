@@ -8,6 +8,17 @@
 int main() {
   UiModel model;
   assert(model.page() == UiPage::pet);
+  UiModel onboarding_model;
+  const std::array<std::string_view, 3> onboarding_rows{
+      "SETUP 1/3", "> Strong -40 *", "  HIDDEN NETWORK"};
+  onboarding_model.show_onboarding(onboarding_rows, 0, 0);
+  assert(onboarding_model.page() == UiPage::onboarding);
+  assert(!ui_page_allows_host_input(onboarding_model.page()));
+  assert(onboarding_model.page_content().lines[1] == "> Strong -40 *");
+  onboarding_model.navigate(UiNavAction::next_page);
+  assert(onboarding_model.page() == UiPage::onboarding);
+  onboarding_model.finish_onboarding();
+  assert(onboarding_model.page() == UiPage::pet);
   assert(model.revision() == 0);
   assert(model.boot_line(BootStage::display) == "DISPLAY ...");
   model.set_profile("SAFE");

@@ -70,6 +70,15 @@ int main() {
 
   FakeCredentials empty;
   WifiStateMachine first_boot(empty);
-  assert(first_boot.begin(0, false) == WifiCommand::start_provisioning_ap);
+  assert(first_boot.begin(0, false) ==
+         WifiCommand::start_onboarding_station);
+  assert(wifi_credentials_valid("Guest", ""));
+  assert(!wifi_credentials_valid("", ""));
+  assert(!wifi_credentials_valid("Secure", "short"));
+  assert(wifi_credentials_valid("Secure", "12345678"));
+  assert(wifi_credentials_valid(
+      "Secure", std::string(63, 'x')));
+  assert(!wifi_credentials_valid(
+      "Secure", std::string(64, 'x')));
   return 0;
 }

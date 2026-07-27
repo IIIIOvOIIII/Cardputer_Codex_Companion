@@ -44,3 +44,21 @@
   self-contained executable test targets remain authoritative.
 - Next step: Implement Task 1's redacted all-history and public-artifact
   security gate, then remove private packaging from the public release path.
+
+## 2026-07-28 00:30 HKT
+
+- Current work: Completed the public-history security gate, frozen the
+  cross-platform Agent protocol, added CRC-protected onboarding checkpoints,
+  and integrated the first-run Wi-Fi scanner, selector, masked password editor,
+  hidden-network path, and asynchronous connection flow into the firmware.
+- Expected result: A clean device starts in station mode without exposing an
+  AP, accepts Wi-Fi configuration entirely on Cardputer, persists only verified
+  connectivity, and never sends setup keystrokes to HID.
+- Result: Achieved. The redacted audit found zero credential values across 7
+  refs, 189 reflog commits, 17 retained unreachable objects, and 1269 blobs.
+  Focused onboarding/Wi-Fi/UI host tests pass 3/3, and the ESP32-S3 firmware
+  compiles successfully at 0x18a560 bytes with 49 percent of the smallest app
+  partition free.
+- Next step: Bind verified BLE HID and authenticated Agent heartbeat to the
+  remaining onboarding checkpoints, then enforce backtick return behavior on
+  every normal subpage.

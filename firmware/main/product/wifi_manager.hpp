@@ -38,6 +38,7 @@ enum class WifiCommand : uint8_t {
   connect_private,
   connect_runtime,
   stop_and_offline,
+  start_onboarding_station,
   start_provisioning_ap,
   connect_candidate,
   persist_candidate,
@@ -46,6 +47,15 @@ enum class WifiCommand : uint8_t {
   rollback_failed,
   retry_selected,
 };
+
+inline bool wifi_credentials_valid(
+    std::string_view ssid,
+    std::string_view password
+) {
+  return !ssid.empty() && ssid.size() <= 32 &&
+         (password.empty() ||
+          (password.size() >= 8 && password.size() <= 63));
+}
 
 class WifiStateMachine {
  public:
@@ -89,6 +99,7 @@ esp_err_t product_wifi_start(bool recovery_mode, WifiStatusHandler handler);
 esp_err_t product_wifi_save(std::string_view ssid, std::string_view password);
 esp_err_t product_wifi_scan(WifiScanHandler handler);
 esp_err_t product_wifi_reconnect();
+bool product_wifi_has_saved_credentials();
 WifiState product_wifi_state();
 const char* product_wifi_ipv4();
 #endif
