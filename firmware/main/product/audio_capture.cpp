@@ -44,6 +44,7 @@ ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz) {
 void DoubleBufferedCaptureState::reset() {
   pending_ = 0;
   next_index_ = 0;
+  completion_armed_ = false;
 }
 
 bool DoubleBufferedCaptureState::queue() {
@@ -51,13 +52,20 @@ bool DoubleBufferedCaptureState::queue() {
     return false;
   }
   ++pending_;
+  completion_armed_ = false;
   return true;
 }
 
 bool DoubleBufferedCaptureState::take_completed(
     uint8_t recording_count, uint8_t* completed_index) {
-  if (completed_index == nullptr || pending_ == 0 ||
-      recording_count >= pending_) {
+  if (completed_index == nullptr || pending_ == 0) {
+    return false;
+  }
+  if (recording_count >= pending_) {
+    completion_armed_ = true;
+    return false;
+  }
+  if (!completion_armed_) {
     return false;
   }
   *completed_index = next_index_;

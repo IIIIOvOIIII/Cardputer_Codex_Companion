@@ -39,6 +39,7 @@ class DoubleBufferedCaptureState {
  private:
   uint8_t pending_ = 0;
   uint8_t next_index_ = 0;
+  bool completion_armed_ = false;
 };
 
 uint32_t audio_capture_read_timeout_ms(uint32_t rate_hz);

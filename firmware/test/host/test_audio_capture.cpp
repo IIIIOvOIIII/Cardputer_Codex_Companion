@@ -96,12 +96,16 @@ int main() {
   assert(queue.queue());
   assert(!queue.queue());
   assert(queue.pending() == 2);
+  assert(!queue.take_completed(0, &completed));
+  assert(!queue.take_completed(1, &completed));
   assert(!queue.take_completed(2, &completed));
   assert(queue.take_completed(1, &completed));
   assert(completed == 0);
   assert(queue.pending() == 1);
   assert(queue.queue());
-  assert(queue.take_completed(0, &completed));
+  assert(!queue.take_completed(1, &completed));
+  assert(!queue.take_completed(2, &completed));
+  assert(queue.take_completed(1, &completed));
   assert(completed == 1);
   assert(queue.take_completed(0, &completed));
   assert(completed == 0);
