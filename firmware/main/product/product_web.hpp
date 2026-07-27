@@ -16,6 +16,9 @@ inline constexpr bool kProductWebUsesTls = true;
 inline constexpr std::size_t kProductWebTaskStackBytes = 4864;
 inline constexpr uint64_t kProductWebTlsCleanupWindowUs = 5'000'000;
 inline constexpr std::size_t kProductWebPinLength = 8;
+inline constexpr std::string_view kProductPairingHeader =
+    "X-Cardputer-Pairing";
+inline constexpr std::size_t kProductPetChunkMaximumBytes = 8192;
 
 constexpr std::string_view product_web_resource_scenario(
     std::size_t active_tls_sessions) {

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "auth_header": "X-Cardputer-Pairing",
+  "chunk_max_bytes": 8192,
+  "endpoints": {
+    "status": "/api/v1/companion/pet",
+    "begin": "/api/v1/companion/pet/begin",
+    "chunk": "/api/v1/companion/pet/chunk",
+    "commit": "/api/v1/companion/pet/commit"
+  },
+  "begin_request": {
+    "pet_id": "rocky",
+    "format_version": 1,
+    "length": 1024,
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "begin_response": {
+    "transaction_id": "tx-1",
+    "received": 0
+  },
+  "chunk_headers": {
+    "X-Pet-Transaction": "tx-1",
+    "X-Pet-Offset": "0",
+    "X-Pet-Chunk-SHA256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "commit_request": {
+    "transaction_id": "tx-1"
+  },
+  "status": {
+    "pet_id": "rocky",
+    "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "format_version": 1,
+    "storage_used": 1024,
+    "transaction": {
+      "active": false,
+      "id": "",
+      "received": 0,
+      "expected": 0
+    },
+    "last_result": "ok"
+  }
+}

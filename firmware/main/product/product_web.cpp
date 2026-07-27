@@ -28,7 +28,6 @@
 
 namespace {
 constexpr std::size_t kRequestLimit = 16384;
-constexpr char kPairingHeader[] = "X-Cardputer-Pairing";
 constexpr char kProductNvsNamespace[] = "product";
 constexpr char kProfileNvsKey[] = "profile";
 constexpr char kActiveProfileNvsKey[] = "active_profile";
@@ -104,11 +103,13 @@ PinAuthorization authorize_request(
     httpd_req_t* request,
     bool companion_action = false
 ) {
-  const size_t length = httpd_req_get_hdr_value_len(request, kPairingHeader);
+  const size_t length =
+      httpd_req_get_hdr_value_len(request, kProductPairingHeader.data());
   if (length != kProductWebPinLength) return PinAuthorization::denied;
   std::array<char, 9> supplied{};
-  if (httpd_req_get_hdr_value_str(request, kPairingHeader, supplied.data(),
-                                  supplied.size()) != ESP_OK) {
+  if (httpd_req_get_hdr_value_str(
+          request, kProductPairingHeader.data(), supplied.data(),
+          supplied.size()) != ESP_OK) {
     return PinAuthorization::denied;
   }
   return g_pin_rotation.authorize(
@@ -860,7 +861,8 @@ esp_err_t pet_chunk_handler(httpd_req_t* request) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
   }
-  if (request->content_len <= 0 || request->content_len > 8192) {
+  if (request->content_len <= 0 ||
+      request->content_len > kProductPetChunkMaximumBytes) {
     return json_response(request, "{\"error\":\"chunk_too_large\"}",
                          "413 Payload Too Large");
   }

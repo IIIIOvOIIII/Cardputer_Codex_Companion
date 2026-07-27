@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "method": "GET",
+  "path": "/api/v1/companion/action",
+  "auth_header": "X-Cardputer-Pairing",
+  "actions": [
+    "none",
+    "select_next",
+    "select_previous",
+    "new",
+    "interrupt",
+    "approve",
+    "reject",
+    "provide_input"
+  ],
+  "response": {
+    "sequence": 3,
+    "action": "none",
+    "needs_snapshot": true
+  },
+  "migration_response": {
+    "sequence": 8,
+    "action": "none",
+    "needs_snapshot": false,
+    "next_pairing": "87654321",
+    "pin_revision": 8
+  }
+}

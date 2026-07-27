@@ -40,6 +40,36 @@ try expect(limit["scope"] as? String == "codex", "scope")
 try expect(limit["window"] as? String == "5h", "window")
 try expect(limit["used_percent"] as? Int == 38, "used_percent")
 
+let repositoryRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+let fixtureRoot = repositoryRoot
+    .appending(path: "protocol/product-v1/fixtures")
+let statusFixture = try JSONSerialization.jsonObject(
+    with: Data(contentsOf: fixtureRoot.appending(path: "status.json"))
+) as! [String: Any]
+let fixtureSnapshotData = try JSONSerialization.data(
+    withJSONObject: statusFixture["snapshot_with_limits"] as! [String: Any]
+)
+let fixtureSnapshot = try JSONDecoder().decode(
+    CompanionSnapshot.self,
+    from: fixtureSnapshotData
+)
+try expect(fixtureSnapshot.sessionID == "thread-1", "shared fixture session")
+try expect(fixtureSnapshot.fast == true, "shared fixture fast")
+let absentSnapshotData = try JSONSerialization.data(
+    withJSONObject:
+        statusFixture["snapshot_without_optional_telemetry"] as! [String: Any]
+)
+let absentSnapshot = try JSONDecoder().decode(
+    CompanionSnapshot.self,
+    from: absentSnapshotData
+)
+try expect(absentSnapshot.model == nil, "missing model omitted")
+try expect(absentSnapshot.limits == nil, "missing limits omitted")
+
 let changedFast = CompanionSnapshot(
     sequence: 8,
     sessionID: snapshot.sessionID,
@@ -210,13 +240,13 @@ try expect(staleCache.limits.isEmpty, "stale cache hidden")
 
 print("Codex telemetry reader tests passed")
 
+let actionFixture = try JSONSerialization.jsonObject(
+    with: Data(contentsOf: fixtureRoot.appending(path: "actions.json"))
+) as! [String: Any]
 let actionWithMigration = try JSONDecoder().decode(
     RemoteActionEnvelope.self,
-    from: Data(
-        """
-        {"sequence":8,"action":"none","needs_snapshot":false,
-         "next_pairing":"87654321","pin_revision":8}
-        """.utf8
+    from: try JSONSerialization.data(
+        withJSONObject: actionFixture["migration_response"] as! [String: Any]
     )
 )
 try expect(

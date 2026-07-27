@@ -5,6 +5,8 @@
 
 int main() {
   assert(kProductWebUsesTls);
+  assert(kProductPairingHeader == "X-Cardputer-Pairing");
+  assert(kProductPetChunkMaximumBytes == 8192);
   assert(kProductWebTaskStackBytes == 4864);
   assert(kProductWebTlsCleanupWindowUs == 5'000'000);
   assert(product_web_resource_scenario(0) == "steady");

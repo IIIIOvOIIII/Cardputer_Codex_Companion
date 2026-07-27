@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "method": "POST",
+  "path": "/api/v1/companion/status",
+  "auth_header": "X-Cardputer-Pairing",
+  "snapshot_with_limits": {
+    "type": "snapshot",
+    "sequence": 7,
+    "session_id": "thread-1",
+    "title": "Cardputer",
+    "cwd": "/tmp/project",
+    "state": "active",
+    "approvals": 1,
+    "inputs": 2,
+    "pet_id": "rocky",
+    "pet_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "pet_state": "working",
+    "model": "gpt-5.6",
+    "thinking_level": "high",
+    "fast": true,
+    "limits": [
+      {
+        "scope": "codex",
+        "window": "5h",
+        "used_percent": 38
+      },
+      {
+        "scope": "codex",
+        "window": "weekly",
+        "used_percent": 61
+      }
+    ]
+  },
+  "snapshot_without_optional_telemetry": {
+    "type": "snapshot",
+    "sequence": 8,
+    "session_id": "",
+    "title": "NO ACTIVE CODEX",
+    "cwd": "-",
+    "state": "offline",
+    "approvals": 0,
+    "inputs": 0,
+    "pet_id": "",
+    "pet_digest": "",
+    "pet_state": "waiting"
+  },
+  "response": {
+    "accepted": true
+  }
+}

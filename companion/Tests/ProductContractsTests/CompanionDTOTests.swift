@@ -183,4 +183,23 @@ final class CompanionDTOTests: XCTestCase {
         let value = try JSONDecoder().decode(CompanionSnapshot.self, from: data)
         XCTAssertEqual(value.limits?.count, 4)
     }
+
+    func testSnapshotOmitsUnavailableTelemetryInsteadOfEncodingNull() throws {
+        let value = CompanionSnapshot(
+            sequence: 1,
+            sessionID: "",
+            title: "NO ACTIVE CODEX",
+            cwd: "-",
+            state: "offline",
+            approvals: 0,
+            inputs: 0
+        )
+        let data = try JSONEncoder().encode(value)
+        let json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        for key in ["model", "thinking_level", "fast", "limits"] {
+            XCTAssertNil(json[key])
+        }
+    }
 }
