@@ -7,10 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/cardputer/codex-companion/windows-agent/internal/app"
+	"github.com/cardputer/codex-companion/windows-agent/internal/codex"
 	"github.com/cardputer/codex-companion/windows-agent/internal/config"
 	"github.com/cardputer/codex-companion/windows-agent/internal/device"
 )
@@ -24,7 +28,7 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: cardputer-agent pair|heartbeat")
+		return errors.New("usage: cardputer-agent pair|heartbeat|run")
 	}
 	protector, err := config.NewPlatformProtector()
 	if err != nil {
@@ -91,8 +95,74 @@ func run(arguments []string) error {
 		fmt.Printf("sequence=%d action=%s needs_snapshot=%t\n",
 			action.Sequence, action.Action, action.NeedsSnapshot)
 		return nil
+	case "run":
+		flags := flag.NewFlagSet("run", flag.ContinueOnError)
+		path := flags.String("config", configPath, "secure configuration path")
+		codexExecutable := flags.String("codex", "codex", "Codex CLI executable")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		stored, pin, err := (config.Store{
+			Path: *path, Protector: protector,
+		}).Load()
+		if err != nil {
+			return err
+		}
+		deviceClient, err := device.NewClient(
+			stored.DeviceURL,
+			pin,
+			stored.CertificateSHA256,
+		)
+		if err != nil {
+			return err
+		}
+		rpc := codex.NewProcess(*codexExecutable)
+		machine := codex.NewAdapter(rpc)
+		ctx, stop := signal.NotifyContext(
+			context.Background(),
+			os.Interrupt,
+			syscall.SIGTERM,
+		)
+		defer stop()
+		if err := machine.Start(ctx); err != nil {
+			return err
+		}
+		defer machine.Close()
+		agent := app.NewAgent(deviceClient, machine)
+		agent.SetPairingMigrationHandler(
+			stored.PINRevision,
+			func(next string, revision uint32) error {
+				updated := stored
+				updated.PINRevision = revision
+				if err := (config.Store{
+					Path: *path, Protector: protector,
+				}).Save(updated, next); err != nil {
+					return err
+				}
+				if err := deviceClient.UpdatePairing(next); err != nil {
+					return err
+				}
+				stored = updated
+				return nil
+			},
+		)
+		for {
+			stepCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			stepErr := agent.Step(stepCtx)
+			cancel()
+			if stepErr != nil && ctx.Err() == nil {
+				fmt.Fprintln(os.Stderr, "sync warning:", stepErr)
+			}
+			timer := time.NewTimer(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+		}
 	default:
-		return errors.New("usage: cardputer-agent pair|heartbeat")
+		return errors.New("usage: cardputer-agent pair|heartbeat|run")
 	}
 }
 

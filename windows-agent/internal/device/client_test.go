@@ -106,6 +106,39 @@ func TestHeartbeatRetriesWithinBoundAndUsesAuthHeader(t *testing.T) {
 	}
 }
 
+func TestPostStatusUsesPinnedAuthenticatedProductContract(t *testing.T) {
+	const pin = "87654321"
+	wantBody := []byte(`{"type":"snapshot","sequence":7}`)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/companion/status" ||
+			r.Header.Get(PairingHeader) != pin ||
+			r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		var body map[string]any
+		if json.NewDecoder(r.Body).Decode(&body) != nil ||
+			body["type"] != "snapshot" || body["sequence"] != float64(7) {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"accepted": true})
+	}))
+	defer server.Close()
+	sum := sha256.Sum256(server.Certificate().Raw)
+	client, err := NewClient(server.URL, pin, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if json.Unmarshal(wantBody, &snapshot) != nil {
+		t.Fatal("invalid test snapshot")
+	}
+	if err := client.PostStatus(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManualAddressFallbackAndFixtureContract(t *testing.T) {
 	address, err := SelectAddress("https://192.168.1.50", []string{"https://cardputer.local"})
 	if err != nil || address != "https://192.168.1.50" {

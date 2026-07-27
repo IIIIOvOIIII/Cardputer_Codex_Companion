@@ -19,6 +19,7 @@ import (
 const (
 	PairingHeader        = "X-Cardputer-Pairing"
 	actionPath           = "/api/v1/companion/action"
+	statusPath           = "/api/v1/companion/status"
 	maxResponseBytes     = 64 * 1024
 	defaultAttempts      = 3
 	defaultClientTimeout = 10 * time.Second
@@ -153,6 +154,43 @@ func (client *Client) Heartbeat(ctx context.Context) (ActionEnvelope, error) {
 		}
 	}
 	return ActionEnvelope{}, lastErr
+}
+
+func (client *Client) PostStatus(ctx context.Context, snapshot any) error {
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		return errors.New("encode device status")
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		client.address+statusPath,
+		strings.NewReader(string(body)),
+	)
+	if err != nil {
+		return errors.New("create device status request")
+	}
+	request.Header.Set(PairingHeader, client.pairingPIN)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("device status transport failed: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxResponseBytes))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("device returned HTTP status %d", response.StatusCode)
+	}
+	return nil
+}
+
+func (client *Client) UpdatePairing(pairingPIN string) error {
+	if !config.PairingPINValid(pairingPIN) {
+		return errors.New("pairing PIN must contain exactly eight digits")
+	}
+	client.pairingPIN = pairingPIN
+	return nil
 }
 
 func requestAction(

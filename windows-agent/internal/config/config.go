@@ -20,6 +20,7 @@ const (
 type Config struct {
 	DeviceURL         string `json:"device_url"`
 	CertificateSHA256 string `json:"certificate_sha256"`
+	PINRevision       uint32 `json:"pin_revision,omitempty"`
 }
 
 func (c Config) Validate() error {
@@ -59,6 +60,7 @@ type diskConfig struct {
 	SchemaVersion       int    `json:"schema_version"`
 	DeviceURL           string `json:"device_url"`
 	CertificateSHA256   string `json:"certificate_sha256"`
+	PINRevision         uint32 `json:"pin_revision,omitempty"`
 	ProtectedPairingPIN string `json:"protected_pairing_pin"`
 }
 
@@ -85,6 +87,7 @@ func (s Store) Save(configuration Config, pairingPIN string) error {
 		SchemaVersion:       configSchemaVersion,
 		DeviceURL:           configuration.DeviceURL,
 		CertificateSHA256:   configuration.CertificateSHA256,
+		PINRevision:         configuration.PINRevision,
 		ProtectedPairingPIN: base64.StdEncoding.EncodeToString(protected),
 	}, "", "  ")
 	if err != nil {
@@ -156,6 +159,7 @@ func (s Store) Load() (Config, string, error) {
 	configuration := Config{
 		DeviceURL:         stored.DeviceURL,
 		CertificateSHA256: stored.CertificateSHA256,
+		PINRevision:       stored.PINRevision,
 	}
 	if err := configuration.Validate(); err != nil {
 		return Config{}, "", err

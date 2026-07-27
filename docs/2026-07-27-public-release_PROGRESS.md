@@ -110,3 +110,21 @@
 - Next step: Add Codex session telemetry and action execution to the Windows
   Agent, keeping the product-v1 status and action contracts aligned with the
   existing macOS implementation.
+
+## 2026-07-28 01:01 HKT
+
+- Current work: Added the supervised Windows Codex app-server process,
+  JSON-RPC correlation and approval handling, active-session normalization,
+  rollout metadata telemetry, optional quota classification, action routing,
+  status posting, and persistent PIN migration.
+- Expected result: The Windows Agent restarts a failed Codex child within a
+  bound, isolates malformed or oversized rollout events, never serializes
+  unavailable limits, and mirrors the macOS session/action contract.
+- Result: Achieved. The complete Go suite, `go vet`, race-enabled Codex/app/
+  device/config tests, and amd64 plus ARM64 Windows cross-builds pass. Tests
+  cover clean shutdown, startup recovery, response correlation, timeout
+  cancellation, active session/model/Thinking/Fast telemetry, limit omission,
+  all supported actions, status authentication, and PIN migration.
+- Next step: Port deterministic pet selection, WebP composition, CCPT v1
+  encoding, strict proven-period normalization, and resumable synchronization
+  with byte-level Swift compatibility evidence.
