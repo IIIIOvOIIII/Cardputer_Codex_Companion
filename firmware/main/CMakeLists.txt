@@ -54,6 +54,7 @@ idf_component_register(
         "product/ui_model.cpp"
         "product/ui_navigation.cpp"
         "product/device_settings.cpp"
+        "product/onboarding.cpp"
         "product/settings_menu.cpp"
         "product/pin_rotation.cpp"
         "product/display.cpp"

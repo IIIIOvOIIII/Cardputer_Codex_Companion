@@ -313,6 +313,13 @@ add_executable(test_device_settings
 target_include_directories(test_device_settings PRIVATE ../../main)
 add_test(NAME device_settings COMMAND test_device_settings)
 
+add_executable(test_onboarding
+  test_onboarding.cpp
+  ../../main/product/onboarding.cpp
+)
+target_include_directories(test_onboarding PRIVATE ../../main)
+add_test(NAME onboarding COMMAND test_onboarding)
+
 add_executable(test_settings_menu
   test_settings_menu.cpp
   ../../main/product/settings_menu.cpp
