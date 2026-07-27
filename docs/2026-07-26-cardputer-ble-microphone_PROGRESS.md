@@ -594,3 +594,38 @@
   Python focused tests 28/28、host tests 37/37 通过。
 - Next step: 执行完整发布构建、app-only 烧录和长时 HIL，确认常态 heap、TLS、
   HID、音频、静态宠物与恢复路径全部通过后生成最终发布清单。
+
+## 2026-07-27 19:44 HKT
+
+- Current work: 完成 1.1.5 全量构建、app-only 烧录、Mac 稳定路径安装、600 秒
+  HIL 与 AVFoundation 真实输入验证。
+- Expected result: 整帧单次提交保持用户已确认的无水平错位效果；动态帧缓冲释放
+  后资源门禁恢复；Mac App/HAL/Bridge/LaunchAgent 均为 1.1.5；G0 激活后系统
+  输入获得动态电平，停止后回到 READY。
+- Result: Achieved。完整发布门禁通过 Python 202/202、音频专项 26/26、普通与
+  sanitizer host 各 37/37、ESP-IDF clean build（DIRAM 144,545 bytes）、
+  Swift/HAL/签名/private packaging。app-only 从 `0x20000` 写入并独立
+  `verify_flash` digest matched。600 秒 HIL 为 captured/received
+  21,508/21,501，0 overrun/drop/gap/reconnect/allocation/HID failure，
+  max gap 105 ms，HID 1000/1000、p95 100 us，steady/largest/TLS heap
+  67,200/45,056/52,428 bytes，全部 stack 通过。串口模拟 G0 后设备 LIVE16，
+  AVFoundation 读取 109,080 samples，mean/peak -41.1/-13.1 dBFS；停止后
+  恢复 READY。安装器状态为 APP/CONFIG/HAL/BRIDGE/AUDIO OK、AGENT RUNNING、
+  LAN AUTHENTICATED。
+- Next step: 校验 1.1.5 SHA-256 清单、完成最终分支审查、提交发布文档并交付。
+
+## 2026-07-27 19:54 HKT
+
+- Current work: 修复最终复审发现的 Mac 安装器失败回滚与 LaunchAgent 状态误判，
+  重跑完整发布门禁，并让最终磁盘固件与实机烧录件一致。
+- Expected result: fresh install 或 upgrade 在后续步骤失败时均不遗留错误的系统音频
+  组件；嵌套 launchctl state 不再误报 Agent 运行；最终 SHA-256 清单可独立校验。
+- Result: Achieved。安装器新增 fresh/upgrade 两条系统音频回滚路径，升级回滚会从
+  备份 App 重装旧 HAL/Bridge 并重启 Core Audio；LaunchAgent 只接受顶层
+  tab-indented `state`/`pid`。TDD 先复现 nested-state 误判与 `new-driver` 残留，
+  修复后安装器测试 10/10，完整 Python 205/205、音频专项 29/29 通过。其余
+  发布门禁为普通与 sanitizer host 各 37/37、ESP-IDF clean build
+  （DIRAM 144,545 bytes）、Swift/HAL/签名/private packaging。最终
+  1,603,488-byte app-only 镜像重新写入 `0x20000`，写入 hash 与独立
+  `verify_flash` digest 均匹配；NVS 配置分区未写入。
+- Next step: 完成只读复审、验证安装态和校验和，提交发布文档并交付分支。
