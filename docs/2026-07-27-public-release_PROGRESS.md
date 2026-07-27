@@ -92,3 +92,21 @@
   an ESP32-S3 build all pass. The image is 0x18c420 bytes with 48 percent free.
 - Next step: Implement the Windows Agent's secure configuration store and
   authenticated device client against the frozen product-v1 fixtures.
+
+## 2026-07-28 00:53 HKT
+
+- Current work: Implemented the Windows Agent secure configuration foundation,
+  DPAPI protection boundary, certificate-pinned HTTPS device client, bounded
+  retry behavior, manual-address fallback, and initial command-line pairing
+  and heartbeat entry points.
+- Expected result: Pairing material is never persisted in plaintext, the first
+  authenticated request captures the device certificate fingerprint, every
+  later request rejects certificate changes, and both supported Windows
+  architectures compile without CGO.
+- Result: Achieved. The Go unit suite passes, including atomic private-file,
+  redaction, authentication, pinning, retry, and product-fixture tests.
+  Cross-compilation produced valid PE32+ x86-64 and ARM64 executables using
+  Windows DPAPI with no plaintext storage fallback.
+- Next step: Add Codex session telemetry and action execution to the Windows
+  Agent, keeping the product-v1 status and action contracts aligned with the
+  existing macOS implementation.
