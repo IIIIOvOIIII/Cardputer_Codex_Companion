@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cardputer/codex-companion/windows-agent/internal/pet"
 	"github.com/cardputer/codex-companion/windows-agent/internal/testutil"
 )
 
@@ -136,6 +138,93 @@ func TestPostStatusUsesPinnedAuthenticatedProductContract(t *testing.T) {
 	}
 	if err := client.PostStatus(context.Background(), snapshot); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPetClientUsesAuthenticatedChunkContract(t *testing.T) {
+	const pin = "87654321"
+	var received []byte
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(PairingHeader) != pin {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/v1/companion/pet":
+			_ = json.NewEncoder(w).Encode(pet.Status{
+				Transaction: pet.Transaction{},
+			})
+		case "/api/v1/companion/pet/begin":
+			var body struct {
+				Length int    `json:"length"`
+				SHA256 string `json:"sha256"`
+			}
+			if json.NewDecoder(r.Body).Decode(&body) != nil ||
+				body.Length != 4 || body.SHA256 != strings.Repeat("1", 64) {
+				http.Error(w, "invalid begin", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(pet.Receipt{
+				TransactionID: "tx-1",
+			})
+		case "/api/v1/companion/pet/chunk":
+			data := make([]byte, 4)
+			if _, err := io.ReadFull(r.Body, data); err != nil ||
+				r.Header.Get("X-Pet-Transaction") != "tx-1" ||
+				r.Header.Get("X-Pet-Offset") != "0" {
+				http.Error(w, "invalid chunk", http.StatusBadRequest)
+				return
+			}
+			sum := sha256.Sum256(data)
+			if r.Header.Get("X-Pet-Chunk-SHA256") != hex.EncodeToString(sum[:]) {
+				http.Error(w, "invalid chunk digest", http.StatusBadRequest)
+				return
+			}
+			received = data
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/companion/pet/commit":
+			if string(received) != "\x01\x02\x03\x04" {
+				http.Error(w, "chunk missing", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(pet.Status{
+				PetID: "rocky", Digest: strings.Repeat("2", 64),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	sum := sha256.Sum256(server.Certificate().Raw)
+	client, err := NewClient(server.URL, pin, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.PetStatus(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	bundle := pet.Bundle{
+		PetID: "rocky", Data: []byte{1, 2, 3, 4},
+		UploadDigest: strings.Repeat("1", 64),
+	}
+	receipt, err := client.BeginPetUpload(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.PutPetChunk(
+		context.Background(),
+		receipt.TransactionID,
+		0,
+		bundle.Data,
+	); err != nil {
+		t.Fatal(err)
+	}
+	status, err := client.CommitPetUpload(context.Background(), receipt.TransactionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.PetID != "rocky" || status.Digest != strings.Repeat("2", 64) {
+		t.Fatalf("pet commit mismatch: %#v", status)
 	}
 }
 

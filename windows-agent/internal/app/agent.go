@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/cardputer/codex-companion/windows-agent/internal/codex"
 	"github.com/cardputer/codex-companion/windows-agent/internal/device"
+	"github.com/cardputer/codex-companion/windows-agent/internal/pet"
 )
 
 type DeviceClient interface {
@@ -17,6 +19,10 @@ type CodexClient interface {
 	Perform(context.Context, string) error
 }
 
+type PetSynchronizer interface {
+	Synchronize(context.Context) pet.Result
+}
+
 type Agent struct {
 	device          DeviceClient
 	codex           CodexClient
@@ -24,13 +30,23 @@ type Agent struct {
 	lastPINRevision uint32
 	lastSnapshot    *codex.Snapshot
 	wireSequence    uint64
+	petSynchronizer PetSynchronizer
+	petResult       pet.Result
+	nextPetSync     time.Time
+	now             func() time.Time
 }
 
 func NewAgent(deviceClient DeviceClient, codexClient CodexClient) *Agent {
 	return &Agent{
 		device: deviceClient,
 		codex:  codexClient,
+		now:    time.Now,
 	}
+}
+
+func (agent *Agent) SetPetSynchronizer(synchronizer PetSynchronizer) {
+	agent.petSynchronizer = synchronizer
+	agent.nextPetSync = time.Time{}
 }
 
 func (agent *Agent) SetPairingMigrationHandler(
@@ -42,6 +58,7 @@ func (agent *Agent) SetPairingMigrationHandler(
 }
 
 func (agent *Agent) Step(ctx context.Context) error {
+	agent.synchronizePetIfDue(ctx)
 	action, err := agent.device.Heartbeat(ctx)
 	if err != nil {
 		return err
@@ -66,6 +83,8 @@ func (agent *Agent) Step(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	snapshot.PetID = agent.petResult.PetID
+	snapshot.PetDigest = agent.petResult.Digest
 	if agent.lastSnapshot != nil &&
 		snapshot.SameContent(*agent.lastSnapshot) {
 		return nil
@@ -78,4 +97,20 @@ func (agent *Agent) Step(ctx context.Context) error {
 	posted := snapshot
 	agent.lastSnapshot = &posted
 	return nil
+}
+
+func (agent *Agent) synchronizePetIfDue(ctx context.Context) {
+	if agent.petSynchronizer == nil {
+		return
+	}
+	now := agent.now()
+	if !agent.nextPetSync.IsZero() && now.Before(agent.nextPetSync) {
+		return
+	}
+	agent.petResult = agent.petSynchronizer.Synchronize(ctx)
+	delay := 30 * time.Second
+	if agent.petResult.ErrorCode != "" {
+		delay = 5 * time.Second
+	}
+	agent.nextPetSync = now.Add(delay)
 }

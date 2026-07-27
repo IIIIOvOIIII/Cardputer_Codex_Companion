@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/cardputer/codex-companion/windows-agent/internal/codex"
 	"github.com/cardputer/codex-companion/windows-agent/internal/device"
+	"github.com/cardputer/codex-companion/windows-agent/internal/pet"
 )
 
 func TestAgentExecutesActionAndPostsChangedOrRequestedSnapshot(t *testing.T) {
@@ -73,6 +75,47 @@ func TestAgentPersistsNewerPairingMigrationBeforeNextHeartbeat(t *testing.T) {
 	}
 }
 
+func TestAgentSynchronizesPetOnThirtySecondCadence(t *testing.T) {
+	machine := &fakeCodex{
+		snapshot: codex.Snapshot{
+			Type: "snapshot", Title: "NO ACTIVE CODEX", CWD: "-",
+			State: "offline", PetState: "waiting",
+		},
+	}
+	deviceClient := &fakeDevice{
+		actions: []device.ActionEnvelope{
+			{Action: "none"},
+			{Action: "none"},
+			{Action: "none"},
+		},
+	}
+	synchronizer := &fakePetSynchronizer{
+		result: pet.Result{PetID: "rocky", Digest: "digest"},
+	}
+	agent := NewAgent(deviceClient, machine)
+	agent.SetPetSynchronizer(synchronizer)
+	now := time.Unix(1_000, 0)
+	agent.now = func() time.Time { return now }
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(29 * time.Second)
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if synchronizer.calls != 2 {
+		t.Fatalf("pet cadence mismatch: %d", synchronizer.calls)
+	}
+	if deviceClient.snapshots[0].PetID != "rocky" ||
+		deviceClient.snapshots[0].PetDigest != "digest" {
+		t.Fatalf("pet status missing from snapshot: %#v", deviceClient.snapshots[0])
+	}
+}
+
 type fakeDevice struct {
 	actions   []device.ActionEnvelope
 	snapshots []codex.Snapshot
@@ -92,6 +135,16 @@ func (client *fakeDevice) PostStatus(_ context.Context, snapshot any) error {
 type fakeCodex struct {
 	snapshot codex.Snapshot
 	actions  []string
+}
+
+type fakePetSynchronizer struct {
+	result pet.Result
+	calls  int
+}
+
+func (sync *fakePetSynchronizer) Synchronize(context.Context) pet.Result {
+	sync.calls++
+	return sync.result
 }
 
 func (machine *fakeCodex) Snapshot(context.Context) (codex.Snapshot, error) {

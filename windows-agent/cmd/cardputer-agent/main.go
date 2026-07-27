@@ -17,6 +17,7 @@ import (
 	"github.com/cardputer/codex-companion/windows-agent/internal/codex"
 	"github.com/cardputer/codex-companion/windows-agent/internal/config"
 	"github.com/cardputer/codex-companion/windows-agent/internal/device"
+	"github.com/cardputer/codex-companion/windows-agent/internal/pet"
 )
 
 func main() {
@@ -129,6 +130,15 @@ func run(arguments []string) error {
 		}
 		defer machine.Close()
 		agent := app.NewAgent(deviceClient, machine)
+		selection := pet.SelectionReader{}
+		transcoder := pet.Transcoder{}
+		agent.SetPetSynchronizer(
+			pet.NewCoordinator(
+				selection.SelectedSource,
+				transcoder.Transcode,
+				deviceClient,
+			),
+		)
 		agent.SetPairingMigrationHandler(
 			stored.PINRevision,
 			func(next string, revision uint32) error {

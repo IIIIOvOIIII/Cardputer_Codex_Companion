@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "pet_id": "rocky",
+  "state_order": [
+    "idle",
+    "working",
+    "waiting",
+    "review",
+    "failed"
+  ],
+  "frames_per_state": 8,
+  "frame_width": 96,
+  "frame_height": 104,
+  "pixel_rgb565": 2016,
+  "expected_length": 25772,
+  "expected_content_sha256": "ce3b5437741fb473443770c14336953b72c70782f57b59473b6c09f8a67466d0",
+  "expected_upload_sha256": "24a2c0b372546a52172958eb0ea067328058f5de04fc5694150e1e134c062057"
+}

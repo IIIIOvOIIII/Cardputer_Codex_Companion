@@ -170,20 +170,59 @@ func testFrameEncoding() throws {
 }
 
 func testBundleWireFormat() throws {
-    let frame = [UInt16](repeating: 0x07e0, count: 96 * 104)
+    struct Fixture: Decodable {
+        let petID: String
+        let framesPerState: Int
+        let frameWidth: Int
+        let frameHeight: Int
+        let pixelRGB565: UInt16
+        let expectedLength: Int
+        let expectedContentSHA256: String
+        let expectedUploadSHA256: String
+
+        enum CodingKeys: String, CodingKey {
+            case petID = "pet_id"
+            case framesPerState = "frames_per_state"
+            case frameWidth = "frame_width"
+            case frameHeight = "frame_height"
+            case pixelRGB565 = "pixel_rgb565"
+            case expectedLength = "expected_length"
+            case expectedContentSHA256 = "expected_content_sha256"
+            case expectedUploadSHA256 = "expected_upload_sha256"
+        }
+    }
+    let fixtureURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appending(path: "protocol/product-v1/fixtures/pet-bundle.json")
+    let fixtureData = try Data(contentsOf: fixtureURL)
+    let decoder = JSONDecoder()
+    let fixture = try decoder.decode(Fixture.self, from: fixtureData)
+    let frame = [UInt16](
+        repeating: fixture.pixelRGB565,
+        count: fixture.frameWidth * fixture.frameHeight
+    )
     let states = Dictionary(
         uniqueKeysWithValues: PetState.allCases.map {
-            ($0, Array(repeating: frame, count: 8))
+            ($0, Array(repeating: frame, count: fixture.framesPerState))
         }
     )
-    let first = try PetBundleEncoder.encode(petID: "rocky", frames: states)
-    let second = try PetBundleEncoder.encode(petID: "rocky", frames: states)
+    let first = try PetBundleEncoder.encode(petID: fixture.petID, frames: states)
+    let second = try PetBundleEncoder.encode(petID: fixture.petID, frames: states)
     try expect(first.data == second.data, "bundle is deterministic")
     try expect(first.data.prefix(4) == Data("CCPT".utf8), "bundle magic")
     try expect(first.data.count <= 820 * 1024, "bundle maximum")
-    try expect(first.contentDigestHex.count == 64, "content digest length")
-    try expect(first.uploadDigestHex.count == 64, "upload digest length")
-    try expect(first.contentDigestHex != first.uploadDigestHex, "digests are distinct")
+    try expect(first.data.count == fixture.expectedLength, "fixture bundle length")
+    try expect(
+        first.contentDigestHex == fixture.expectedContentSHA256,
+        "fixture content digest"
+    )
+    try expect(
+        first.uploadDigestHex == fixture.expectedUploadSHA256,
+        "fixture upload digest"
+    )
 }
 
 func testAtlasTranscode() throws {
@@ -497,6 +536,33 @@ func testAtlasTranscodeNormalizesOnlyProvenPixelPeriods() throws {
     )
 }
 
+func testExternalAtlasCompatibilityProbe() throws {
+    guard let path = ProcessInfo.processInfo.environment[
+        "CARDPUTER_PET_TEST_ATLAS"
+    ], !path.isEmpty else {
+        return
+    }
+    let url = URL(fileURLWithPath: path)
+    let dimensions = try PetSelectionReader.readDimensions(url)
+    guard let version = PetAtlas.version(
+        width: dimensions.0,
+        height: dimensions.1
+    ) else {
+        throw HarnessError.failed("external pet atlas dimensions")
+    }
+    let bundle = try PetTranscoder().transcode(
+        PetSource(
+            id: "compatibility-probe",
+            atlasURL: url,
+            atlasVersion: version
+        )
+    )
+    print(
+        "product-pet-external: length=\(bundle.data.count) " +
+        "content=\(bundle.contentDigestHex) upload=\(bundle.uploadDigestHex)"
+    )
+}
+
 actor FakePetDevice: PetDeviceClient {
     var digest = ""
     var transaction = DevicePetTransaction(
@@ -696,6 +762,7 @@ struct ProductPetHarness {
         try testAtlasTranscode()
         try testAtlasTranscodeCyclesVisibleFrames()
         try testAtlasTranscodeNormalizesOnlyProvenPixelPeriods()
+        try testExternalAtlasCompatibilityProbe()
         try await testPetSyncCoordinator()
         try await testPetSyncBacksOffFailedInputUntilSourceChanges()
         try testPetSyncCadence()

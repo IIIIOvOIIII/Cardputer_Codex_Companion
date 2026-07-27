@@ -128,3 +128,22 @@
 - Next step: Port deterministic pet selection, WebP composition, CCPT v1
   encoding, strict proven-period normalization, and resumable synchronization
   with byte-level Swift compatibility evidence.
+
+## 2026-07-28 01:15 HKT
+
+- Current work: Ported official/custom pet selection, WebP decoding, alpha and
+  background composition, strict pixel-proven period expansion, CCPT v1
+  encoding, digest calculation, device HTTP methods, resumable 8192-byte
+  upload, synchronization cadence, and snapshot pet metadata to Windows.
+- Expected result: Windows and macOS produce identical firmware bundles from
+  identical inputs; unchanged device digests avoid uploads, and interrupted
+  transfers resume only from a valid device-reported offset.
+- Result: Achieved. A shared product fixture proves the exact 25,772-byte
+  bundle and both SHA-256 values in Swift and Go. A real Rocky WebP
+  compatibility probe also produced the same 472,264-byte output and identical
+  content/upload digests on both implementations. Go unit, vet, race,
+  authenticated device-client, amd64/ARM64 cross-build, and Swift ProductPet
+  tests pass.
+- Next step: Add deterministic Windows build/package scripts, per-user
+  Scheduled Task auto-start, status and redacted doctor commands, and complete
+  uninstall symmetry without a driver, service, UAC, or embedded pairing data.
