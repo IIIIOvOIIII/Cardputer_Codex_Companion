@@ -30,8 +30,10 @@ class FakeCapture final : public IAudioCapture {
       return read_result;
     }
     for (size_t index = 0; index < samples.size(); ++index) {
-      samples[index] = static_cast<int16_t>(
-          static_cast<int32_t>(index) * 31 - 2048);
+      samples[index] = constant_output
+                           ? constant_value
+                           : static_cast<int16_t>(
+                                 static_cast<int32_t>(index) * 31 - 2048);
     }
     return AudioCaptureResult::ok;
   }
@@ -54,6 +56,8 @@ class FakeCapture final : public IAudioCapture {
   int read_calls = 0;
   int stop_calls = 0;
   bool active = false;
+  bool constant_output = false;
+  int16_t constant_value = 8;
 };
 
 class FakeTransport final : public IBleAudioTransport {
@@ -136,6 +140,8 @@ int main() {
   assert(first.header.sequence == 0xFFFF);
   assert(first.header.rate == AudioSampleRate::hz24000);
   assert((first.header.flags & kAudioFlagStart) != 0);
+  assert(controller.snapshot().pcm_peak == 12057);
+  assert(controller.snapshot().pcm_mean_abs == 5305);
 
   assert(controller.run_once());
   AudioFrameView wrapped = decode(transport.packets.back());
@@ -197,6 +203,27 @@ int main() {
   release_default.on_loss_window(false);
   assert(release_default.snapshot().state == MicrophoneState::error);
   assert(release_default.snapshot().fallback_count == 0);
+
+  FakeCapture stuck_capture;
+  FakeTransport stuck_transport;
+  stuck_capture.constant_output = true;
+  MicrophoneController stuck(
+      stuck_capture, stuck_transport, 0,
+      AudioSampleRate::hz16000);
+  stuck.on_sink_ready(true);
+  stuck.on_g0_click();
+  for (uint8_t frame = 1;
+       frame < kMicrophoneNoSignalFrameLimit; ++frame) {
+    assert(stuck.run_once());
+    assert(stuck.snapshot().state == MicrophoneState::live16);
+  }
+  assert(!stuck.run_once());
+  assert(stuck.snapshot().state == MicrophoneState::error);
+  assert(stuck.snapshot().failure == MicrophoneFailure::no_signal);
+  assert(!stuck_capture.running());
+  assert(stuck_capture.stop_calls == 1);
+  assert(stuck_transport.send_calls ==
+         kMicrophoneNoSignalFrameLimit - 1);
 
   FakeCapture disconnected_capture;
   FakeTransport disconnected_transport;

@@ -124,8 +124,14 @@ def validate_report(report: dict[str, Any], expected_duration: int) -> None:
     gates = [
         (int(report["max_gap_ms"]) <= 150, "audio gap exceeds 150 ms"),
         (int(report["ble_reconnects"]) == 0, "BLE reconnect observed"),
-        (int(report["signal_peak"]) > 0, "microphone signal peak is zero"),
-        (float(report["signal_rms"]) > 0, "microphone signal RMS is zero"),
+        (
+            int(report["signal_peak"]) > 16,
+            "microphone signal peak did not exceed noise floor",
+        ),
+        (
+            float(report["signal_rms"]) > 16,
+            "microphone signal RMS did not exceed noise floor",
+        ),
         (
             0 < float(report["nonzero_sample_percent"]) <= 100,
             "microphone nonzero sample percentage is invalid",

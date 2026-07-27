@@ -85,6 +85,7 @@ enum class ProductWebMicrophoneError : uint8_t {
   none,
   mac_not_ready,
   mic_init_failed,
+  mic_no_signal,
   ble_audio_busy,
   audio_driver_mismatch,
 };
@@ -114,6 +115,7 @@ constexpr std::string_view product_web_microphone_error_name(
     case ProductWebMicrophoneError::none: return "NONE";
     case ProductWebMicrophoneError::mac_not_ready: return "MAC_NOT_READY";
     case ProductWebMicrophoneError::mic_init_failed: return "MIC_INIT_FAILED";
+    case ProductWebMicrophoneError::mic_no_signal: return "MIC_NO_SIGNAL";
     case ProductWebMicrophoneError::ble_audio_busy: return "BLE_AUDIO_BUSY";
     case ProductWebMicrophoneError::audio_driver_mismatch:
       return "AUDIO_DRIVER_MISMATCH";

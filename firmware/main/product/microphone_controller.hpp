@@ -13,6 +13,14 @@ enum class MicrophoneButtonEvent : uint8_t {
   ignored,
 };
 
+enum class MicrophoneFailure : uint8_t {
+  none,
+  init_failed,
+  no_signal,
+};
+
+inline constexpr uint8_t kMicrophoneNoSignalFrameLimit = 16;
+
 [[nodiscard]] MicrophoneButtonEvent microphone_button_event(
     uint32_t held_ms);
 
@@ -24,6 +32,9 @@ struct MicrophoneSnapshot {
   uint32_t source_overruns = 0;
   uint32_t transport_drops = 0;
   uint32_t fallback_count = 0;
+  uint32_t pcm_peak = 0;
+  uint32_t pcm_mean_abs = 0;
+  MicrophoneFailure failure = MicrophoneFailure::none;
 };
 
 class MicrophoneController {
@@ -45,7 +56,8 @@ class MicrophoneController {
  private:
   void apply(MicrophoneEventKind event);
   void execute(MicrophoneTransition transition);
-  void fail();
+  void fail(MicrophoneFailure failure =
+                MicrophoneFailure::init_failed);
   void publish_state();
 
   IAudioCapture& capture_;
@@ -63,6 +75,11 @@ class MicrophoneController {
   std::atomic<uint32_t> source_overruns_{0};
   std::atomic<uint32_t> transport_drops_{0};
   std::atomic<uint32_t> fallback_count_{0};
+  std::atomic<uint32_t> pcm_peak_{0};
+  std::atomic<uint32_t> pcm_mean_abs_{0};
+  std::atomic<MicrophoneFailure> failure_{
+      MicrophoneFailure::none};
+  uint8_t no_signal_frame_count_ = 0;
   bool start_pending_ = false;
   bool discontinuity_pending_ = false;
 };

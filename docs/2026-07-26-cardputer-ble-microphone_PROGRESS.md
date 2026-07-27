@@ -418,3 +418,54 @@
   `463cbff6425ff72cd556b963be2be37c651edf7c13da0da5c5b7a699eaa99467`。
 - Next step: 提交最终代码、验证记录和制品哈希；仓库无 remote，保留本地分支
   供后续合并。
+
+## 2026-07-27 10:50 HKT
+
+- Current work: 调查用户实际激活麦克风后 16 kHz 数据流有帧但没有任何输入电平。
+- Expected result: 将故障定位到 M5.Mic、编码、BLE 或 Mac 解码中的单一层级，并以
+  可重复的实体声源验证修复。
+- Result: Partial。固件已完全改由 `M5.Mic` 采集并修复其异步双缓冲启动竞态；
+  10–20 秒实体测试均为零丢帧、零重连，但原始 PCM 持续为常量 8。进一步用 PCNT
+  在设备上测得 GPIO43 的 PDM 时钟为约 2.053 MHz（5 ms 内 10,263 个上升沿），
+  位于 SPM1423 的 1.0–3.25 MHz 规格内；GPIO46 同期为 0 个数据边沿。反相时钟、
+  左右/立体声选择和近场扬声器刺激均未改变结果。官方原理图确认麦克风由固定
+  3.3V 供电且没有软件使能脚，故当前阻塞位于麦克风硬件状态/供电/焊接链路。
+- Next step: 让设备在 USB 与侧边电源均断开后保持至少 10 秒再重新上电；随后重跑
+  PCNT 与声学 HIL。若 GPIO46 仍为 0 个边沿，使用官方录音固件交叉验证并判定
+  SPM1423 或其板级连接故障；若恢复边沿，则固化自动无信号检测与恢复逻辑。
+
+## 2026-07-27 11:40 HKT
+
+- Current work: 完成冷上电复测、M5.Mic 新旧 I2S 驱动交叉验证、恒定无信号保护、
+  发布门禁修正、正式固件部署和 Mac Agent 恢复。
+- Expected result: 排除冷启动与 ESP-IDF 驱动世代差异；固件不再把恒定偏置误报为
+  有效 16 kHz 音频；保留 BLE/Wi-Fi/HID/Agent 正常功能，并生成可复现发布制品。
+- Result: Partial due to hardware。冷上电后 GPIO43 为约 2.085 MHz、GPIO46 仍为
+  0 个数据边沿；新 M5.Mic 连续输出 PCM 常量 8，统一旧 I2S 驱动则采集队列没有
+  完成任何 DMA 帧。配置与 M5 官方 Cardputer GPIO46/GPIO43、右 PDM 通道定义
+  一致，因此故障边界为 SPM1423/供电/焊接/数据走线，而非 ADPCM、BLE、Mac 或
+  冷启动。固件现于连续 16 个恒定低值帧后停止并报告 `MIC_NO_SIGNAL`；HIL 同时
+  要求 peak/RMS 超过 16。保护实测在约 0.45 秒触发，串口为 peak/mean 8/8，
+  无 BLE 重连或传输丢包。完整发布门禁通过 Python 191/191、音频专项 17/17、
+  host normal/sanitizer 36/36、ESP-IDF clean build、Swift/HAL/签名/打包；最终
+  app SHA-256 `ff23437a1200b0489e9eac0f0339c2b4d320fd8d1d79c877f83748d0143339d7`，
+  private full SHA-256
+  `db31b2242f473a8b3e006f907c20da6afdcc4aafbe97d6f71ff38d4025a7f190`。
+  app-only 写入 `0x20000` 并独立 verify_flash 匹配；LaunchAgent 恢复后设备报告
+  1.1.1、BLE/Wi-Fi/Agent OK、MIC READY。
+- Next step: 当前 Cardputer 需要板级麦克风维修或更换后重新运行声学 HIL；在
+  GPIO46 恢复数据边沿前，不能宣称麦克风输入功能通过。
+
+## 2026-07-27 11:45 HKT
+
+- Current work: 对最终源码重新执行全量发布门禁，将同源 app-only 镜像部署到
+  重新上电的 Cardputer，并恢复 Mac LaunchAgent。
+- Expected result: 源码、交付制品、设备运行态和验证记录完全同源，且不覆盖用户
+  的 NVS 配置与 BLE bond。
+- Result: Achieved。全量门禁退出码为 0；private full image 的 `0x20000` app
+  切片哈希与独立 app 镜像一致。1,603,296-byte app 写入后 `verify_flash`
+  返回 digest matched。LaunchAgent 运行发布 bundle，设备 API 返回 version
+  1.1.1、BLE/Wi-Fi/Agent `OK`、麦克风待激活状态 `READY`。声学输入仍按上一
+  里程碑判定为板级硬件阻塞，未误报为发布通过。
+- Next step: 提交本地分支；维修或更换麦克风硬件后，重新执行带真实声源的声学
+  HIL，必须达到 peak/RMS 大于 16 才能解除发布阻塞。

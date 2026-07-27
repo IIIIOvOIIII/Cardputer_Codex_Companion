@@ -250,7 +250,8 @@ void emit_runtime_metrics(uint64_t now_us) {
       "\"hid\":{\"generated\":%u,\"queued\":%u,"
       "\"queue_failures\":%u,\"p95_upper_bound_us\":%u},"
       "\"audio\":{\"captured_frames\":%u,\"source_overruns\":%u,"
-      "\"transport_drops\":%u,\"fallback_count\":%u},"
+      "\"transport_drops\":%u,\"fallback_count\":%u,"
+      "\"pcm_peak\":%u,\"pcm_mean_abs\":%u},"
       "\"tasks\":["
       "{\"name\":\"scanner\",\"configured\":%u,"
       "\"high_water_free_bytes\":%u},"
@@ -285,6 +286,8 @@ void emit_runtime_metrics(uint64_t now_us) {
       static_cast<unsigned>(audio.source_overruns),
       static_cast<unsigned>(audio.transport_drops),
       static_cast<unsigned>(audio.fallback_count),
+      static_cast<unsigned>(audio.pcm_peak),
+      static_cast<unsigned>(audio.pcm_mean_abs),
       static_cast<unsigned>(kScannerStackBytes),
       static_cast<unsigned>(
           task_stack_free_bytes(keyboard_matrix_task())),
@@ -383,10 +386,14 @@ void publish_microphone_snapshot(uint64_t now_ms) {
                 ? 24000
                 : 16000;
   const uint8_t drop_percent = microphone_drop_percent(snapshot);
-  const ProductWebMicrophoneError web_error =
-      snapshot.state == MicrophoneState::error
-          ? ProductWebMicrophoneError::mic_init_failed
-          : ProductWebMicrophoneError::none;
+  ProductWebMicrophoneError web_error =
+      ProductWebMicrophoneError::none;
+  if (snapshot.state == MicrophoneState::error) {
+    web_error =
+        snapshot.failure == MicrophoneFailure::no_signal
+            ? ProductWebMicrophoneError::mic_no_signal
+            : ProductWebMicrophoneError::mic_init_failed;
+  }
   product_web_set_microphone({
       .state = web_microphone_state(snapshot.state),
       .sample_rate_hz = sample_rate,
@@ -399,7 +406,9 @@ void publish_microphone_snapshot(uint64_t now_ms) {
       ui_microphone_state(snapshot.state), sample_rate, drop_percent,
       web_error == ProductWebMicrophoneError::none
           ? "NONE"
-          : "MIC INIT FAILED",
+          : web_error == ProductWebMicrophoneError::mic_no_signal
+                ? "MIC NO SIGNAL"
+                : "MIC INIT FAILED",
       now_ms);
   g_ui.expire_microphone_error(now_ms);
 }

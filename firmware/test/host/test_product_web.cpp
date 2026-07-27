@@ -47,6 +47,9 @@ int main() {
   assert(microphone_json ==
          "{\"state\":\"READY\",\"sample_rate_hz\":0,"
          "\"drop_percent\":0,\"last_error\":\"NONE\"}");
+  assert(product_web_microphone_error_name(
+             ProductWebMicrophoneError::mic_no_signal) ==
+         "MIC_NO_SIGNAL");
   assert(kProductWebRoutes.size() == 16);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/status");

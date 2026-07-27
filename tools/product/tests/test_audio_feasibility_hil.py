@@ -213,6 +213,17 @@ def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
             module.validate_report(report, expected_duration=600)
 
 
+def test_gate_rejects_constant_low_level_pcm_false_positive():
+    module = load_script()
+    report = valid_report()
+    report["signal_peak"] = 8
+    report["signal_rms"] = 8
+    report["nonzero_sample_percent"] = 100
+
+    with pytest.raises(ValueError, match="signal"):
+        module.validate_report(report, expected_duration=600)
+
+
 @pytest.mark.parametrize("key", ["captured_frames", "received_frames"])
 def test_gate_rejects_truncated_audio_stream_even_without_reported_loss(key):
     module = load_script()

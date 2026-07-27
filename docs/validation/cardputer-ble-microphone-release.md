@@ -55,23 +55,33 @@ and renders digital silence while there is no valid producer.
 
 ## Final evidence
 
-The final release was built and tested on 2026-07-27:
+The corrected release was built and tested on 2026-07-27:
 
 - app-only firmware SHA-256:
-  `662c82033442f0a07017894101930a8a583a2d1ec86023eabc9fe96d4a8f8bce`;
+  `ff23437a1200b0489e9eac0f0339c2b4d320fd8d1d79c877f83748d0143339d7`;
 - private full image SHA-256:
-  `463cbff6425ff72cd556b963be2be37c651edf7c13da0da5c5b7a699eaa99467`;
+  `db31b2242f473a8b3e006f907c20da6afdcc4aafbe97d6f71ff38d4025a7f190`;
 - Companion executable SHA-256:
-  `875f3ea2ced69c5073f9fd63415fdbf775df1eb3abdf8568c8668d791ddb8713`;
+  `0de564c02a003d6715713084ae995ffb682f0d86cd86aca3b3cf26be80ef8456`;
 - app-only flash at `0x20000` and independent `verify_flash`: digest matched;
-- 1800-second USB-triggered real-device HIL:
-  64,293 captured / 64,287 received, zero source overrun, transport drop,
-  sequence gap, allocation failure, or BLE reconnect; maximum gap 107 ms;
-- concurrent HID: 1000 generated / 1000 queued, zero failure, p95 100 us;
-- minimum steady internal heap 70,208 bytes, steady largest block 43,008
-  bytes, and TLS-burst heap 56,880 bytes; every task stack gate passed.
+- automated release gate: Python 191/191, audio-specific Python 17/17,
+  normal host 36/36, sanitizer host 36/36, clean ESP-IDF build, Swift,
+  C audio ring, HAL, signatures, and private packaging passed;
+- USB-triggered no-signal guard test: firmware stopped after 17 captured
+  frames with raw PCM peak/mean-absolute both equal to 8, zero source
+  overrun, transport drop, sequence gap, allocation failure, or BLE
+  reconnect.
 
-After the HIL client disconnected, the development ad-hoc signature required
-renewed macOS Bluetooth approval because its CDHash changed. The final
-LaunchAgent runs the released bundle and repeated device status checks report
-version 1.1.1, BLE/Wi-Fi/Agent `OK`, and microphone `READY`.
+The earlier 1800-second transport run is not valid evidence of acoustic
+capture: its gate accepted constant non-zero PCM. Cold power-cycle diagnostics
+measured a valid approximately 2.085 MHz clock on GPIO43 but no data edges on
+GPIO46. Both current and legacy M5.Mic driver paths failed to obtain acoustic
+data. The corrected firmware detects 16 consecutive constant low-level frames,
+stops capture, and reports `MIC_NO_SIGNAL`; the HIL gate now requires signal
+peak and RMS above 16.
+
+The final LaunchAgent runs the released bundle and device status reports
+version 1.1.1 with BLE/Wi-Fi/Agent `OK` and microphone `READY` before local
+activation. Acoustic release validation remains blocked until the SPM1423,
+its power/soldering, or the GPIO46 board connection is repaired and the HIL
+passes with real signal.

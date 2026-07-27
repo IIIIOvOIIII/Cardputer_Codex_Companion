@@ -1,5 +1,6 @@
 #include "product/microphone_controller.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <span>
 
@@ -61,6 +62,8 @@ void MicrophoneController::execute(MicrophoneTransition transition) {
           transition.command == MicrophoneCommand::start_capture_24k
               ? AudioSampleRate::hz24000
               : AudioSampleRate::hz16000;
+      failure_.store(MicrophoneFailure::none);
+      no_signal_frame_count_ = 0;
       const AudioCaptureResult result = capture_.start({.rate = rate});
       if (result != AudioCaptureResult::ok) {
 #ifdef ESP_PLATFORM
@@ -137,11 +140,12 @@ void MicrophoneController::on_loss_window(bool good) {
              : MicrophoneEventKind::loss_window_bad);
 }
 
-void MicrophoneController::fail() {
-  const MicrophoneTransition failure =
+void MicrophoneController::fail(MicrophoneFailure failure) {
+  failure_.store(failure);
+  const MicrophoneTransition transition =
       state_machine_.apply({.kind = MicrophoneEventKind::fatal_error});
   publish_state();
-  execute(failure);
+  execute(transition);
   start_pending_ = false;
   discontinuity_pending_ = false;
   transport_.clear();
@@ -172,6 +176,41 @@ bool MicrophoneController::run_once() {
       fail();
     }
     return false;
+  }
+
+  uint32_t frame_peak = 0;
+  uint64_t frame_magnitude_sum = 0;
+  for (size_t index = 0; index < sample_count; ++index) {
+    const int32_t signed_value = pcm_[index];
+    const uint32_t magnitude = static_cast<uint32_t>(
+        signed_value < 0 ? -signed_value : signed_value);
+    frame_peak = std::max(frame_peak, magnitude);
+    frame_magnitude_sum += magnitude;
+  }
+  pcm_peak_.store(frame_peak);
+  pcm_mean_abs_.store(static_cast<uint32_t>(
+      frame_magnitude_sum / sample_count));
+  const bool constant_low_level =
+      frame_peak <= 16 &&
+      std::all_of(
+          pcm_.begin(), pcm_.begin() + sample_count,
+          [first = pcm_[0]](int16_t sample) {
+            return sample == first;
+          });
+  if (constant_low_level) {
+    if (no_signal_frame_count_ < kMicrophoneNoSignalFrameLimit) {
+      ++no_signal_frame_count_;
+    }
+    if (no_signal_frame_count_ >= kMicrophoneNoSignalFrameLimit) {
+#ifdef ESP_PLATFORM
+      ESP_LOGE(kMicrophoneTag,
+               "M5.Mic produced constant low-level PCM");
+#endif
+      fail(MicrophoneFailure::no_signal);
+      return false;
+    }
+  } else {
+    no_signal_frame_count_ = 0;
   }
 
   const size_t payload_size =
@@ -248,6 +287,8 @@ void MicrophoneController::stop_for_disconnect() {
   execute(transition);
   start_pending_ = false;
   discontinuity_pending_ = false;
+  no_signal_frame_count_ = 0;
+  failure_.store(MicrophoneFailure::none);
 }
 
 MicrophoneSnapshot MicrophoneController::snapshot() const {
@@ -259,5 +300,8 @@ MicrophoneSnapshot MicrophoneController::snapshot() const {
       .source_overruns = source_overruns_.load(),
       .transport_drops = transport_drops_.load(),
       .fallback_count = fallback_count_.load(),
+      .pcm_peak = pcm_peak_.load(),
+      .pcm_mean_abs = pcm_mean_abs_.load(),
+      .failure = failure_.load(),
   };
 }
