@@ -14,4 +14,8 @@ python3 "${repo_root}/tools/product/merge_product_image.py" \
   --build-dir "${repo_root}/firmware/build" \
   --output "${output}" \
   --idf-python "${idf_python}"
+/bin/cp \
+  "${repo_root}/firmware/build/cardputer_codex_companion.bin" \
+  "${repo_root}/dist/cardputer_codex_companion.bin"
+/bin/chmod 0600 "${repo_root}/dist/cardputer_codex_companion.bin"
 printf 'Generic full image: %s\n' "${output}"

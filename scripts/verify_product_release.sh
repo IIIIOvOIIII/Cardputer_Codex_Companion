@@ -4,8 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
+python3 tools/product/verify_public_artifacts.py --dist dist
 scripts/build_audio_driver.sh
-PYTHONPATH=. uv run pytest -q
+PYTHONPATH=. uv run pytest -q \
+  --ignore=tools/product/tests/test_windows_agent_packaging.py
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_vectors.py \
   tools/product/tests/test_audio_driver_bundle.py \
@@ -47,6 +49,8 @@ python3 tools/product/verify_firmware_memory.py \
 swift build --package-path companion -c release
 swift run --package-path companion -c release product-audio-tests
 swift run --package-path companion -c release product-gatt-tests
+swift run --package-path companion -c release product-pet-tests
+swift run --package-path companion -c release product-telemetry-tests
 swift run --package-path companion -c release product-configuration-tests
 scripts/test_audio_ring.sh
 scripts/build_audio_driver.sh --test
@@ -57,6 +61,12 @@ scripts/package_product_firmware.sh
 scripts/build_companion.sh
 scripts/package_mac_installer.sh
 scripts/package_windows_agent.sh
+
+(
+  cd windows-agent
+  go test ./...
+  go test -race ./...
+)
 
 test -f dist/cardputer_codex_companion-full.bin
 test -x dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
@@ -78,6 +88,9 @@ test -f \
 test -f dist/CardputerCompanion-1.2.0-windows-amd64.zip
 test -f dist/CardputerCompanion-1.2.0-windows-arm64.zip
 test -f dist/CardputerCompanion-1.2.0-windows-x64-setup.exe
+python3 tools/product/verify_public_firmware.py \
+  --image dist/cardputer_codex_companion-full.bin \
+  --layout firmware/partitions_product.csv
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_driver_bundle.py \
   tools/product/tests/test_audio_driver_installer.py \
@@ -89,9 +102,6 @@ codesign --verify --strict \
 codesign --verify --deep --strict dist/CardputerCompanion.app
 codesign --verify --deep --strict \
   dist/CardputerCompanion-mac-installer/CardputerCompanion.app
-python3 tools/product/audit_public_release.py \
-  --repo "${repo_root}" \
-  --artifacts "${repo_root}/dist"
 
 tracked_generated="$(
   git ls-files |
@@ -116,7 +126,22 @@ fi
 
 git diff --check
 shasum -a 256 \
-  firmware/build/cardputer_codex_companion.bin \
+  release/product-release.json \
+  dist/cardputer_codex_companion.bin \
   dist/cardputer_codex_companion-full.bin \
   dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
-  dist/CardputerCompanion-mac-installer/install.sh
+  dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge \
+  dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/MacOS/CardputerCodexMicrophone \
+  dist/CardputerCompanion-mac-installer/install.sh \
+  dist/CardputerCompanion-mac-installer/installer/mac_installer.py \
+  dist/CardputerCompanion-1.2.0-windows-amd64.zip \
+  dist/CardputerCompanion-1.2.0-windows-arm64.zip \
+  dist/CardputerCompanion-1.2.0-windows-x64-setup.exe \
+  > dist/1.2.0-SHA256SUMS
+shasum -a 256 -c dist/1.2.0-SHA256SUMS
+python3 tools/product/verify_public_artifacts.py \
+  --dist dist \
+  --require-complete
+python3 tools/product/audit_public_release.py \
+  --repo "${repo_root}" \
+  --artifacts "${repo_root}/dist"

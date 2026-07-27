@@ -184,3 +184,24 @@
 - Next step: Enforce the final artifact allowlist, rebuild all public outputs
   from a clean generated state, verify blank public Wi-Fi NVS, generate the
   checksum manifest, and write the 1.2.0 release evidence report.
+
+## 2026-07-28 01:42 HKT
+
+- Current work: Rebuilt the complete generic public release from a clean
+  generated state, enforced the final artifact allowlist, verified the erased
+  Wi-Fi partition, generated checksums, and reran the all-history/current-
+  artifact credential audit.
+- Expected result: Version 1.2.0 has reproducible firmware and Agent packages,
+  no credential-bearing public artifact, passing host/sanitizer/platform
+  gates, and a reviewable release evidence report.
+- Result: Achieved. Python gates passed 222 + 29 + 25 tests; normal and
+  ASan/UBSan host suites passed 38/38 each; Swift, C17 audio and Go race gates
+  passed. The application leaves 48% of its partition and 143,497 bytes of
+  DIRAM free. The public `wifi_cfg` range is erased, all 11 top-level release
+  entries match the allowlist, checksums verify, and the audit found 0 issues
+  across 7 refs, 200 reflog commits, 17 unreachable objects, 1,400 Git blobs
+  and 445 current/artifact files.
+- Next step: Commit the release evidence, perform the final branch review and
+  fast-forward integration, copy the verified public outputs into the main
+  worktree, then purge the installed Mac Agent/driver and private local build
+  outputs as the final destructive step.

@@ -282,11 +282,12 @@ def test_release_scripts_do_not_package_codex_or_cached_pet_state():
         "pet.json",
         "spritesheet.webp",
     )
+    private_packager = ROOT / "scripts/package_private_firmware.sh"
+    assert not private_packager.exists()
     scripts = "\n".join(
         path.read_text()
         for path in (
             ROOT / "scripts/package_product_firmware.sh",
-            ROOT / "scripts/package_private_firmware.sh",
             ROOT / "scripts/build_companion.sh",
         )
     )
