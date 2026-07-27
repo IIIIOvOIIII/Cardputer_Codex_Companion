@@ -194,7 +194,7 @@
 - Expected result: Version 1.2.0 has reproducible firmware and Agent packages,
   no credential-bearing public artifact, passing host/sanitizer/platform
   gates, and a reviewable release evidence report.
-- Result: Achieved. Python gates passed 222 + 29 + 25 tests; normal and
+- Result: Achieved. Python gates passed 223 + 29 + 25 tests; normal and
   ASan/UBSan host suites passed 38/38 each; Swift, C17 audio and Go race gates
   passed. The application leaves 48% of its partition and 143,497 bytes of
   DIRAM free. The public `wifi_cfg` range is erased, all 11 top-level release
@@ -205,3 +205,20 @@
   fast-forward integration, copy the verified public outputs into the main
   worktree, then purge the installed Mac Agent/driver and private local build
   outputs as the final destructive step.
+
+## 2026-07-28 01:54 HKT
+
+- Current work: Closed the final reproducibility gap exposed by repeated
+  release-gate runs.
+- Expected result: Rebuilding firmware and the Windows installer from the
+  same source produces byte-identical public artifacts and leaves the checksum
+  manifest unchanged.
+- Result: Achieved. ESP-IDF reproducible-build mode removes compile timestamps,
+  NSIS no longer embeds input-file modification times, and regression tests
+  enforce both settings. Two independent firmware builds matched at the
+  application and full-image levels; two independent NSIS builds matched in
+  size and SHA-256. The complete release gate passed with 223 + 29 + 25 Python
+  tests, 38/38 normal host tests, 38/38 ASan/UBSan host tests, Swift/C17/Go
+  platform gates, blank Wi-Fi NVS, checksum validation and 0 audit findings.
+- Next step: Commit the reproducibility fix and updated release evidence,
+  then fast-forward the approved branch into `main`.

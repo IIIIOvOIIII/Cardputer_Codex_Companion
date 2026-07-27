@@ -2,6 +2,7 @@ Unicode true
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetDatablockOptimize on
+SetDateSave off
 
 !include "MUI2.nsh"
 

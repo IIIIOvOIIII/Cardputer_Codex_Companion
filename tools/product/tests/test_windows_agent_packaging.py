@@ -37,6 +37,7 @@ def test_installer_is_per_user_and_has_symmetric_login_task():
     registration = read(REGISTER_TASK)
 
     assert "RequestExecutionLevel user" in source
+    assert "SetDateSave off" in source
     assert '$LOCALAPPDATA\\CardputerCodexCompanion' in source
     assert "Register-ScheduledTask" in registration
     assert "Unregister-ScheduledTask" in source
