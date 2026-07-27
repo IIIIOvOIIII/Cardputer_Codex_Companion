@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "product": "Cardputer Codex Companion",
+  "version": "1.2.0",
+  "protocol": "product-v1",
+  "artifacts": {
+    "firmware_full": "cardputer_codex_companion-full.bin",
+    "firmware_app": "cardputer_codex_companion.bin",
+    "macos_installer": "CardputerCompanion-mac-installer",
+    "windows_amd64": "CardputerCompanion-1.2.0-windows-amd64.zip",
+    "windows_arm64": "CardputerCompanion-1.2.0-windows-arm64.zip",
+    "windows_x64_installer": "CardputerCompanion-1.2.0-windows-x64-setup.exe",
+    "checksums": "1.2.0-SHA256SUMS"
+  },
+  "capabilities": {
+    "macos": [
+      "codex_status_actions",
+      "pet_sync",
+      "unicode_gatt",
+      "bluetooth_microphone"
+    ],
+    "windows": [
+      "codex_status_actions",
+      "pet_sync"
+    ]
+  },
+  "security": {
+    "generic_firmware": true,
+    "contains_wifi_credentials": false,
+    "contains_pairing_material": false,
+    "device_lan_only": true
+  }
+}

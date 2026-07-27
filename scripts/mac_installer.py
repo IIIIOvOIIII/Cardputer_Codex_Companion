@@ -30,7 +30,7 @@ APP_ID = "com.lynx.cardputer-companion"
 DRIVER_NAME = "CardputerCodexMicrophone.driver"
 BRIDGE_NAME = "com.lynx.cardputer-audio-bridge"
 CONFIG_DIRECTORY = "CardputerCodexCompanion"
-EXPECTED_VERSION = "1.1.8"
+EXPECTED_VERSION = "1.2.0"
 PRIVATE_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -252,7 +252,9 @@ def validate_app(app: Path, paths: InstallerPaths) -> None:
     if info.get("CFBundleIdentifier") != APP_ID:
         raise InstallerError("application bundle identifier is invalid")
     if info.get("CFBundleShortVersionString") != EXPECTED_VERSION:
-        raise InstallerError("application version is not 1.1.8")
+        raise InstallerError(
+            f"application version is not {EXPECTED_VERSION}"
+        )
     if not signature_bypass_allowed(paths):
         result = subprocess.run(
             [

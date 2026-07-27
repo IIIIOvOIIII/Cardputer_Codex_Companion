@@ -2,6 +2,8 @@
 
 把 M5Stack Cardputer 变成 Codex 的局域网遥控副屏、可编程蓝牙键盘和中文文本输入端。
 
+当前公共版本：`1.2.0`。
+
 ## 已实现
 
 - 开机先初始化 240×135 屏幕，并逐项显示 Display、Config、Keyboard、BLE、Wi‑Fi、Web、Companion 状态。
@@ -34,10 +36,19 @@ python -m esptool --chip esp32s3 -b 460800 \
 
 ## 首次使用
 
-1. 开机后屏幕应立即出现当前版本的 `CARDPUTER CODEX` 启动页。
-2. 在 macOS 蓝牙设置中连接 `Cardputer Codex`；若系统保留了旧的 `nimble`/`Cardputer Codex` 配对记录，先删除旧设备后重新连接。
-3. Wi‑Fi 连通后，屏幕显示设备 IP 和八位 Web PIN。浏览器访问 `https://设备IP/`；设备证书是首次启动生成的自签名证书，首次访问需要确认。页面首先显示 PIN 鉴权屏，PIN 正确后才进入键盘配置。
-4. 构建 Mac Companion 和独立安装包：
+新设备必须在 Cardputer 上依次完成三个门槛。初始化完成前不会开放普通
+Web 配置页面，也不会把向导输入发送给 HID。
+
+1. 开机后确认 `CARDPUTER CODEX COMPANION 1.2.0`，进入 Wi‑Fi 向导。
+   使用 `;`/`.` 选择扫描到的 SSID，Enter 确认；Hidden Network 可手工输入
+   SSID。密码完全在 Cardputer 上输入并以掩码显示，只有取得 IP 后才保存。
+   反引号返回上一步。
+2. 按屏幕提示在电脑蓝牙设置中配对 `Cardputer Codex`。只有加密、鉴权、
+   bonded 且 HID 已订阅的连接才会通过；仅看到广播不会推进向导。
+3. 安装当前电脑的 Machine Agent。设备只接受携带当前八位 PIN 的局域网
+   HTTPS 请求；首次 Agent 配对在 PIN 鉴权成功后记录设备证书指纹。
+
+macOS：
 
 ```bash
 scripts/package_mac_installer.sh
@@ -45,15 +56,38 @@ dist/CardputerCompanion-mac-installer/install.sh install
 dist/CardputerCompanion-mac-installer/install.sh status
 ```
 
-   安装器会要求输入 Cardputer 的 HTTPS URL，并隐藏输入 DEVICE 页当前八位 PIN。
-   PIN 只写入权限 `0600` 的配置文件，不进入命令行、LaunchAgent plist 或日志。
-   App 固定安装到 `~/Applications/CardputerCompanion.app`，LaunchAgent 使用
-   `RunAtLoad` 与 `KeepAlive` 自动登录启动；安装器也会通过一次 `sudo` 部署 HAL、
-   AudioBridge 和 LaunchDaemon，并重启 Core Audio。PET 页 `B/W/M` 分别表示
-   BLE、Wi‑Fi 和经过 PIN 鉴权的 Mac Agent，三项正常时显示 `B+W+M+`。系统输入
-   设备为 `Cardputer Codex Microphone`。
+安装器会要求 Cardputer HTTPS URL，并隐藏输入当前八位 PIN。PIN 仅写入
+`0600` 配置，不进入命令行、LaunchAgent 或日志。App 安装到
+`~/Applications/CardputerCompanion.app`；HAL、AudioBridge 与系统输入设备
+`Cardputer Codex Microphone` 只在 macOS 提供。
 
-   仅在诊断安装器内部音频步骤时，可直接使用低层命令：
+Windows x64：
+
+```text
+dist\CardputerCompanion-1.2.0-windows-x64-setup.exe
+```
+
+Windows ARM64 使用 `CardputerCompanion-1.2.0-windows-arm64.zip`。安装器按
+当前用户写入 `%LOCALAPPDATA%\CardputerCodexCompanion`，创建最低权限登录任务，
+完成后运行 `cardputer-agent.exe pair`。地址和 PIN 都在交互提示中输入，PIN
+使用掩码并由 Windows DPAPI 保护。Windows 1.2.0 支持 Codex 状态/动作和宠物
+同步；BLE HID 由 Windows 原生处理，Unicode GATT 注入和蓝牙麦克风暂不提供。
+
+Agent 第一次通过鉴权并发送心跳后，向导才完成。此时浏览器访问
+`https://设备IP/`，确认首次生成的自签名证书，再以屏幕真实 PIN 登录 Web。
+Pets 状态栏的 `B/W/M` 分别代表 BLE、Wi‑Fi 与鉴权 Machine Agent；
+`B+W+M+` 表示三条链路均正常。
+
+4. 在 Web 中点击键位打开弹窗，把按键设为“中文字符串”，或设为“组合键”后
+   直接按下 `Alt+V` 等组合键采集。非直通键会显示真实用途；Settings 可修改
+   PIN、Wi‑Fi 和 Profile。
+5. 主界面为宠物动画。`Fn+;`/`Fn+.` 上下滚动，`Fn+,`/`Fn+/` 切换页面；
+   在任何非宠物页面按反引号立即放弃未保存编辑并返回宠物页。首次向导中
+   反引号只返回上一步，BLE passkey 输入始终具有最高优先级。
+6. macOS 上短按 G0 开始/停止录音。G0 没有长按动作；设备重启或链路断开后
+   只恢复 READY，不会自动恢复录音。
+
+仅在诊断 macOS 安装器内部音频步骤时，可直接使用低层命令：
 
 ```bash
 dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor audio
@@ -62,10 +96,6 @@ sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
 sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
   uninstall-audio-driver
 ```
-
-5. 在 Web 中点击键位打开弹窗，把某个按键设为“中文字符串”并填入中文，或设为“组合键”后直接按下 `Alt+V` 这类组合键采集；非直通键会在键帽上显示真实用途，发布后即可使用。Settings 选项卡可修改 PIN 和 Wi‑Fi 信息。
-
-6. 短按 G0 开始录音，再短按一次停止。G0 没有长按动作。Keyboard/Codex Input Mode 和不可变 SAFE Profile 均在 Cardputer 的 Settings 中选择；选择 SAFE 会先发送 HID Release All。
 
 普通卸载会移除 App、LaunchAgent、HAL 和 AudioBridge，但保留设备配置和日志：
 
@@ -78,6 +108,9 @@ dist/CardputerCompanion-mac-installer/install.sh uninstall
 ```bash
 dist/CardputerCompanion-mac-installer/install.sh uninstall --purge
 ```
+
+Windows 从“已安装的应用”或 Start Menu 的 Uninstall 执行卸载；Windows
+卸载始终移除 Agent、登录任务、配置、日志与快捷方式，不安装也不删除驱动。
 
 从旧版本升级且需要保留 PIN、Wi‑Fi、Profile、宠物与 BLE 配对时，只写应用分区：
 
@@ -99,6 +132,10 @@ scripts/verify_product_release.sh
 ```
 
 公开发布门禁会检查所有保留的 Git refs、reflog、不可达对象和最终产物；候选值始终脱敏。`build/private/`、`dist/private/` 与任何 Wi‑Fi NVS/私有完整镜像都不属于公共发布物。
+
+公共发布策略、平台边界和制品清单见
+[PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md)，Windows 安装与诊断见
+[WINDOWS_AGENT.md](docs/WINDOWS_AGENT.md)。
 
 自动化构建不能替代实机验证。本机未连接唯一 Cardputer 时，不会自动刷写，也不会声称完成 30 分钟 HIL。HIL 是在真实 Cardputer 与 Mac 上持续运行 30 分钟，同时验证 BLE HID、Wi‑Fi、Web、Companion、中文注入、延迟、堆栈与断连恢复。
 

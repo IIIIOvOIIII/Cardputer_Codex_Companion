@@ -167,3 +167,20 @@
 - Next step: Advance every live firmware, macOS, Windows, installer, manifest,
   and documentation version surface to 1.2.0, then run the complete public
   release build and security gate.
+
+## 2026-07-28 01:29 HKT
+
+- Current work: Advanced firmware, macOS App/HAL/Agent, Windows Agent/build/
+  installer, macOS installer validation, machine-readable manifest, README,
+  user guide, Windows guide, and public-release policy to version 1.2.0.
+- Expected result: Every live release surface agrees on 1.2.0 and documents
+  the exact device-led onboarding flow, platform capability boundary,
+  backtick behavior, generic-image security policy, and clean uninstall.
+- Result: Achieved. Twenty-three focused version, driver bundle, macOS
+  installer, and Windows packaging tests pass after rebuilding the driver
+  artifact. The live release scope contains no remaining 1.1.8 or 1.0.31
+  reference; historical validation documents were intentionally left
+  unchanged.
+- Next step: Enforce the final artifact allowlist, rebuild all public outputs
+  from a clean generated state, verify blank public Wi-Fi NVS, generate the
+  checksum manifest, and write the 1.2.0 release evidence report.

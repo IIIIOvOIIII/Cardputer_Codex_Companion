@@ -1,4 +1,16 @@
-# Cardputer Codex Companion 1.0.31 用户指南
+# Cardputer Codex Companion 1.2.0 用户指南
+
+## 首次初始化
+
+全新或恢复出厂设备按 Wi‑Fi、蓝牙、Machine Agent 三步初始化：
+
+1. Cardputer 扫描 Wi‑Fi；使用 `;`/`.` 选择，Enter 确认，密码在设备端掩码输入。
+2. 在电脑端发起 `Cardputer Codex` 蓝牙配对，并在 Cardputer 完成验证码输入。
+3. 安装 macOS 或 Windows Agent，输入设备 HTTPS 地址与当前八位 PIN。只有
+   鉴权 Agent 心跳到达后，设备才进入 Pets 主界面。
+
+向导中反引号返回上一步。已完成初始化后可在 Settings 选择 Run Setup Again；
+该动作要求 PIN 鉴权和明确确认，不会由普通 Web 请求触发。
 
 ## 页面与方向键
 
@@ -8,10 +20,13 @@
 - `Fn+.`：向下滚动
 - `Fn+,`：上一页
 - `Fn+/`：下一页
+- 反引号：在任意非 Pets 页面立即取消未保存输入并返回 Pets。
 
 Pets 以 2、2.5 或 3 FPS 播放 Mac Companion 同步的当前 Codex 宠物。Device 显示版本、真实 PIN、BLE、Wi‑Fi 和 Agent。Codex 显示活跃会话、Model、Fast、Thinking Level 以及真实返回的 5H/Weekly 限额；无法识别或超过 120 秒的限额直接隐藏。Sync 显示 IP、Heartbeat、Pet Sync 与当前键盘 Profile。
 
 只有 Pets 页面会把普通键盘输入发送给蓝牙 HID 或按键宏。Device、Codex、Sync 和 Settings 页面中的按键只供 Cardputer 本地操作。
+
+BLE passkey 输入优先于页面导航；配对验证码期间数字不会发送给 HID。
 
 ## Settings
 
@@ -40,3 +55,14 @@ PIN 与 Wi‑Fi 密码输入均使用掩码。亮度、自动返回、FPS、PIN�
 Profile Catalog 使用 storage 分区末尾两个 64 KiB bank 做 CRC 和序列号保护。SAFE 固定存在且不可修改或删除；首次从旧固件升级时，旧配置会导入自定义 Profile。
 
 若设备已有配置，升级时只能把 `firmware/build/cardputer_codex_companion.bin` 写到 `0x20000`。从 `0x0` 写 full image 会替换更多分区，只适合首次安装或明确恢复。
+
+## Machine Agent
+
+- macOS 1.2.0：Codex 状态/动作、宠物同步、Unicode GATT、BLE 麦克风和
+  `Cardputer Codex Microphone`。
+- Windows 1.2.0：Codex 状态/动作和宠物同步。BLE HID 由系统原生处理；
+  Unicode GATT 与蓝牙麦克风不在此版本范围。
+
+macOS 使用 `CardputerCompanion-mac-installer/install.sh`；彻底清理时执行
+`uninstall --purge`。Windows 使用 x64 安装器或 ARM64 可移植包，PIN 由 DPAPI
+保护；Windows 卸载会同时删除登录任务、配置和日志。

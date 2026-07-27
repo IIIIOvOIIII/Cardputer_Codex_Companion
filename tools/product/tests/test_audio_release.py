@@ -1,9 +1,10 @@
 import plistlib
+import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION = "1.1.8"
+VERSION = "1.2.0"
 
 
 def test_release_version_is_consistent():
@@ -24,6 +25,15 @@ def test_release_version_is_consistent():
     driver_info = plistlib.loads(
         (ROOT / "companion/AudioDriver/Info.plist").read_bytes()
     )
+    release_manifest = json.loads(
+        (ROOT / "release/product-release.json").read_text()
+    )
+    windows_build = (
+        ROOT / "scripts/build_windows_agent.sh"
+    ).read_text()
+    windows_installer = (
+        ROOT / "windows-agent/installer/CardputerCompanion.nsi"
+    ).read_text()
     assert f'set(PROJECT_VER "{VERSION}")' in firmware_cmake
     assert f'kProductVersion = "{VERSION}"' in product_types
     assert f"cardputer-companion {VERSION}" in companion_main
@@ -32,6 +42,19 @@ def test_release_version_is_consistent():
     assert companion_info["CFBundleVersion"] == VERSION
     assert driver_info["CFBundleShortVersionString"] == VERSION
     assert driver_info["CFBundleVersion"] == VERSION
+    assert release_manifest["product"] == "Cardputer Codex Companion"
+    assert release_manifest["version"] == VERSION
+    assert release_manifest["protocol"] == "product-v1"
+    assert release_manifest["artifacts"]["windows_amd64"].endswith(
+        f"{VERSION}-windows-amd64.zip"
+    )
+    assert release_manifest["artifacts"]["windows_arm64"].endswith(
+        f"{VERSION}-windows-arm64.zip"
+    )
+    assert f'WINDOWS_AGENT_VERSION:-{VERSION}' in windows_build
+    assert 'VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"' in (
+        windows_installer
+    )
 
 
 def test_release_gate_covers_audio_components_and_content_exclusion():
@@ -53,6 +76,9 @@ def test_release_gate_covers_audio_components_and_content_exclusion():
         "CardputerAudioBridge",
         "com.lynx.cardputer-audio-bridge.plist",
         "install_audio_driver.sh",
+        "package_windows_agent.sh",
+        "test_windows_agent_packaging.py",
+        "audit_public_release.py",
     ):
         assert marker in release
     assert "audio content artifact" in release
