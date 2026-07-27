@@ -34,6 +34,10 @@ ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz) {
       .right_channel = true,
       .over_sampling = 1,
       .magnification = 16,
+      .dma_buffer_count = 4,
+      .dma_buffer_length = 128,
+      .task_priority = 6,
+      .task_pinned_core = 1,
   };
 }
 
@@ -102,7 +106,6 @@ AudioCaptureResult PdmAudioCapture::start(AudioCaptureConfig config) {
     return result;
   }
   active_frame_samples_ = samples;
-  next_buffer_ = 0;
   running_ = true;
   return AudioCaptureResult::ok;
 }
@@ -115,9 +118,7 @@ AudioCaptureResult PdmAudioCapture::read_frame(
   if (samples.size() != active_frame_samples_) {
     return AudioCaptureResult::invalid_frame_size;
   }
-  auto dma_frame = std::span<int16_t>(
-      frame_buffers_[next_buffer_].data(), active_frame_samples_);
-  const AudioCaptureResult result = backend_->read(dma_frame);
+  const AudioCaptureResult result = backend_->read(samples);
   if (result == AudioCaptureResult::overrun) {
     overrun_count_ = saturating_increment(overrun_count_);
     return result;
@@ -125,10 +126,6 @@ AudioCaptureResult PdmAudioCapture::read_frame(
   if (result != AudioCaptureResult::ok) {
     return result;
   }
-  std::copy(dma_frame.begin(), dma_frame.end(), encoder_input_.begin());
-  std::copy_n(encoder_input_.begin(), active_frame_samples_,
-              samples.begin());
-  next_buffer_ ^= 1U;
   return AudioCaptureResult::ok;
 }
 
@@ -210,6 +207,10 @@ class M5UnifiedCaptureBackend final : public AudioCaptureBackend {
     config.over_sampling = hardware.over_sampling;
     config.magnification = hardware.magnification;
     config.sample_rate = hardware.sample_rate_hz;
+    config.dma_buf_count = hardware.dma_buffer_count;
+    config.dma_buf_len = hardware.dma_buffer_length;
+    config.task_priority = hardware.task_priority;
+    config.task_pinned_core = hardware.task_pinned_core;
     M5.Mic.config(config);
 
     if (!M5.Mic.begin()) {

@@ -71,6 +71,10 @@ int main() {
   assert(mic24.right_channel);
   assert(mic24.over_sampling == 1);
   assert(mic24.magnification == 16);
+  assert(mic24.dma_buffer_count == 4);
+  assert(mic24.dma_buffer_length == 128);
+  assert(mic24.task_priority == 6);
+  assert(mic24.task_pinned_core == 1);
 
   const ProductMicHardwareConfig mic16 =
       product_mic_hardware_config(16000);
@@ -80,6 +84,10 @@ int main() {
   assert(mic16.right_channel);
   assert(mic16.over_sampling == 1);
   assert(mic16.magnification == 16);
+  assert(mic16.dma_buffer_count == 4);
+  assert(mic16.dma_buffer_length == 128);
+  assert(mic16.task_priority == 6);
+  assert(mic16.task_pinned_core == 1);
 
   DoubleBufferedCaptureState queue;
   uint8_t completed = 0xff;

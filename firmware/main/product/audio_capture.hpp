@@ -19,6 +19,10 @@ struct ProductMicHardwareConfig {
   bool right_channel = false;
   uint8_t over_sampling = 0;
   uint8_t magnification = 0;
+  uint8_t dma_buffer_count = 0;
+  size_t dma_buffer_length = 0;
+  uint8_t task_priority = 0;
+  uint8_t task_pinned_core = 0;
 };
 
 ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz);
@@ -88,14 +92,9 @@ class PdmAudioCapture final : public IAudioCapture {
   }
 
  private:
-  static constexpr size_t kMaximumFrameSamples = 456;
-
   std::unique_ptr<AudioCaptureBackend> owned_backend_{};
   AudioCaptureBackend* backend_ = nullptr;
-  std::array<std::array<int16_t, kMaximumFrameSamples>, 2> frame_buffers_{};
-  std::array<int16_t, kMaximumFrameSamples> encoder_input_{};
   size_t active_frame_samples_ = 0;
-  uint8_t next_buffer_ = 0;
   uint32_t overrun_count_ = 0;
   bool running_ = false;
 };
