@@ -66,3 +66,18 @@
   同步事务未激活且结果为 `cached`。用户确认 B+W+M+ 与 MIC 16K 两种状态均
   显示完整动画，不再只重复前两帧。
 - Next step: 提交 1.1.8 验证记录与 SHA-256 清单，完成分支集成和最终构件交付。
+
+## 2026-07-27 23:27 HKT
+
+- Current work: 完成 1.1.8 发布记录、本地 fast-forward 集成、合并结果验证、
+  精确构件同步和功能 worktree 清理。
+- Expected result: `main` 包含全部修复和验证记录；主目录交付件与实机最终刷入件
+  一致；功能分支不再残留。
+- Result: Achieved。`main` fast-forward 至 `5c686e1`。合并态 Python
+  206/206、普通与 sanitizer host 各 37/37、Swift/ProductAudio/
+  ProductGATT/ProductConfiguration、音频 ring 和安装器 20/20 全部通过。
+  首次合并测试发现主目录独立测试用 HAL 构件仍为旧 1.1.5，按发布脚本重建后
+  从头复验通过；交付 App、固件和已安装 HAL 未受影响。五项 1.1.8 构件在主目录
+  再次通过 SHA-256 清单和 codesign 校验，功能 worktree 与分支已删除。仓库没有
+  远端，因此没有 push。
+- Next step: 无；交付 1.1.8 固件、Mac App/安装器、校验清单和验证记录。
