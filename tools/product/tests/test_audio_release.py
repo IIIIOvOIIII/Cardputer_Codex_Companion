@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 
 def test_release_version_is_consistent():
@@ -15,6 +15,9 @@ def test_release_version_is_consistent():
         ROOT
         / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
     ).read_text()
+    codex_rpc = (
+        ROOT / "companion/Sources/CodexAppServer/JSONRPCProcess.swift"
+    ).read_text()
     companion_info = plistlib.loads(
         (ROOT / "companion/AppBundle/Info.plist").read_bytes()
     )
@@ -24,6 +27,7 @@ def test_release_version_is_consistent():
     assert f'set(PROJECT_VER "{VERSION}")' in firmware_cmake
     assert f'kProductVersion = "{VERSION}"' in product_types
     assert f"cardputer-companion {VERSION}" in companion_main
+    assert f'"version": "{VERSION}"' in codex_rpc
     assert companion_info["CFBundleShortVersionString"] == VERSION
     assert companion_info["CFBundleVersion"] == VERSION
     assert driver_info["CFBundleShortVersionString"] == VERSION
