@@ -524,3 +524,14 @@
 - Next step: 提交本地分支。替换硬件的 LAN Companion PIN 尚未写入 Mac 配置，
   因此设备 Web 状态仍显示 Companion OFFLINE；BLE GATT、MIC READY 与系统音频
   输入不受影响，后续由用户用设备当前 PIN 更新 Mac Agent 配置。
+
+## 2026-07-27 17:20 HKT
+
+- Current work: 完成提交后发布一致性复核，修正 1.1.1 SHA-256 清单仍引用修复前
+  产物和旧 HIL 报告的问题。
+- Expected result: 发布清单中的 app-only、generic full、private full、Mac
+  executable 和最终 1800 秒 HIL 报告全部与当前交付文件一致。
+- Result: Achieved。`shasum -a 256 -c dist/1.1.1-SHA256SUMS` 对五项制品全部
+  返回 `OK`；设备仍报告 1.1.1、BLE/Wi-Fi OK、MIC READY，LaunchAgent 保持
+  running。
+- Next step: 提交仅包含发布元数据与进度记录的收尾补丁并交付。
