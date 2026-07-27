@@ -221,33 +221,30 @@ def test_ble_watchdog_and_keyboard_use_atomic_link_snapshot():
     assert "return g_hid_ready.load();" in ble
 
 
-def test_pet_renderer_restores_1_1_0_row_push_without_full_frame_buffer():
+def test_pet_renderer_decodes_complete_frame_before_single_lcd_push():
     display = (ROOT / "firmware/main/product/display.cpp").read_text()
     controller = (
         ROOT / "firmware/main/product/product_controller.cpp"
     ).read_text()
-    assert "g_pet_frame" not in display
     assert "display_prepare_pet_frame_buffer" not in display
-    assert "kPetFramePixels * sizeof(uint16_t)" not in display
-    assert "std::array<uint16_t, kPetFramePixels>" not in display
+    assert "std::array<uint16_t, kPetFramePixels> g_pet_frame{};" in display
     assert "constexpr int32_t kPetWidth = 96" in display
     assert "constexpr int32_t kPetHeight = 104" in display
     frame_body = display.split("bool display_render_pet_frame", 1)[1]
     frame_body = frame_body.split("void display_render_placeholder", 1)[0]
-    row_body = display.split("bool draw_pet_row", 1)[1]
-    row_body = row_body.split("void begin_page", 1)[0]
     pet_page_body = display.split("void display_render_page", 1)[1]
     pet_page_body = pet_page_body.split(
         "bool display_render_pet_frame", 1
     )[0]
-    assert "store.decode_rows(" in frame_body
-    assert "draw_pet_row" in display
+    assert "store.decode(state, frame_index, g_pet_frame)" in frame_body
+    assert "store.decode_rows(" not in frame_body
     assert "fillScreen" not in frame_body
     assert "heap_caps_free(g_runtime_heap_reserve);" in controller
     assert (
-        "pushImage(kPetX, kPetY + static_cast<int32_t>(row)," in row_body
+        "M5.Display.pushImage(kPetX, kPetY, kPetFrameWidth,"
+        in frame_body
     )
-    assert "kPetFrameWidth, 1, pixels.data()" in row_body
+    assert "kPetFrameHeight, g_pet_frame.data())" in frame_body
     assert frame_body.count("M5.Display.startWrite()") == 1
     assert frame_body.count("M5.Display.endWrite()") == 1
     assert "display_render_placeholder(effective)" not in pet_page_body

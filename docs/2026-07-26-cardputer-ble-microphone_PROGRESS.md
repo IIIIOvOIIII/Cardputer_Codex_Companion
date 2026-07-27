@@ -560,3 +560,23 @@
   稳定 LaunchAgent、统一 install/status/uninstall/purge、独立安装包、完整发布
   门禁、app-only 刷写和物理显示/音频验证。
 - Next step: 用户选择 inline execution 后按计划逐项执行。
+
+## 2026-07-27 18:21 HKT
+
+- Current work: 根据 1.1.2 与 1.1.3 实机仍出现宠物水平错位的反馈，重新定位
+  帧提交边界并发布 1.1.4 整帧缓冲候选。
+- Expected result: LCD 在开始接收新图像前已完成整帧 CCPT 解码，动画更新只执行
+  一次连续 `pushImage`，不再把解码间隙暴露为逐行混合帧；同时保持目标 DIRAM
+  余量高于 96 KiB，并保留设备 NVS、Wi-Fi、PIN 与 BLE bond。
+- Result: Partial，自动化与部署已完成，等待物理观察。根因不是缺少最外层
+  `startWrite`，而是 1.1.2/1.1.3 仍在 CCPT 解码过程中分段写 LCD，屏幕扫描会
+  看到旧帧与新帧的混合。1.1.4 恢复 96 x 104 RGB565 静态整帧缓冲，先调用
+  `PetStore::decode` 完整解码，再单次提交。完整发布门禁通过 Python 200/200、
+  音频专项 24/24、普通与 sanitizer host 各 37/37、ESP-IDF clean build、
+  Swift/HAL/签名/安装包；加入 19,968-byte 缓冲后 DIRAM 仍余 124,577 bytes。
+  1,603,392-byte app 已 app-only 写入 `/dev/cu.usbmodem21201` 的 `0x20000`，
+  独立 `verify_flash` digest matched。设备返回 version 1.1.4、BLE/Wi-Fi OK，
+  未观察到重启。
+- Next step: 由用户观察宠物前后移动至少 20–30 秒确认水平错位是否消失；通过后
+  再完成稳定路径 Mac Agent/Audio 安装与最终发布清单，未通过则停止继续微调
+  逐行链路并转向 LCD 扫描同步或降低动态更新区域方案。
