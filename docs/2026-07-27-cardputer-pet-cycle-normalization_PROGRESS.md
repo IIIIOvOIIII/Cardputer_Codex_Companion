@@ -47,3 +47,22 @@
 - Next step: 将 `notLoaded` 精确映射为 WAITING，保留未知状态回退 IDLE 和
   ACTIVE→WORKING；统一提升至 1.1.8，完成门禁、Mac Agent 升级、app-only
   烧录与第三次实体验收。
+
+## 2026-07-27 23:16 HKT
+
+- Current work: 完成 1.1.8 全量发布、Mac App/HAL/AudioBridge 安装、app-only
+  实机烧录、HTTPS 稳定性采样、宠物同步校验和实体动画门禁。
+- Expected result: Companion 在线且 Codex 会话尚未装载时选择 WAITING 的完整
+  四帧周期；MIC 活跃时动画继续运行；不改变 Rocky 资源、CCPT v1、NVS 配置或
+  用户确认的严格像素周期规则。
+- Result: Achieved。`notLoaded` 现在精确映射为 WAITING，ACTIVE 仍映射
+  WORKING，其他未知状态仍保守回退 IDLE。完整门禁通过 Python 206/206、
+  音频专项 29/29、普通与 sanitizer host 各 37/37、ESP-IDF clean build
+  （app `0x187770`、分区剩余 49%、DIRAM headroom 144,545 bytes）及
+  Swift/HAL/签名/private packaging。Mac App 与 HAL 均安装为 1.1.8；
+  `0x20000` app-only 写入和独立 `verify_flash` digest matched；最终 HTTPS
+  连续 20/20 为 1.1.8、BLE/Wi-Fi/Companion OK、MIC READY。Rocky digest
+  保持 `53ad97058ec2507c28698e9dc7f23593a0945a8eeaf7dd3a02747283c603433d`，
+  同步事务未激活且结果为 `cached`。用户确认 B+W+M+ 与 MIC 16K 两种状态均
+  显示完整动画，不再只重复前两帧。
+- Next step: 提交 1.1.8 验证记录与 SHA-256 清单，完成分支集成和最终构件交付。
