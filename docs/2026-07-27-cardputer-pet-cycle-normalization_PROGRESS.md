@@ -35,3 +35,15 @@
 - Next step: 先以主机测试要求 MIC 活跃态在帧到期时返回
   `animated_frame`，观察 RED；再移除运行时冻结策略、提升版本至 1.1.7，
   重新执行完整门禁与实体 M+ 验收。
+
+## 2026-07-27 21:45 HKT
+
+- Current work: 对 1.1.7 的第二次实体失败执行端到端帧链路与 Codex 状态取证。
+- Expected result: 区分素材帧折叠、CCPT 编解码错误、运行时帧冻结和在线状态映射。
+- Result: Achieved。Rocky CCPT 摘要与设备完全一致；WORKING/WAITING 均为严格
+  证明的四帧周期，IDLE 则是素材原生的两帧周期。Codex app-server 连续 20 次
+  返回 `notLoaded`，旧映射将其归为 IDLE，因此 Companion 在线后合法但错误地
+  选择了两帧素材；M- 则固定使用 WAITING。
+- Next step: 将 `notLoaded` 精确映射为 WAITING，保留未知状态回退 IDLE 和
+  ACTIVE→WORKING；统一提升至 1.1.8，完成门禁、Mac Agent 升级、app-only
+  烧录与第三次实体验收。

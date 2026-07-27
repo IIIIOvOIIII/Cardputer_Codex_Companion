@@ -131,6 +131,10 @@ func testPetStatePriority() throws {
         "working mapping"
     )
     try expect(
+        PetState.resolve(sessionState: "notLoaded", flags: []) == .waiting,
+        "unloaded session maps waiting"
+    )
+    try expect(
         PetState.resolve(sessionState: "new-value", flags: []) == .idle,
         "unknown maps idle"
     )

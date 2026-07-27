@@ -17,7 +17,8 @@ public enum PetState: String, Codable, CaseIterable, Sendable {
         if ["failed", "error", "cancelled"].contains(normalized) {
             return .failed
         }
-        if flags.contains("waitingOnApproval") ||
+        if normalized == "notloaded" ||
+            flags.contains("waitingOnApproval") ||
             flags.contains("waitingOnUserInput") {
             return .waiting
         }
