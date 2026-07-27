@@ -455,6 +455,39 @@ def test_install_failure_restores_previous_audio_components(
     ).read_bytes() == b"old-driver"
 
 
+def test_fresh_install_failure_removes_new_audio_components(
+    monkeypatch, tmp_path
+):
+    new_app = make_app(
+        tmp_path,
+        name="new",
+        driver_payload=b"new-driver",
+        bridge_payload=b"new-bridge",
+    )
+    config = make_config(tmp_path)
+    test_root = tmp_path / "root"
+
+    monkeypatch.setenv("CARDPUTER_MAC_INSTALL_TEST_ROOT", str(test_root))
+    monkeypatch.setenv("CARDPUTER_MAC_INSTALL_SKIP_SIGNATURE_CHECK", "1")
+    module = load_installer()
+    paths = module.InstallerPaths.current()
+    validated = module.read_config(config, require_private=True)
+    monkeypatch.setattr(
+        module,
+        "install_launch_agent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("bootstrap failed")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="bootstrap failed"):
+        module.install(paths, new_app, validated)
+
+    assert not paths.driver.exists()
+    assert not paths.bridge.exists()
+    assert not paths.bridge_daemon.exists()
+
+
 def test_lan_status_uses_protected_profiles_url_and_keeps_pin_off_argv(tmp_path):
     module = load_installer()
     arguments_file = tmp_path / "arguments"
