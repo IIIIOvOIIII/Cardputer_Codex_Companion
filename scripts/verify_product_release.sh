@@ -54,13 +54,10 @@ companion/.build/release/cardputer-companion --version
 companion/.build/release/cardputer-companion doctor
 
 scripts/package_product_firmware.sh
-scripts/package_private_firmware.sh
 scripts/build_companion.sh
 scripts/package_mac_installer.sh
 
-test "$(stat -f %z build/private/wifi_cfg.bin)" -eq 24576
 test -f dist/cardputer_codex_companion-full.bin
-test -f dist/private/cardputer_codex_companion-private-full.bin
 test -x dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
 test -x dist/CardputerCompanion-mac-installer/install.sh
 test -f \
@@ -87,6 +84,9 @@ codesign --verify --strict \
 codesign --verify --deep --strict dist/CardputerCompanion.app
 codesign --verify --deep --strict \
   dist/CardputerCompanion-mac-installer/CardputerCompanion.app
+python3 tools/product/audit_public_release.py \
+  --repo "${repo_root}" \
+  --artifacts "${repo_root}/dist"
 
 tracked_generated="$(
   git ls-files |
@@ -113,7 +113,5 @@ git diff --check
 shasum -a 256 \
   firmware/build/cardputer_codex_companion.bin \
   dist/cardputer_codex_companion-full.bin \
-  build/private/wifi_cfg.bin \
-  dist/private/cardputer_codex_companion-private-full.bin \
   dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
   dist/CardputerCompanion-mac-installer/install.sh
