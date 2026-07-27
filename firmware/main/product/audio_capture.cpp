@@ -144,26 +144,18 @@ AudioCaptureResult PdmAudioCapture::stop() {
 
 #ifdef ESP_PLATFORM
 
-#include <atomic>
-
 #include "M5Unified.h"
-#include "driver/i2s_pdm.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 namespace {
 
 constexpr char kAudioCaptureTag[] = "audio-capture";
 
-class EspPdmCaptureBackend final : public AudioCaptureBackend {
+class M5UnifiedCaptureBackend final : public AudioCaptureBackend {
  public:
-  ~EspPdmCaptureBackend() override {
-    disable();
-    if (channel_ != nullptr) {
-      i2s_del_channel(channel_);
-      channel_ = nullptr;
-    }
-  }
+  ~M5UnifiedCaptureBackend() override { disable(); }
 
   bool speaker_running() const override {
     return M5.Speaker.isRunning();
@@ -183,111 +175,93 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
       return AudioCaptureResult::invalid_frame_size;
     }
     if (enabled_) {
-      ESP_LOGE(kAudioCaptureTag, "i2s reconfigure requested while enabled");
+      ESP_LOGE(kAudioCaptureTag,
+               "M5.Mic reconfigure requested while enabled");
       return AudioCaptureResult::backend_error;
     }
-    if (channel_ != nullptr &&
-        (configured_rate_hz_ != rate_hz ||
-         configured_frame_samples_ != frame_samples)) {
-      i2s_del_channel(channel_);
-      channel_ = nullptr;
-      configured_rate_hz_ = 0;
-      configured_frame_samples_ = 0;
+    if (M5.Mic.isRunning()) {
+      M5.Mic.end();
     }
-    if (channel_ == nullptr) {
-      i2s_chan_config_t channel_config =
-          I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-      channel_config.dma_desc_num = 4;
-      channel_config.dma_frame_num =
-          static_cast<uint32_t>(frame_samples);
-      const esp_err_t create_result =
-          i2s_new_channel(&channel_config, nullptr, &channel_);
-      if (create_result != ESP_OK) {
-        ESP_LOGE(kAudioCaptureTag, "i2s_new_channel failed: %s",
-                 esp_err_to_name(create_result));
-        channel_ = nullptr;
-        return AudioCaptureResult::backend_error;
-      }
-      i2s_pdm_rx_config_t config{
-          .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(rate_hz),
-          .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(
-              I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-          .gpio_cfg =
-              {
-                  .clk = GPIO_NUM_43,
-                  .din = GPIO_NUM_46,
-                  .invert_flags = {.clk_inv = false},
-              },
-      };
-      const esp_err_t init_result =
-          i2s_channel_init_pdm_rx_mode(channel_, &config);
-      if (init_result != ESP_OK) {
-        ESP_LOGE(kAudioCaptureTag, "i2s PDM init failed: %s",
-                 esp_err_to_name(init_result));
-        i2s_del_channel(channel_);
-        channel_ = nullptr;
-        return AudioCaptureResult::backend_error;
-      }
-      const i2s_event_callbacks_t callbacks{
-          .on_recv = nullptr,
-          .on_recv_q_ovf = &EspPdmCaptureBackend::on_receive_overrun,
-          .on_sent = nullptr,
-          .on_send_q_ovf = nullptr,
-      };
-      const esp_err_t callback_result =
-          i2s_channel_register_event_callback(channel_, &callbacks, this);
-      if (callback_result != ESP_OK) {
-        ESP_LOGE(kAudioCaptureTag, "i2s callback registration failed: %s",
-                 esp_err_to_name(callback_result));
-        i2s_del_channel(channel_);
-        channel_ = nullptr;
-        return AudioCaptureResult::backend_error;
-      }
-      configured_rate_hz_ = rate_hz;
-      configured_frame_samples_ = frame_samples;
-      return AudioCaptureResult::ok;
-    }
+
+    configured_rate_hz_ = rate_hz;
+    configured_frame_samples_ = frame_samples;
+    queue_state_.reset();
     return AudioCaptureResult::ok;
   }
 
   AudioCaptureResult enable() override {
-    if (channel_ == nullptr) {
-      ESP_LOGE(kAudioCaptureTag, "i2s enable requested without channel");
+    if (configured_rate_hz_ == 0 || configured_frame_samples_ == 0) {
+      ESP_LOGE(kAudioCaptureTag,
+               "M5.Mic enable requested without configuration");
       return AudioCaptureResult::backend_error;
     }
-    const esp_err_t result = i2s_channel_enable(channel_);
-    if (result != ESP_OK) {
-      ESP_LOGE(kAudioCaptureTag, "i2s enable failed: %s",
-               esp_err_to_name(result));
+
+    const ProductMicHardwareConfig hardware =
+        product_mic_hardware_config(configured_rate_hz_);
+    auto config = M5.Mic.config();
+    config.pin_data_in = hardware.data_pin;
+    config.pin_ws = hardware.clock_pin;
+    config.pin_bck = I2S_PIN_NO_CHANGE;
+    config.pin_mck = I2S_PIN_NO_CHANGE;
+    config.input_channel =
+        hardware.right_channel
+            ? m5::input_channel_t::input_only_right
+            : m5::input_channel_t::input_only_left;
+    config.over_sampling = hardware.over_sampling;
+    config.magnification = hardware.magnification;
+    config.sample_rate = hardware.sample_rate_hz;
+    M5.Mic.config(config);
+
+    if (!M5.Mic.begin()) {
+      ESP_LOGE(kAudioCaptureTag, "M5.Mic begin failed");
       return AudioCaptureResult::backend_error;
     }
     enabled_ = true;
+    queue_state_.reset();
+    for (uint8_t index = 0; index < frame_buffers_.size(); ++index) {
+      if (!queue_buffer(index)) {
+        ESP_LOGE(kAudioCaptureTag,
+                 "M5.Mic initial record queue failed: index=%u",
+                 static_cast<unsigned>(index));
+        disable();
+        return AudioCaptureResult::backend_error;
+      }
+    }
     return AudioCaptureResult::ok;
   }
 
   AudioCaptureResult read(std::span<int16_t> samples) override {
-    if (!enabled_ || channel_ == nullptr) {
+    if (!enabled_ || !M5.Mic.isRunning()) {
       return AudioCaptureResult::not_started;
     }
-    if (pending_overruns_.exchange(0, std::memory_order_relaxed) != 0) {
-      return AudioCaptureResult::overrun;
+    if (samples.size() != configured_frame_samples_) {
+      return AudioCaptureResult::invalid_frame_size;
     }
-    size_t bytes_read = 0;
-    const size_t bytes_requested = samples.size_bytes();
-    const esp_err_t result =
-        i2s_channel_read(channel_, samples.data(), bytes_requested,
-                         &bytes_read,
-                         pdMS_TO_TICKS(audio_capture_read_timeout_ms(
-                             configured_rate_hz_)));
-    if (result == ESP_ERR_TIMEOUT) {
-      return AudioCaptureResult::timeout;
+
+    uint8_t completed_index = 0;
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(
+        audio_capture_read_timeout_ms(configured_rate_hz_));
+    const TickType_t start_ticks = xTaskGetTickCount();
+    while (!queue_state_.take_completed(
+        static_cast<uint8_t>(M5.Mic.isRecording()),
+        &completed_index)) {
+      if (!M5.Mic.isRunning()) {
+        ESP_LOGE(kAudioCaptureTag,
+                 "M5.Mic stopped while waiting for a frame");
+        return AudioCaptureResult::backend_error;
+      }
+      if (xTaskGetTickCount() - start_ticks >= timeout_ticks) {
+        return AudioCaptureResult::timeout;
+      }
+      vTaskDelay(1);
     }
-    if (result != ESP_OK || bytes_read != bytes_requested) {
+
+    std::copy_n(frame_buffers_[completed_index].begin(),
+                configured_frame_samples_, samples.begin());
+    if (!queue_buffer(completed_index)) {
       ESP_LOGE(kAudioCaptureTag,
-               "i2s read failed: result=%s requested=%u read=%u",
-               esp_err_to_name(result),
-               static_cast<unsigned>(bytes_requested),
-               static_cast<unsigned>(bytes_read));
+               "M5.Mic record requeue failed: index=%u",
+               static_cast<unsigned>(completed_index));
       return AudioCaptureResult::backend_error;
     }
     return AudioCaptureResult::ok;
@@ -295,31 +269,46 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
 
   AudioCaptureResult disable() override {
     if (!enabled_) {
+      queue_state_.reset();
       return AudioCaptureResult::ok;
     }
     enabled_ = false;
-    return channel_ != nullptr && i2s_channel_disable(channel_) == ESP_OK
-               ? AudioCaptureResult::ok
-               : AudioCaptureResult::backend_error;
+    const TickType_t drain_start = xTaskGetTickCount();
+    const TickType_t drain_timeout =
+        pdMS_TO_TICKS(2 * audio_capture_read_timeout_ms(
+                           configured_rate_hz_));
+    while (M5.Mic.isRecording() != 0 &&
+           xTaskGetTickCount() - drain_start < drain_timeout) {
+      vTaskDelay(1);
+    }
+    M5.Mic.end();
+    queue_state_.reset();
+    return M5.Mic.isRunning()
+               ? AudioCaptureResult::backend_error
+               : AudioCaptureResult::ok;
   }
 
  private:
-  static bool IRAM_ATTR on_receive_overrun(
-      i2s_chan_handle_t, i2s_event_data_t*, void* user_data) {
-    auto* self = static_cast<EspPdmCaptureBackend*>(user_data);
-    uint32_t current =
-        self->pending_overruns_.load(std::memory_order_relaxed);
-    while (current != std::numeric_limits<uint32_t>::max() &&
-           !self->pending_overruns_.compare_exchange_weak(
-               current, current + 1, std::memory_order_relaxed)) {
+  bool queue_buffer(uint8_t index) {
+    if (index >= frame_buffers_.size() ||
+        queue_state_.pending() >= frame_buffers_.size()) {
+      return false;
     }
-    return false;
+    if (!M5.Mic.record(
+            frame_buffers_[index].data(),
+            configured_frame_samples_,
+            configured_rate_hz_, false)) {
+      return false;
+    }
+    return queue_state_.queue();
   }
 
-  i2s_chan_handle_t channel_ = nullptr;
+  static constexpr size_t kMaximumFrameSamples = 456;
+  std::array<std::array<int16_t, kMaximumFrameSamples>, 2>
+      frame_buffers_{};
+  DoubleBufferedCaptureState queue_state_{};
   uint32_t configured_rate_hz_ = 0;
   size_t configured_frame_samples_ = 0;
-  std::atomic<uint32_t> pending_overruns_{0};
   bool enabled_ = false;
 };
 
@@ -327,7 +316,7 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
 
 std::unique_ptr<IAudioCapture> make_product_audio_capture() {
   return std::make_unique<PdmAudioCapture>(
-      std::make_unique<EspPdmCaptureBackend>());
+      std::make_unique<M5UnifiedCaptureBackend>());
 }
 
 #else
