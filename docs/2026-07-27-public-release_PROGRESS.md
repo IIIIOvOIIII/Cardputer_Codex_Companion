@@ -222,3 +222,22 @@
   platform gates, blank Wi-Fi NVS, checksum validation and 0 audit findings.
 - Next step: Commit the reproducibility fix and updated release evidence,
   then fast-forward the approved branch into `main`.
+
+## 2026-07-28 02:00 HKT
+
+- Current work: Fast-forwarded the approved feature branch into `main`,
+  copied only the verified public outputs, removed the old local private
+  release directories, and reran the entire release gate from the main
+  worktree.
+- Expected result: The integrated source and final deliverables pass the same
+  release/security gates and the checksum manifest identifies the actual
+  main-worktree artifacts.
+- Result: Achieved. The integrated gate passed 223 + 29 + 25 Python tests,
+  38/38 normal host tests, 38/38 ASan/UBSan tests, the ESP32-S3 build,
+  Swift/C17/Go race gates, codesign checks, erased `wifi_cfg`, the 11-entry
+  public allowlist and checksum verification. The final audit found 0 issues
+  across 7 refs, 202 reflog commits, 18 unreachable objects, 1,423 Git blobs
+  and 450 current/artifact files.
+- Next step: Commit the main-worktree checksums and evidence, then run the
+  authorized Mac Agent/HAL/AudioBridge purge and verify the machine is clean
+  for new-device onboarding.
