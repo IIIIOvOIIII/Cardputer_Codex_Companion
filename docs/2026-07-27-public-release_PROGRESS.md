@@ -14,3 +14,17 @@
   Mac uninstall.
 - Next step: Commit the design, self-review it, obtain user review, then write
   the detailed test-driven implementation plan.
+
+## 2026-07-27 23:52 HKT
+
+- Current work: Converted the approved design into a task-by-task test-driven
+  implementation plan covering the security gate, firmware onboarding,
+  navigation, setup Web UI, Windows Agent, packaging, release verification,
+  integration, and final Mac purge.
+- Expected result: An executable plan with exact files, RED/GREEN commands,
+  commits, destructive-action boundaries, and honest Windows HIL limits.
+- Result: Achieved. The plan contains fourteen ordered implementation tasks
+  and keeps complete Mac removal as the final operation after all Mac-based
+  build and verification work.
+- Next step: Commit the plan, obtain execution approval, create the isolated
+  worktree, and begin Task 0 baseline verification.
