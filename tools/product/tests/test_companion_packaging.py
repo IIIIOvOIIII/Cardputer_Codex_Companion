@@ -52,6 +52,8 @@ def test_launch_agent_includes_codex_cli_search_path():
     assert "EnvironmentVariables" in script
     assert "/opt/homebrew/bin" in script
     assert "/usr/local/bin" in script
+    assert '"WorkingDirectory"' not in script
+    assert "uninstall_launch_agent" in script
 
 
 def test_lan_bridge_uses_single_action_poll_for_launchd_local_network():

@@ -7,9 +7,9 @@ from pathlib import Path
 
 
 LABEL = "com.lynx.cardputer-companion"
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BINARY = (
-    ROOT / "dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion"
+    Path.home()
+    / "Applications/CardputerCompanion.app/Contents/MacOS/cardputer-companion"
 )
 DEFAULT_CONFIG = (
     Path.home()
@@ -36,7 +36,6 @@ def plist_payload(binary: Path, config: Path, log_dir: Path) -> dict:
         "KeepAlive": True,
         "StandardOutPath": str(log_dir / "agent.out.log"),
         "StandardErrorPath": str(log_dir / "agent.err.log"),
-        "WorkingDirectory": str(ROOT),
         "EnvironmentVariables": {
             "PATH": DEFAULT_AGENT_PATH,
         },
@@ -53,6 +52,55 @@ def launchctl(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     )
 
 
+def install_launch_agent(
+    binary: Path,
+    config: Path,
+    plist_path: Path,
+    log_dir: Path,
+    *,
+    load: bool,
+) -> Path:
+    if not binary.is_file():
+        raise FileNotFoundError(f"missing binary: {binary}")
+    if not config.is_file():
+        raise FileNotFoundError(f"missing config: {config}")
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = plist_path.with_name(f".{plist_path.name}.tmp")
+    data = plistlib.dumps(
+        plist_payload(binary, config, log_dir), sort_keys=False
+    )
+    descriptor = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, plist_path)
+        os.chmod(plist_path, 0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    if load:
+        domain = f"gui/{os.getuid()}"
+        launchctl("bootout", domain, str(plist_path), check=False)
+        launchctl("bootstrap", domain, str(plist_path))
+        launchctl("kickstart", "-k", f"{domain}/{LABEL}")
+    return plist_path
+
+
+def uninstall_launch_agent(plist_path: Path, *, unload: bool) -> None:
+    if unload:
+        domain = f"gui/{os.getuid()}"
+        launchctl("bootout", domain, str(plist_path), check=False)
+    plist_path.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
@@ -60,6 +108,7 @@ def main() -> int:
     parser.add_argument("--plist", type=Path, default=DEFAULT_PLIST)
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     parser.add_argument("--load", action="store_true")
+    parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args()
 
     binary = args.binary.expanduser().resolve()
@@ -67,24 +116,17 @@ def main() -> int:
     plist_path = args.plist.expanduser().resolve()
     log_dir = args.log_dir.expanduser().resolve()
 
-    if not binary.is_file():
-        raise SystemExit(f"missing binary: {binary}")
-    if not config.is_file():
-        raise SystemExit(f"missing config: {config}")
-
-    log_dir.mkdir(parents=True, exist_ok=True)
-    plist_path.parent.mkdir(parents=True, exist_ok=True)
-    plist_path.write_bytes(
-        plistlib.dumps(plist_payload(binary, config, log_dir), sort_keys=False)
-    )
-
-    if args.load:
-        domain = f"gui/{os.getuid()}"
-        launchctl("bootout", domain, str(plist_path), check=False)
-        launchctl("bootstrap", domain, str(plist_path))
-        launchctl("kickstart", "-k", f"{domain}/{LABEL}")
-
-    print(plist_path)
+    if args.uninstall:
+        uninstall_launch_agent(plist_path, unload=args.load)
+        print(plist_path)
+        return 0
+    try:
+        installed = install_launch_agent(
+            binary, config, plist_path, log_dir, load=args.load
+        )
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
+    print(installed)
     return 0
 
 
