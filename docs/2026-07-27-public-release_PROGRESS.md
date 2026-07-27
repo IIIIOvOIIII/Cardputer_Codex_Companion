@@ -28,3 +28,19 @@
   build and verification work.
 - Next step: Commit the plan, obtain execution approval, create the isolated
   worktree, and begin Task 0 baseline verification.
+
+## 2026-07-28 00:02 HKT
+
+- Current work: Created isolated branch `feat/public-release-onboarding` at
+  plan commit `24429b4`, provisioned a worktree-local Python environment, and
+  ran the pre-change baseline.
+- Expected result: Existing source, firmware-host, and Companion tests pass
+  before implementation begins.
+- Result: Achieved. Pytest passed 206/206 after generating the expected ignored
+  HAL/Bridge test artifacts; CTest passed 37/37; the Swift release build and
+  ProductAudio, ProductGATT, telemetry, configuration, and pet executable test
+  targets all passed. Plain `swift test` is not a valid project gate on the
+  current toolchain because XCTest is unavailable, so the repository's
+  self-contained executable test targets remain authoritative.
+- Next step: Implement Task 1's redacted all-history and public-artifact
+  security gate, then remove private packaging from the public release path.
