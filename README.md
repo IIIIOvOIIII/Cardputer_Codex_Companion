@@ -37,33 +37,46 @@ python -m esptool --chip esp32s3 -b 460800 \
 1. 开机后屏幕应立即出现当前版本的 `CARDPUTER CODEX` 启动页。
 2. 在 macOS 蓝牙设置中连接 `Cardputer Codex`；若系统保留了旧的 `nimble`/`Cardputer Codex` 配对记录，先删除旧设备后重新连接。
 3. Wi‑Fi 连通后，屏幕显示设备 IP 和八位 Web PIN。浏览器访问 `https://设备IP/`；设备证书是首次启动生成的自签名证书，首次访问需要确认。页面首先显示 PIN 鉴权屏，PIN 正确后才进入键盘配置。
-4. 构建并启动 Mac Companion：
+4. 构建 Mac Companion 和独立安装包：
 
 ```bash
-scripts/build_companion.sh
-dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor
-sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
-  install-audio-driver
-dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor audio
-dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
-  run --device https://设备IP --pairing 屏幕八位PIN
+scripts/package_mac_installer.sh
+dist/CardputerCompanion-mac-installer/install.sh install
+dist/CardputerCompanion-mac-installer/install.sh status
 ```
 
-   当前开发包使用 ad-hoc 签名，只适用于这台 Mac。安装命令会部署 HAL driver、由
-   launchd 注册的特权音频桥和对应 LaunchDaemon；Companion 与 HAL 分别作为经过
-   签名校验的 producer/consumer 连接音频桥。安装或升级后按安装器提示重启 Core
-   Audio 服务或 Mac；正常 Companion 运行不需要管理员权限。在应用中选择系统输入
-   设备 `Cardputer Codex Microphone`。
+   安装器会要求输入 Cardputer 的 HTTPS URL，并隐藏输入 DEVICE 页当前八位 PIN。
+   PIN 只写入权限 `0600` 的配置文件，不进入命令行、LaunchAgent plist 或日志。
+   App 固定安装到 `~/Applications/CardputerCompanion.app`，LaunchAgent 使用
+   `RunAtLoad` 与 `KeepAlive` 自动登录启动；安装器也会通过一次 `sudo` 部署 HAL、
+   AudioBridge 和 LaunchDaemon，并重启 Core Audio。PET 页 `B/W/M` 分别表示
+   BLE、Wi‑Fi 和经过 PIN 鉴权的 Mac Agent，三项正常时显示 `B+W+M+`。系统输入
+   设备为 `Cardputer Codex Microphone`。
+
+   仅在诊断安装器内部音频步骤时，可直接使用低层命令：
+
+```bash
+dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion doctor audio
+sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+  install-audio-driver
+sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+  uninstall-audio-driver
+```
 
 5. 在 Web 中点击键位打开弹窗，把某个按键设为“中文字符串”并填入中文，或设为“组合键”后直接按下 `Alt+V` 这类组合键采集；非直通键会在键帽上显示真实用途，发布后即可使用。Settings 选项卡可修改 PIN 和 Wi‑Fi 信息。
 
 6. 短按 G0 开始录音，再短按一次停止。G0 没有长按动作。Keyboard/Codex Input Mode 和不可变 SAFE Profile 均在 Cardputer 的 Settings 中选择；选择 SAFE 会先发送 HID Release All。
 
-卸载虚拟麦克风：
+普通卸载会移除 App、LaunchAgent、HAL 和 AudioBridge，但保留设备配置和日志：
 
 ```bash
-sudo dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
-  uninstall-audio-driver
+dist/CardputerCompanion-mac-installer/install.sh uninstall
+```
+
+彻底清除配置和日志以进行干净安装验证：
+
+```bash
+dist/CardputerCompanion-mac-installer/install.sh uninstall --purge
 ```
 
 从旧版本升级且需要保留 PIN、Wi‑Fi、Profile、宠物与 BLE 配对时，只写应用分区：

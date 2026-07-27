@@ -96,6 +96,7 @@ class InstallerPaths:
 def default_source_app() -> Path:
     script_dir = Path(__file__).resolve().parent
     candidates = (
+        script_dir.parent / APP_NAME,
         script_dir.parent / "dist" / APP_NAME,
         script_dir.parent.parent / APP_NAME,
     )

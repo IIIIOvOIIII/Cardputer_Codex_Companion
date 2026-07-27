@@ -1,8 +1,13 @@
 from pathlib import Path
+import json
+import os
 import plistlib
+import stat
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[3]
+MAC_INSTALLER_PACKAGE = ROOT / "dist/CardputerCompanion-mac-installer"
 
 
 def test_companion_bundle_metadata_and_build_script():
@@ -54,6 +59,102 @@ def test_launch_agent_includes_codex_cli_search_path():
     assert "/usr/local/bin" in script
     assert '"WorkingDirectory"' not in script
     assert "uninstall_launch_agent" in script
+
+
+def test_mac_installer_package_is_self_contained_and_reversible(tmp_path):
+    subprocess.run(
+        [str(ROOT / "scripts/package_mac_installer.sh")],
+        check=True,
+        cwd=ROOT,
+    )
+    entry = MAC_INSTALLER_PACKAGE / "install.sh"
+    installer = MAC_INSTALLER_PACKAGE / "installer/mac_installer.py"
+    launch_agent = (
+        MAC_INSTALLER_PACKAGE
+        / "installer/install_companion_launch_agent.py"
+    )
+    app = MAC_INSTALLER_PACKAGE / "CardputerCompanion.app"
+    assert entry.is_file() and os.access(entry, os.X_OK)
+    assert installer.is_file()
+    assert launch_agent.is_file()
+    assert app.is_dir()
+    assert (
+        app / "Contents/Resources/CardputerCodexMicrophone.driver"
+    ).is_dir()
+    assert (
+        app / "Contents/Resources/CardputerAudioBridge"
+    ).is_file()
+    subprocess.run(
+        ["codesign", "--verify", "--deep", "--strict", str(app)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    forbidden_names = {
+        "config.json",
+        "agent.out.log",
+        "agent.err.log",
+        "pet.json",
+        "slot-a.ccpt",
+        "slot-b.ccpt",
+    }
+    assert not any(
+        path.name in forbidden_names
+        or path.suffix.lower()
+        in {".wav", ".aiff", ".aif", ".caf", ".pcm", ".adpcm"}
+        for path in MAC_INSTALLER_PACKAGE.rglob("*")
+    )
+    text = "\n".join(
+        path.read_text()
+        for path in (entry, installer, launch_agent)
+    )
+    assert str(ROOT) not in text
+
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "device": "https://192.168.1.192",
+                "pairing": "87654321",
+                "pin_revision": 0,
+            }
+        )
+    )
+    config.chmod(0o600)
+    test_root = tmp_path / "root"
+    environment = dict(os.environ)
+    environment["CARDPUTER_MAC_INSTALL_TEST_ROOT"] = str(test_root)
+    environment["CARDPUTER_MAC_INSTALL_SKIP_SIGNATURE_CHECK"] = "1"
+    installed = subprocess.run(
+        [str(entry), "install", "--config", str(config)],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert "87654321" not in installed.stdout + installed.stderr
+    installed_config = (
+        test_root
+        / "home/Library/Application Support"
+        / "CardputerCodexCompanion/config.json"
+    )
+    assert stat.S_IMODE(installed_config.stat().st_mode) == 0o600
+    subprocess.run(
+        [str(entry), "status"],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [str(entry), "uninstall", "--purge"],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert not installed_config.parent.exists()
 
 
 def test_lan_bridge_uses_single_action_poll_for_launchd_local_network():

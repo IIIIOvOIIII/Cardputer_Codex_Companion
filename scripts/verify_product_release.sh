@@ -10,6 +10,8 @@ PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_vectors.py \
   tools/product/tests/test_audio_driver_bundle.py \
   tools/product/tests/test_audio_driver_installer.py \
+  tools/product/tests/test_launch_agent_installer.py \
+  tools/product/tests/test_mac_installer.py \
   tools/product/tests/test_audio_release.py
 
 cmake -S firmware/test/host -B build/product-host
@@ -54,11 +56,19 @@ companion/.build/release/cardputer-companion doctor
 scripts/package_product_firmware.sh
 scripts/package_private_firmware.sh
 scripts/build_companion.sh
+scripts/package_mac_installer.sh
 
 test "$(stat -f %z build/private/wifi_cfg.bin)" -eq 24576
 test -f dist/cardputer_codex_companion-full.bin
 test -f dist/private/cardputer_codex_companion-private-full.bin
 test -x dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
+test -x dist/CardputerCompanion-mac-installer/install.sh
+test -f \
+  dist/CardputerCompanion-mac-installer/installer/mac_installer.py
+test -f \
+  dist/CardputerCompanion-mac-installer/installer/install_companion_launch_agent.py
+test -x \
+  dist/CardputerCompanion-mac-installer/CardputerCompanion.app/Contents/MacOS/cardputer-companion
 test -x \
   dist/CardputerCompanion.app/Contents/Resources/install_audio_driver.sh
 test -f \
@@ -69,10 +79,14 @@ test -f \
   dist/CardputerCompanion.app/Contents/Resources/com.lynx.cardputer-audio-bridge.plist
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_driver_bundle.py \
-  tools/product/tests/test_audio_driver_installer.py
+  tools/product/tests/test_audio_driver_installer.py \
+  tools/product/tests/test_launch_agent_installer.py \
+  tools/product/tests/test_mac_installer.py
 codesign --verify --strict \
   dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver
 codesign --verify --deep --strict dist/CardputerCompanion.app
+codesign --verify --deep --strict \
+  dist/CardputerCompanion-mac-installer/CardputerCompanion.app
 
 if git ls-files | grep -E '^(build|dist)/|wifi_cfg\.bin$' >/dev/null; then
   echo "private or generated artifacts are tracked" >&2
@@ -95,4 +109,5 @@ shasum -a 256 \
   dist/cardputer_codex_companion-full.bin \
   build/private/wifi_cfg.bin \
   dist/private/cardputer_codex_companion-private-full.bin \
-  dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
+  dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+  dist/CardputerCompanion-mac-installer/install.sh

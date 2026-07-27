@@ -45,6 +45,10 @@ def test_release_gate_covers_audio_components_and_content_exclusion():
         "build_audio_driver.sh --test",
         "test_audio_driver_bundle.py",
         "test_audio_driver_installer.py",
+        "test_launch_agent_installer.py",
+        "test_mac_installer.py",
+        "package_mac_installer.sh",
+        "CardputerCompanion-mac-installer",
         "CardputerCodexMicrophone.driver",
         "CardputerAudioBridge",
         "com.lynx.cardputer-audio-bridge.plist",
@@ -79,3 +83,9 @@ def test_readme_documents_local_driver_and_g0_privacy_boundary():
     assert "Cardputer Codex Microphone" in readme
     assert "短按 G0" in readme
     assert "不会自动恢复录音" in readme
+    assert "CardputerCompanion-mac-installer/install.sh install" in readme
+    assert "CardputerCompanion-mac-installer/install.sh status" in readme
+    assert "CardputerCompanion-mac-installer/install.sh uninstall" in readme
+    assert "uninstall --purge" in readme
+    assert "B/W/M" in readme
+    assert "隐藏输入" in readme
