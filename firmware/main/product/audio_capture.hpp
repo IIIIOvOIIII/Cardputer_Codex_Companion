@@ -12,6 +12,31 @@ struct AudioCaptureConfig {
   AudioSampleRate rate = AudioSampleRate::hz24000;
 };
 
+struct ProductMicHardwareConfig {
+  uint32_t sample_rate_hz = 0;
+  int data_pin = -1;
+  int clock_pin = -1;
+  bool right_channel = false;
+  uint8_t over_sampling = 0;
+  uint8_t magnification = 0;
+};
+
+ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz);
+
+class DoubleBufferedCaptureState {
+ public:
+  void reset();
+  [[nodiscard]] bool queue();
+  [[nodiscard]] bool take_completed(uint8_t recording_count,
+                                    uint8_t* completed_index);
+  [[nodiscard]] uint8_t pending() const { return pending_; }
+  [[nodiscard]] uint8_t next_index() const { return next_index_; }
+
+ private:
+  uint8_t pending_ = 0;
+  uint8_t next_index_ = 0;
+};
+
 uint32_t audio_capture_read_timeout_ms(uint32_t rate_hz);
 
 enum class AudioCaptureResult : uint8_t {

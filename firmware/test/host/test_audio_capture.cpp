@@ -63,6 +63,45 @@ int main() {
   assert(audio_capture_read_timeout_ms(24000) == 100);
   assert(audio_capture_read_timeout_ms(16000) == 100);
 
+  const ProductMicHardwareConfig mic24 =
+      product_mic_hardware_config(24000);
+  assert(mic24.sample_rate_hz == 24000);
+  assert(mic24.data_pin == 46);
+  assert(mic24.clock_pin == 43);
+  assert(mic24.right_channel);
+  assert(mic24.over_sampling == 1);
+  assert(mic24.magnification == 16);
+
+  const ProductMicHardwareConfig mic16 =
+      product_mic_hardware_config(16000);
+  assert(mic16.sample_rate_hz == 16000);
+  assert(mic16.data_pin == 46);
+  assert(mic16.clock_pin == 43);
+  assert(mic16.right_channel);
+  assert(mic16.over_sampling == 1);
+  assert(mic16.magnification == 16);
+
+  DoubleBufferedCaptureState queue;
+  uint8_t completed = 0xff;
+  assert(queue.pending() == 0);
+  assert(queue.queue());
+  assert(queue.queue());
+  assert(!queue.queue());
+  assert(queue.pending() == 2);
+  assert(!queue.take_completed(2, &completed));
+  assert(queue.take_completed(1, &completed));
+  assert(completed == 0);
+  assert(queue.pending() == 1);
+  assert(queue.queue());
+  assert(queue.take_completed(0, &completed));
+  assert(completed == 1);
+  assert(queue.take_completed(0, &completed));
+  assert(completed == 0);
+  assert(!queue.take_completed(0, &completed));
+  queue.reset();
+  assert(queue.pending() == 0);
+  assert(queue.next_index() == 0);
+
   FakeCaptureBackend backend;
   PdmAudioCapture capture(backend);
 

@@ -26,6 +26,42 @@ uint32_t saturating_increment(uint32_t value) {
 
 }  // namespace
 
+ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz) {
+  return {
+      .sample_rate_hz = rate_hz,
+      .data_pin = 46,
+      .clock_pin = 43,
+      .right_channel = true,
+      .over_sampling = 1,
+      .magnification = 16,
+  };
+}
+
+void DoubleBufferedCaptureState::reset() {
+  pending_ = 0;
+  next_index_ = 0;
+}
+
+bool DoubleBufferedCaptureState::queue() {
+  if (pending_ >= 2) {
+    return false;
+  }
+  ++pending_;
+  return true;
+}
+
+bool DoubleBufferedCaptureState::take_completed(
+    uint8_t recording_count, uint8_t* completed_index) {
+  if (completed_index == nullptr || pending_ == 0 ||
+      recording_count >= pending_) {
+    return false;
+  }
+  *completed_index = next_index_;
+  next_index_ ^= 1U;
+  --pending_;
+  return true;
+}
+
 uint32_t audio_capture_read_timeout_ms(uint32_t rate_hz) {
   return rate_hz == 16000 || rate_hz == 24000 ? 100U : 0U;
 }
