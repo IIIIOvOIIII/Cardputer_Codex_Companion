@@ -227,7 +227,7 @@ def test_pet_renderer_decodes_complete_frame_before_single_lcd_push():
         ROOT / "firmware/main/product/product_controller.cpp"
     ).read_text()
     assert "display_prepare_pet_frame_buffer" not in display
-    assert "std::array<uint16_t, kPetFramePixels> g_pet_frame{};" in display
+    assert "std::array<uint16_t, kPetFramePixels> g_pet_frame{};" not in display
     assert "constexpr int32_t kPetWidth = 96" in display
     assert "constexpr int32_t kPetHeight = 104" in display
     frame_body = display.split("bool display_render_pet_frame", 1)[1]
@@ -236,7 +236,8 @@ def test_pet_renderer_decodes_complete_frame_before_single_lcd_push():
     pet_page_body = pet_page_body.split(
         "bool display_render_pet_frame", 1
     )[0]
-    assert "store.decode(state, frame_index, g_pet_frame)" in frame_body
+    assert "new (std::nothrow) uint16_t[kPetFramePixels]" in frame_body
+    assert "store.decode(state, frame_index, frame_span)" in frame_body
     assert "store.decode_rows(" not in frame_body
     assert "fillScreen" not in frame_body
     assert "heap_caps_free(g_runtime_heap_reserve);" in controller
@@ -244,7 +245,7 @@ def test_pet_renderer_decodes_complete_frame_before_single_lcd_push():
         "M5.Display.pushImage(kPetX, kPetY, kPetFrameWidth,"
         in frame_body
     )
-    assert "kPetFrameHeight, g_pet_frame.data())" in frame_body
+    assert "kPetFrameHeight, frame.get())" in frame_body
     assert frame_body.count("M5.Display.startWrite()") == 1
     assert frame_body.count("M5.Display.endWrite()") == 1
     assert "display_render_placeholder(effective)" not in pet_page_body
