@@ -549,3 +549,14 @@
   直接引用 worktree 内的 bundle。用户批准单事务逐行方案，并追加 MIC 活跃时
   使用真实宠物静态帧要求。
 - Next step: 提交设计文档并等待文档审核；批准后编写 TDD 实施计划。
+
+## 2026-07-27 18:20 HKT
+
+- Current work: 将已批准的 1.1.2 显示与 Mac 安装器设计转换为逐任务 TDD
+  实施计划。
+- Expected result: 每项需求都有明确文件、RED/GREEN 命令、提交边界、部署步骤
+  和真实设备验收条件。
+- Result: Achieved。计划覆盖统一版本、单事务宠物帧、MIC 静态真实宠物、
+  稳定 LaunchAgent、统一 install/status/uninstall/purge、独立安装包、完整发布
+  门禁、app-only 刷写和物理显示/音频验证。
+- Next step: 用户选择 inline execution 后按计划逐项执行。
