@@ -18,20 +18,11 @@ constexpr int32_t kPetY = 20;
 constexpr int32_t kPetWidth = 96;
 constexpr int32_t kPetHeight = 104;
 
-struct PetFrameStream {
-  std::size_t next_row{0};
-};
-
-bool stream_pet_row(
-    void* context, std::size_t row,
+bool draw_pet_row(
+    void*, std::size_t row,
     std::span<const uint16_t, kPetFrameWidth> pixels) {
-  auto* stream = static_cast<PetFrameStream*>(context);
-  if (stream == nullptr || row != stream->next_row ||
-      row >= kPetFrameHeight) {
-    return false;
-  }
-  M5.Display.writePixels(pixels.data(), kPetFrameWidth, true);
-  ++stream->next_row;
+  M5.Display.pushImage(kPetX, kPetY + static_cast<int32_t>(row),
+                       kPetFrameWidth, 1, pixels.data());
   return true;
 }
 
@@ -196,17 +187,14 @@ void display_render_page(const UiModel& model) {
 
 bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
-  const bool previous_swap = M5.Display.getSwapBytes();
   M5.Display.startWrite();
+  const bool previous_swap = M5.Display.getSwapBytes();
   M5.Display.setSwapBytes(true);
-  M5.Display.setAddrWindow(
-      kPetX, kPetY, kPetFrameWidth, kPetFrameHeight);
-  PetFrameStream stream;
   const bool decoded =
-      store.decode_rows(state, frame_index, stream_pet_row, &stream);
+      store.decode_rows(state, frame_index, draw_pet_row, nullptr);
   M5.Display.setSwapBytes(previous_swap);
   M5.Display.endWrite();
-  return decoded && stream.next_row == kPetFrameHeight;
+  return decoded;
 }
 
 void display_render_placeholder(PetState state) {

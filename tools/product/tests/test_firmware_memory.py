@@ -125,17 +125,23 @@ def test_audio_notifications_are_paced_before_allocating_mbufs():
     assert pace < allocate < notify
 
 
-def test_pet_display_streams_one_lcd_window_without_a_full_frame_buffer():
+def test_pet_display_restores_the_1_1_0_row_push_path_without_a_full_frame_buffer():
     display = (
         REPO_ROOT / "firmware/main/product/display.cpp"
     ).read_text(encoding="utf-8")
 
     assert "display_prepare_pet_frame_buffer" not in display
     assert "g_pet_frame" not in display
-    assert "M5.Display.setAddrWindow(" in display
-    assert "M5.Display.writePixels(" in display
-    assert "kPetFrameWidth, kPetFrameHeight" in display
-    assert "stream.next_row == kPetFrameHeight" in display
+    assert "bool draw_pet_row(" in display
+    assert (
+        "pushImage(kPetX, kPetY + static_cast<int32_t>(row)," in display
+    )
+    assert "kPetFrameWidth, 1, pixels.data()" in display
+    frame_body = display.split("bool display_render_pet_frame", 1)[1]
+    frame_body = frame_body.split("void display_render_placeholder", 1)[0]
+    assert frame_body.count("M5.Display.startWrite()") == 1
+    assert frame_body.count("M5.Display.endWrite()") == 1
+    assert "store.decode_rows(state, frame_index, draw_pet_row, nullptr)" in frame_body
 
 
 def test_status_pages_restore_body_cursor_after_header_microphone():
