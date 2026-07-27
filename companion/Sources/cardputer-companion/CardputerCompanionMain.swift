@@ -16,7 +16,7 @@ struct CardputerCompanionMain {
             )
             switch configuration.command {
             case .version:
-                print("cardputer-companion 1.1.4")
+                print("cardputer-companion 1.1.5")
             case .doctor:
                 doctor()
             case .doctorAudio:

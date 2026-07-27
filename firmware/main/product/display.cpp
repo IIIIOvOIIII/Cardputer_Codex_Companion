@@ -1,7 +1,9 @@
 #include "product/display.hpp"
 
 #include <algorithm>
-#include <array>
+#include <memory>
+#include <new>
+#include <span>
 
 #include "M5Unified.h"
 
@@ -17,7 +19,6 @@ constexpr int32_t kPetX = 72;
 constexpr int32_t kPetY = 20;
 constexpr int32_t kPetWidth = 96;
 constexpr int32_t kPetHeight = 104;
-std::array<uint16_t, kPetFramePixels> g_pet_frame{};
 
 void begin_page(const char* title) {
   M5.Display.startWrite();
@@ -180,12 +181,17 @@ void display_render_page(const UiModel& model) {
 
 bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
-  if (!store.decode(state, frame_index, g_pet_frame)) return false;
+  std::unique_ptr<uint16_t[]> frame(
+      new (std::nothrow) uint16_t[kPetFramePixels]);
+  if (frame == nullptr) return false;
+  std::span<uint16_t, kPetFramePixels> frame_span(
+      frame.get(), kPetFramePixels);
+  if (!store.decode(state, frame_index, frame_span)) return false;
   M5.Display.startWrite();
   const bool previous_swap = M5.Display.getSwapBytes();
   M5.Display.setSwapBytes(true);
   M5.Display.pushImage(kPetX, kPetY, kPetFrameWidth,
-                       kPetFrameHeight, g_pet_frame.data());
+                       kPetFrameHeight, frame.get());
   M5.Display.setSwapBytes(previous_swap);
   M5.Display.endWrite();
   return true;

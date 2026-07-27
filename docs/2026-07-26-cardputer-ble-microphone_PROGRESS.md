@@ -580,3 +580,17 @@
 - Next step: 由用户观察宠物前后移动至少 20–30 秒确认水平错位是否消失；通过后
   再完成稳定路径 Mac Agent/Audio 安装与最终发布清单，未通过则停止继续微调
   逐行链路并转向 LCD 扫描同步或降低动态更新区域方案。
+
+## 2026-07-27 19:16 HKT
+
+- Current work: 在用户确认 1.1.4 动画显示正常后，修复整帧静态缓存造成的运行时
+  内部堆下降，并将协调版本提升到 1.1.5。
+- Expected result: 保持“完整解码后一次 `pushImage`”的无水平错位显示路径，
+  同时取消 19,968-byte 常驻缓冲，使帧传输结束后立即恢复内部堆。
+- Result: Achieved for implementation and focused gates。根因是 1.1.4 的
+  `g_pet_frame` 为常驻内部 RAM，30 秒 HIL 实测 steady/TLS heap 仅
+  48,300/36,120 bytes。1.1.5 改为单帧作用域的 nothrow 缓冲，完整解码和一次
+  LCD 提交均保持不变，返回后自动释放。新增门禁禁止重新引入常驻全帧数组；
+  Python focused tests 28/28、host tests 37/37 通过。
+- Next step: 执行完整发布构建、app-only 烧录和长时 HIL，确认常态 heap、TLS、
+  HID、音频、静态宠物与恢复路径全部通过后生成最终发布清单。

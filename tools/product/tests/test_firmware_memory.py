@@ -125,22 +125,23 @@ def test_audio_notifications_are_paced_before_allocating_mbufs():
     assert pace < allocate < notify
 
 
-def test_pet_display_decodes_a_complete_frame_before_one_lcd_push():
+def test_pet_display_uses_a_scoped_complete_frame_for_one_lcd_push():
     display = (
         REPO_ROOT / "firmware/main/product/display.cpp"
     ).read_text(encoding="utf-8")
 
     assert "display_prepare_pet_frame_buffer" not in display
-    assert "std::array<uint16_t, kPetFramePixels> g_pet_frame{};" in display
+    assert "std::array<uint16_t, kPetFramePixels> g_pet_frame{};" not in display
     frame_body = display.split("bool display_render_pet_frame", 1)[1]
     frame_body = frame_body.split("void display_render_placeholder", 1)[0]
-    assert "store.decode(state, frame_index, g_pet_frame)" in frame_body
+    assert "new (std::nothrow) uint16_t[kPetFramePixels]" in frame_body
+    assert "store.decode(state, frame_index, frame_span)" in frame_body
     assert "store.decode_rows(" not in frame_body
     assert (
         "M5.Display.pushImage(kPetX, kPetY, kPetFrameWidth,"
         in frame_body
     )
-    assert "kPetFrameHeight, g_pet_frame.data())" in frame_body
+    assert "kPetFrameHeight, frame.get())" in frame_body
     assert frame_body.count("M5.Display.startWrite()") == 1
     assert frame_body.count("M5.Display.endWrite()") == 1
 

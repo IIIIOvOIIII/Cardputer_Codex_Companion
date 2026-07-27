@@ -131,7 +131,7 @@ int main() {
   model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
   assert(device.count == 6);
-  assert(device.lines[0] == "VERSION:1.1.4");
+  assert(device.lines[0] == "VERSION:1.1.5");
   assert(device.lines[1] == "PIN:12345678");
   assert(device.lines[2] == "BLE:OK");
   assert(device.lines[3] == "WIFI:OFF");
@@ -141,7 +141,7 @@ int main() {
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
-  assert(joined.find("VERSION:1.1.4") != std::string::npos);
+  assert(joined.find("VERSION:1.1.5") != std::string::npos);
   assert(joined.find("PIN:12345678") != std::string::npos);
   assert(joined.find("********") == std::string::npos);
   assert(joined.find("BLE:OK") != std::string::npos);
