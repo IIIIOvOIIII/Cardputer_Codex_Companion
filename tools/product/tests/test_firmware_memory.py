@@ -40,6 +40,19 @@ def test_product_release_recreates_ignored_sdkconfig():
     assert 'rm -f firmware/sdkconfig firmware/sdkconfig.old' in release
 
 
+def test_product_release_allows_only_versioned_checksum_manifests_in_dist():
+    release = (REPO_ROOT / "scripts/verify_product_release.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "grep -Ev "
+        "'^dist/[0-9]+\\.[0-9]+\\.[0-9]+-SHA256SUMS$'"
+        in release
+    )
+    assert "private or generated artifacts are tracked" in release
+
+
 def test_product_release_uses_boot_safe_main_task_stack():
     defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
         encoding="utf-8"

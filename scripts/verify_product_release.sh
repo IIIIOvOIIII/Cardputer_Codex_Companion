@@ -88,7 +88,13 @@ codesign --verify --deep --strict dist/CardputerCompanion.app
 codesign --verify --deep --strict \
   dist/CardputerCompanion-mac-installer/CardputerCompanion.app
 
-if git ls-files | grep -E '^(build|dist)/|wifi_cfg\.bin$' >/dev/null; then
+tracked_generated="$(
+  git ls-files |
+    grep -E '^(build|dist)/|wifi_cfg\.bin$' |
+    grep -Ev '^dist/[0-9]+\.[0-9]+\.[0-9]+-SHA256SUMS$' ||
+    true
+)"
+if [[ -n "${tracked_generated}" ]]; then
   echo "private or generated artifacts are tracked" >&2
   exit 1
 fi
