@@ -535,3 +535,17 @@
   返回 `OK`；设备仍报告 1.1.1、BLE/Wi-Fi OK、MIC READY，LaunchAgent 保持
   running。
 - Next step: 提交仅包含发布元数据与进度记录的收尾补丁并交付。
+
+## 2026-07-27 18:00 HKT
+
+- Current work: 只读复现 1.1.1 宠物水平错位、MIC 激活后蓝色占位页、`B+W+M-`
+  和 Mac 自动启动安装边界，并形成 1.1.2 修复设计。
+- Expected result: 在不恢复约 20 KiB 全帧缓冲的前提下恢复单事务帧写入；MIC
+  激活时冻结真实宠物单帧；保持 `M` 为可信 Agent 心跳；用稳定安装路径统一安装
+  App、LaunchAgent、HAL 与 AudioBridge，并支持保留数据卸载及 `--purge`。
+- Result: Achieved。证据显示 `647fe6c` 将每帧一次 LCD 事务回归为每行一次；
+  PET 页面在 microphone revision 变化时先画蓝色 placeholder、随后又停止动画；
+  当前 LaunchAgent 运行但因替换设备 PIN 不匹配持续收到 HTTP 401，且 plist
+  直接引用 worktree 内的 bundle。用户批准单事务逐行方案，并追加 MIC 活跃时
+  使用真实宠物静态帧要求。
+- Next step: 提交设计文档并等待文档审核；批准后编写 TDD 实施计划。
