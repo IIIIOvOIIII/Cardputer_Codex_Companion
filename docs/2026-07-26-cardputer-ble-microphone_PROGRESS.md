@@ -1,5 +1,18 @@
 # Cardputer BLE 麦克风与 macOS 虚拟输入进度
 
+## 2026-07-27 10:05 HKT
+
+- Current work: 定位 16 kHz 帧稳定但 Mac 输入电平为零的采集根因，并固化
+  M5.Mic 全量替换设计和实施计划。
+- Expected result: 不改变 Audio v1、BLE、HAL 和 G0 行为，仅替换硬件采集后端，
+  复用 M5Unified 的 Cardputer 右 PDM 槽、去直流、oversampling 和增益处理。
+- Result: Achieved。当前直接 ESP-IDF mono 宏固定选择左槽，而 M5Unified
+  Cardputer 板级实现选择 `input_only_right`；用户已明确选择完全改用
+  `M5.Mic`。设计要求固定双缓冲、100 ms 有界等待、无运行期分配和只含聚合电平
+  指标的实机门禁。
+- Next step: 按 TDD 先固定 M5.Mic 硬件参数与双缓冲完成顺序，再替换后端、
+  app-only 刷写并验证 Mac 侧非零输入电平。
+
 ## 2026-07-26 20:56 HKT
 
 - Current work: 固化 USB 串口 HIL 麦克风控制设计，并把解析器、固件事件接入、
