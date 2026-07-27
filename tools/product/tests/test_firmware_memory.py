@@ -134,7 +134,7 @@ def test_pet_display_streams_one_lcd_window_without_a_full_frame_buffer():
     assert "g_pet_frame" not in display
     assert "M5.Display.setAddrWindow(" in display
     assert "M5.Display.writePixels(" in display
-    assert "kPetFrameWidth, 1" in display
+    assert "kPetFrameWidth, kPetFrameHeight" in display
     assert "stream.next_row == kPetFrameHeight" in display
 
 
