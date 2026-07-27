@@ -498,6 +498,8 @@ def launch_agent_status(paths: InstallerPaths) -> tuple[str, bool]:
     pid = "-"
     last_exit = None
     for raw_line in result.stdout.splitlines():
+        if not raw_line.startswith("\t") or raw_line.startswith("\t\t"):
+            continue
         line = raw_line.strip()
         if line.startswith("state ="):
             state = line.split("=", 1)[1].strip()
@@ -527,7 +529,7 @@ def authenticated_lan_status(
             'output = "/dev/null"',
             'write-out = "%{http_code}"',
             f'header = "X-Cardputer-Pairing: {pairing}"',
-            f'url = "{device}/api/v1/status"',
+            f'url = "{device}/api/v1/profiles"',
             "",
         )
     )

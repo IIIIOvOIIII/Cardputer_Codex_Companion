@@ -337,7 +337,76 @@ def test_public_cli_has_no_pin_argument():
     assert "/usr/bin/python3" in wrapper
 
 
-def test_lan_status_keeps_pin_on_stdin_and_reports_401(tmp_path):
+def test_launch_agent_status_uses_top_level_state_and_pid(monkeypatch, tmp_path):
+    module = load_installer()
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=tmp_path / "system",
+        test_root=None,
+        app=tmp_path / "app",
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=tmp_path / "driver",
+        bridge=tmp_path / "bridge",
+        bridge_daemon=tmp_path / "bridge.plist",
+    )
+    paths.launch_agent.write_text("configured")
+
+    class Result:
+        returncode = 0
+        stdout = (
+            "com.lynx.cardputer-companion = {\n"
+            "\tstate = running\n"
+            "\tpid = 4242\n"
+            "\tcoalition = {\n"
+            "\t\tstate = active\n"
+            "\t}\n"
+            "}\n"
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: Result())
+
+    line, healthy = module.launch_agent_status(paths)
+
+    assert line == "AGENT RUNNING pid=4242"
+    assert healthy
+
+
+def test_lan_status_uses_protected_profiles_url_and_keeps_pin_off_argv(tmp_path):
+    module = load_installer()
+    arguments_file = tmp_path / "arguments"
+    config_file = tmp_path / "curl-config"
+    fake_curl = tmp_path / "curl"
+    fake_curl.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" > "{arguments_file}"\n'
+        f'cat > "{config_file}"\n'
+        'printf "200"\n'
+    )
+    fake_curl.chmod(0o755)
+
+    line, healthy = module.authenticated_lan_status(
+        {
+            "device": "https://192.168.1.192",
+            "pairing": PIN,
+            "pin_revision": 0,
+        },
+        curl_path=fake_curl,
+    )
+
+    assert line == "LAN AUTHENTICATED"
+    assert healthy
+    arguments = arguments_file.read_text()
+    assert arguments.splitlines() == ["--config", "-"]
+    assert PIN not in arguments
+    curl_config = config_file.read_text()
+    assert 'url = "https://192.168.1.192/api/v1/profiles"' in curl_config
+    assert "/api/v1/status" not in curl_config
+    assert PIN not in line
+
+
+def test_lan_status_reports_401_without_exposing_pin(tmp_path):
     module = load_installer()
     arguments_file = tmp_path / "arguments"
     fake_curl = tmp_path / "curl"
@@ -360,6 +429,5 @@ def test_lan_status_keeps_pin_on_stdin_and_reports_401(tmp_path):
 
     assert line == "LAN HTTP-401"
     assert not healthy
-    arguments = arguments_file.read_text()
-    assert arguments.splitlines() == ["--config", "-"]
-    assert PIN not in arguments
+    assert PIN not in arguments_file.read_text()
+    assert PIN not in line
