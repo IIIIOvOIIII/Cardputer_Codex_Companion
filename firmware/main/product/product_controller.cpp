@@ -811,18 +811,20 @@ void keyboard_event(const MatrixKeyEvent& event) {
   if (!lock.locked() || event.physical_key >= g_pressed.size()) return;
   g_pressed[event.physical_key] = event.pressed;
 
-  if (event.pressed && ble_pairing_input_active()) {
-    const auto digit =
-        ble_pairing_digit_from_hid_usage(kPhysicalKeymap[event.physical_key].usage);
-    if (digit.has_value()) {
-      ble_pairing_input_digit(*digit);
-      SemaphoreLock ui_lock(g_ui_mutex);
-      if (ui_lock.locked()) {
-        g_ui.set_session("TYPE MAC PIN", "CARDPUTER KEYS",
-                         "PAIRING", 0, 0);
+  if (ble_pairing_input_active()) {
+    if (event.pressed) {
+      const auto digit = ble_pairing_digit_from_hid_usage(
+          kPhysicalKeymap[event.physical_key].usage);
+      if (digit.has_value()) {
+        ble_pairing_input_digit(*digit);
+        SemaphoreLock ui_lock(g_ui_mutex);
+        if (ui_lock.locked()) {
+          g_ui.set_session("TYPE MAC PIN", "CARDPUTER KEYS",
+                           "PAIRING", 0, 0);
+        }
       }
-      return;
     }
+    return;
   }
 
   if (g_onboarding.active()) {
@@ -843,6 +845,20 @@ void keyboard_event(const MatrixKeyEvent& event) {
   {
     SemaphoreLock ui_lock(g_ui_mutex);
     if (ui_lock.locked()) page = g_ui.page();
+  }
+  const UiNavigationResult return_result =
+      g_ui_navigation.on_return_key(
+          event.physical_key, event.pressed, page != UiPage::pet);
+  if (return_result.captured) {
+    if (return_result.action == UiNavAction::return_to_pet) {
+      g_settings.leave();
+      if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+      g_pressed.fill(false);
+      SemaphoreLock ui_lock(g_ui_mutex);
+      if (ui_lock.locked()) g_ui.return_to_pet();
+      g_last_ui_input_ms.store(0);
+    }
+    return;
   }
   if (page == UiPage::settings) {
     if (!g_settings.active()) {
@@ -1111,12 +1127,19 @@ void audio_task(void*) {
   }
 }
 
-void ble_connection_changed(bool connected) {
+void ble_connection_changed(bool bonded, bool connected) {
   g_ble_state = connected ? ServiceState::ok : ServiceState::starting;
   if (!connected) {
     g_audio_data_ready.store(false);
     g_audio_sink_declared.store(false);
     enqueue_microphone_event(MicrophoneRuntimeEvent::sink_lost, true);
+  }
+  {
+    SemaphoreLock input_lock(g_input_mutex);
+    if (input_lock.locked() && g_onboarding.active()) {
+      g_onboarding_state.on_ble_state(bonded, connected);
+      update_onboarding_ui_locked();
+    }
   }
   {
     SemaphoreLock lock(g_ui_mutex);
@@ -1222,6 +1245,13 @@ void companion_snapshot(std::string_view json) {
 }
 
 void companion_heartbeat() {
+  {
+    SemaphoreLock input_lock(g_input_mutex);
+    if (input_lock.locked() && g_onboarding.active()) {
+      g_onboarding_state.on_agent_heartbeat(true);
+      update_onboarding_ui_locked();
+    }
+  }
   if (g_companion_state.load() != ServiceState::ok) return;
   const uint64_t now_ms =
       static_cast<uint64_t>(esp_timer_get_time()) / 1000;

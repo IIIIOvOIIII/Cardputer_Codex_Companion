@@ -211,6 +211,20 @@ OnboardingResult OnboardingStateMachine::restart_setup() {
   );
 }
 
+OnboardingResult OnboardingStateMachine::previous_step() {
+  if (step_ == OnboardingStep::ble_pair_guide) {
+    return persist(
+        OnboardingCheckpoint::needs_wifi,
+        OnboardingStep::wifi_scan);
+  }
+  if (step_ == OnboardingStep::agent_install_guide) {
+    return persist(
+        OnboardingCheckpoint::needs_ble,
+        OnboardingStep::ble_pair_guide);
+  }
+  return OnboardingResult::ignored;
+}
+
 void OnboardingStateMachine::request_wifi_scan() {
   if (checkpoint_ != OnboardingCheckpoint::needs_wifi) return;
   step_ = OnboardingStep::wifi_scan;
@@ -295,6 +309,25 @@ OnboardingInputResult OnboardingController::on_key(
 OnboardingInputResult OnboardingController::browse_key(
     uint8_t physical_key
 ) {
+  if (physical_key == kKeyBacktick &&
+      state_.step() == OnboardingStep::ble_pair_guide) {
+    const OnboardingResult result = state_.previous_step();
+    if (result != OnboardingResult::ok) {
+      error_ = "SETUP SAVE FAILED";
+      return {.captured = true};
+    }
+    return {
+        .captured = true,
+        .command = OnboardingCommandKind::scan_wifi,
+    };
+  }
+  if (physical_key == kKeyBacktick &&
+      state_.step() == OnboardingStep::agent_install_guide) {
+    if (state_.previous_step() != OnboardingResult::ok) {
+      error_ = "SETUP SAVE FAILED";
+    }
+    return {.captured = true};
+  }
   if (state_.step() != OnboardingStep::wifi_select) {
     return {.captured = true};
   }

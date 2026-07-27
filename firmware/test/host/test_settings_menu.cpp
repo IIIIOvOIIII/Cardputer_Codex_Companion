@@ -54,8 +54,10 @@ int main() {
   menu.on_key(13, true, false, 308);  // Backspace
   menu.on_key(13, false, false, 309);
   assert(menu.editor_value() == ",.;");
-  menu.on_key(0, true, false, 310);  // Esc cancels
-  assert(menu.interaction() == SettingsInteraction::browse);
+  menu.leave();  // Global backtick route discards the edit and exits.
+  assert(!menu.active());
+  assert(menu.editor_value().empty());
+  menu.enter();
 
   menu.begin_ssid_edit();
   for (int count = 0; count < 40; ++count) {
@@ -102,11 +104,13 @@ int main() {
   assert(hierarchy.profile_id() == "SAFE");
   hierarchy.on_key(41, false, false, 805);
   hierarchy.set_result("PROFILE ACTIVATED");
-  hierarchy.on_key(0, true, false, 806);
-  hierarchy.on_key(0, false, false, 807);
-  assert(hierarchy.content().count == 8);
+  hierarchy.leave();
+  assert(!hierarchy.active());
+  hierarchy.enter();
 
   hierarchy.on_key(53, true, false, 810);
+  hierarchy.on_key(53, false, false, 811);
+  hierarchy.on_key(53, true, false, 811);
   hierarchy.on_key(53, false, false, 811);
   hierarchy.on_key(53, true, false, 811);
   hierarchy.on_key(53, false, false, 811);
@@ -125,6 +129,8 @@ int main() {
   assert(result.command == SettingsCommandKind::stage_wifi);
   assert(hierarchy.ssid_value() == "Lynx WiFi");
   assert(hierarchy.password_value() == "a");
+  hierarchy.leave();
+  assert(hierarchy.password_value().empty());
 
   SettingsMenu display;
   display.enter();

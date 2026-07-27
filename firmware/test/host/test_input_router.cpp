@@ -4,6 +4,21 @@
 #include "product/input_router.hpp"
 
 int main() {
+  assert(input_dispatch_target(true, true, true, true, true, true) ==
+         InputDispatchTarget::ble_passkey);
+  assert(input_dispatch_target(false, true, true, true, true, true) ==
+         InputDispatchTarget::onboarding);
+  assert(input_dispatch_target(false, false, true, true, true, true) ==
+         InputDispatchTarget::return_to_pet);
+  assert(input_dispatch_target(false, false, false, true, true, true) ==
+         InputDispatchTarget::settings);
+  assert(input_dispatch_target(false, false, false, false, true, true) ==
+         InputDispatchTarget::navigation);
+  assert(input_dispatch_target(false, false, false, false, false, false) ==
+         InputDispatchTarget::local_only);
+  assert(input_dispatch_target(false, false, false, false, false, true) ==
+         InputDispatchTarget::pet_hid);
+
   assert(active_profile_layer(InputMode::keyboard, false) == 0);
   assert(active_profile_layer(InputMode::codex_remote, false) == 1);
   assert(active_profile_layer(InputMode::keyboard, true) == 2);

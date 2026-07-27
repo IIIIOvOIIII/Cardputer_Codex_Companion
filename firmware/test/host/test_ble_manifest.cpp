@@ -123,6 +123,7 @@ int main() {
   assert(ble_audio_preferred_supervision_timeout() == 400);
   assert(ble_keyboard_ready_requires_successful_encryption());
   assert(ble_keyboard_ready_requires_authenticated_link());
+  assert(ble_keyboard_ready_requires_bond());
   assert(ble_keyboard_ready_requires_input_report_subscription());
   assert(!ble_should_terminate_after_encryption_change(0));
   assert(ble_should_terminate_after_encryption_change(13));
@@ -130,6 +131,15 @@ int main() {
       .gap_connected = false,
       .encrypted = true,
       .authenticated = true,
+      .bonded = false,
+      .hidd_connected = true,
+      .input_report_subscribed = true,
+  }));
+  assert(!ble_keyboard_ready_from_state(BleKeyboardLinkState{
+      .gap_connected = true,
+      .encrypted = true,
+      .authenticated = true,
+      .bonded = false,
       .hidd_connected = true,
       .input_report_subscribed = true,
   }));
@@ -151,6 +161,7 @@ int main() {
       .gap_connected = true,
       .encrypted = true,
       .authenticated = true,
+      .bonded = true,
       .hidd_connected = false,
       .input_report_subscribed = true,
   }));
@@ -158,6 +169,7 @@ int main() {
       .gap_connected = true,
       .encrypted = true,
       .authenticated = true,
+      .bonded = true,
       .hidd_connected = true,
       .input_report_subscribed = false,
   }));
@@ -165,6 +177,7 @@ int main() {
       .gap_connected = true,
       .encrypted = true,
       .authenticated = true,
+      .bonded = true,
       .hidd_connected = true,
       .input_report_subscribed = true,
   }));
@@ -173,12 +186,14 @@ int main() {
           .gap_connected = false,
           .encrypted = true,
           .authenticated = true,
+          .bonded = true,
           .hidd_connected = true,
           .input_report_subscribed = true,
       });
   assert(out_of_order_gap_state.gap_connected);
   assert(out_of_order_gap_state.encrypted);
   assert(out_of_order_gap_state.authenticated);
+  assert(out_of_order_gap_state.bonded);
   assert(out_of_order_gap_state.hidd_connected);
   assert(out_of_order_gap_state.input_report_subscribed);
   assert(ble_pairing_digit_from_hid_usage(0x1e).has_value());

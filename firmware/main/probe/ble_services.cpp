@@ -151,6 +151,10 @@ bool ble_keyboard_ready_requires_authenticated_link() {
   return kBleKeyboardReadyRequiresAuthenticatedLink;
 }
 
+bool ble_keyboard_ready_requires_bond() {
+  return true;
+}
+
 bool ble_keyboard_ready_requires_input_report_subscription() {
   return kBleKeyboardReadyRequiresInputReportSubscription;
 }
@@ -165,6 +169,7 @@ bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state) {
           state.encrypted) &&
          (!ble_keyboard_ready_requires_authenticated_link() ||
           state.authenticated) &&
+         (!ble_keyboard_ready_requires_bond() || state.bonded) &&
          state.hidd_connected &&
          (!ble_keyboard_ready_requires_input_report_subscription() ||
           state.input_report_subscribed);
@@ -507,16 +512,17 @@ void publish_hid_ready_if_changed(const char* reason) {
     return;
   }
   ESP_LOGI(kTag,
-           "HID keyboard ready=%d reason=%s gap=%d enc=%d auth=%d hidd=%d sub=%d",
+           "HID keyboard ready=%d reason=%s gap=%d enc=%d auth=%d bond=%d hidd=%d sub=%d",
            ready ? 1 : 0,
            reason == nullptr ? "unknown" : reason,
            g_hid_state.gap_connected ? 1 : 0,
            g_hid_state.encrypted ? 1 : 0,
            g_hid_state.authenticated ? 1 : 0,
+           g_hid_state.bonded ? 1 : 0,
            g_hid_state.hidd_connected ? 1 : 0,
            g_hid_state.input_report_subscribed ? 1 : 0);
   if (g_connection_handler != nullptr) {
-    g_connection_handler(ready);
+    g_connection_handler(g_hid_state.bonded, ready);
   }
 }
 
@@ -849,6 +855,13 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
             rc == 0 && desc.sec_state.encrypted;
         const bool authenticated =
             rc == 0 && desc.sec_state.authenticated;
+        if (rc == 0) {
+          g_hid_state.encrypted = desc.sec_state.encrypted;
+          g_hid_state.authenticated = desc.sec_state.authenticated;
+          g_hid_state.bonded = desc.sec_state.bonded;
+          mark_hid_state_changed();
+          publish_hid_ready_if_changed("gap-security");
+        }
         if (ble_should_initiate_security_on_connect(
                 encrypted, authenticated)) {
           rc = ble_gap_security_initiate(event->connect.conn_handle);
@@ -878,6 +891,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         publish_audio_sink_ready_if_changed();
         g_hid_state.encrypted = false;
         g_hid_state.authenticated = false;
+        g_hid_state.bonded = false;
         publish_hid_ready_if_changed("enc-failed");
         rc = ble_gap_terminate(event->enc_change.conn_handle,
                                BLE_ERR_REM_USER_CONN_TERM);
@@ -892,6 +906,7 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         publish_audio_sink_ready_if_changed();
         g_hid_state.encrypted = desc.sec_state.encrypted;
         g_hid_state.authenticated = desc.sec_state.authenticated;
+        g_hid_state.bonded = desc.sec_state.bonded;
         mark_hid_state_changed();
         publish_hid_ready_if_changed("enc-change");
         ble_hid_task_start_up();
@@ -1268,6 +1283,9 @@ void set_companion_control_handler(CompanionControlHandler handler) {
 
 void set_ble_connection_handler(BleConnectionHandler handler) {
   g_connection_handler = handler;
+  if (handler != nullptr) {
+    handler(g_hid_state.bonded, ble_keyboard_ready());
+  }
 }
 
 void set_audio_control_handler(AudioControlHandler handler) {

@@ -64,6 +64,7 @@ struct BleKeyboardLinkState {
   bool gap_connected = false;
   bool encrypted = false;
   bool authenticated = false;
+  bool bonded = false;
   bool hidd_connected = false;
   bool input_report_subscribed = false;
 };
@@ -107,6 +108,7 @@ bool ble_should_initiate_security_on_connect(
     bool encrypted, bool authenticated);
 bool ble_keyboard_ready_requires_successful_encryption();
 bool ble_keyboard_ready_requires_authenticated_link();
+bool ble_keyboard_ready_requires_bond();
 bool ble_keyboard_ready_requires_input_report_subscription();
 bool ble_should_terminate_after_encryption_change(int status);
 bool ble_keyboard_ready_from_state(const BleKeyboardLinkState& state);
@@ -145,7 +147,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 
 using BleDisconnectHandler = void (*)();
 using CompanionControlHandler = void (*)(std::span<const uint8_t>);
-using BleConnectionHandler = void (*)(bool connected);
+using BleConnectionHandler = void (*)(bool bonded, bool connected);
 using AudioControlHandler = void (*)(AudioControlMessage message);
 using AudioSinkStateHandler = void (*)(bool ready);
 

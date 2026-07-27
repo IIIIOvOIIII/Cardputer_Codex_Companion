@@ -84,6 +84,10 @@ int main() {
       after_wifi_reboot.on_ble_state(true, false) ==
       OnboardingResult::ignored
   );
+  assert(
+      after_wifi_reboot.on_ble_state(false, true) ==
+      OnboardingResult::ignored
+  );
   assert(after_wifi_reboot.step() == OnboardingStep::ble_pair_guide);
   assert(
       after_wifi_reboot.on_ble_state(true, true) == OnboardingResult::ok
@@ -254,6 +258,24 @@ int main() {
   assert(rescan_machine.step() == OnboardingStep::wifi_scan);
   assert(rescan_controller.on_key(30, true, false).captured);
   assert(rescan_controller.on_key(30, false, false).captured);
+
+  MemoryOnboardingBackend back_backend;
+  OnboardingStateMachine back_machine(back_backend);
+  assert(back_machine.load(false) == OnboardingLoadResult::first_run);
+  assert(back_machine.on_scan_complete(true) == OnboardingResult::ok);
+  assert(back_machine.on_network_selected(false) == OnboardingResult::ok);
+  assert(back_machine.on_wifi_connected() == OnboardingResult::ok);
+  OnboardingController back_controller(back_machine);
+  assert(press(back_controller, 0).command ==
+         OnboardingCommandKind::scan_wifi);
+  assert(back_machine.step() == OnboardingStep::wifi_scan);
+  assert(back_machine.on_scan_complete(true) == OnboardingResult::ok);
+  assert(back_machine.on_network_selected(false) == OnboardingResult::ok);
+  assert(back_machine.on_wifi_connected() == OnboardingResult::ok);
+  assert(back_machine.on_ble_state(true, true) == OnboardingResult::ok);
+  assert(press(back_controller, 0).command ==
+         OnboardingCommandKind::none);
+  assert(back_machine.step() == OnboardingStep::ble_pair_guide);
 
   return 0;
 }

@@ -11,6 +11,7 @@ enum class UiNavAction : uint8_t {
   next_page,
   scroll_up,
   scroll_down,
+  return_to_pet,
 };
 
 struct UiNavigationResult {
@@ -30,6 +31,10 @@ class UiNavigation {
                             bool fn_pressed,
                             UiInteractionContext context =
                                 UiInteractionContext::normal);
+  UiNavigationResult on_return_key(
+      uint8_t physical_key,
+      bool pressed,
+      bool enabled);
 
  private:
   std::array<bool, kPhysicalKeyCount> captured_{};

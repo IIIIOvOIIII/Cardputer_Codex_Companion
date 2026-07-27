@@ -62,3 +62,18 @@
 - Next step: Bind verified BLE HID and authenticated Agent heartbeat to the
   remaining onboarding checkpoints, then enforce backtick return behavior on
   every normal subpage.
+
+## 2026-07-28 00:47 HKT
+
+- Current work: Completed the BLE and Machine Agent onboarding gates and
+  implemented global backtick routing for normal non-pet pages.
+- Expected result: Advertising alone cannot advance setup; only a bonded,
+  encrypted, authenticated, subscribed HID link can pass the Bluetooth gate,
+  and only an authenticated Agent request can finish setup. Backtick must
+  discard pending Settings changes and return directly to the pet without
+  emitting HID.
+- Result: Achieved. Dispatch priority is now passkey, onboarding, global
+  return, Settings, navigation, and pet HID. Seven focused host targets pass,
+  and the ESP32-S3 build succeeds at 0x18a920 bytes with 49 percent free.
+- Next step: Add a restricted setup status surface to the authenticated Web
+  application and a deliberate restart-onboarding action.

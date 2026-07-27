@@ -81,6 +81,7 @@ class OnboardingStateMachine {
   OnboardingResult on_ble_state(bool bonded, bool hid_connected);
   OnboardingResult on_agent_heartbeat(bool authenticated);
   OnboardingResult restart_setup();
+  OnboardingResult previous_step();
   void request_wifi_scan();
   void return_to_wifi_select();
 

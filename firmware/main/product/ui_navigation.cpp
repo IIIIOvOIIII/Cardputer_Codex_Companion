@@ -32,3 +32,22 @@ UiNavigationResult UiNavigation::on_key(uint8_t physical_key, bool pressed,
   }
   return {};
 }
+
+UiNavigationResult UiNavigation::on_return_key(
+    uint8_t physical_key,
+    bool pressed,
+    bool enabled
+) {
+  constexpr uint8_t kBacktickKey = 0;
+  if (physical_key != kBacktickKey) return {};
+  if (!pressed && captured_[physical_key]) {
+    captured_[physical_key] = false;
+    return {.captured = true};
+  }
+  if (!pressed || !enabled) return {};
+  captured_[physical_key] = true;
+  return {
+      .captured = true,
+      .action = UiNavAction::return_to_pet,
+  };
+}

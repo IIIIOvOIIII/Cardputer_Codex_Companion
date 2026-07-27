@@ -9,6 +9,7 @@ int main() {
   assert(!ui_page_allows_host_input(UiPage::codex_status));
   assert(!ui_page_allows_host_input(UiPage::sync_status));
   assert(!ui_page_allows_host_input(UiPage::settings));
+  assert(!ui_page_allows_host_input(UiPage::onboarding));
 
   UiNavigation navigation;
   auto result = navigation.on_key(39, true, false);
@@ -40,5 +41,14 @@ int main() {
       39, false, false, UiInteractionContext::settings_browse).captured);
   assert(!navigation.on_key(
       39, true, false, UiInteractionContext::normal).captured);
+
+  result = navigation.on_return_key(0, true, true);
+  assert(result.captured);
+  assert(result.action == UiNavAction::return_to_pet);
+  result = navigation.on_return_key(0, false, false);
+  assert(result.captured);
+  assert(result.action == UiNavAction::none);
+  assert(!navigation.on_return_key(0, true, false).captured);
+  assert(!navigation.on_return_key(15, true, true).captured);
   return 0;
 }

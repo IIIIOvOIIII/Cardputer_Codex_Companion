@@ -93,6 +93,7 @@ int main() {
       .gap_connected = true,
       .encrypted = true,
       .authenticated = true,
+      .bonded = true,
       .hidd_connected = true,
       .input_report_subscribed = true,
   };
