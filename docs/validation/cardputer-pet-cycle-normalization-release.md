@@ -80,11 +80,11 @@ The user observed the real Cardputer and confirmed both cases:
 ## Artifact checksums
 
 - app-only firmware:
-  `09905d051aecfcc4a881cb3d1b47208cce3bb3cb214a27973e970fbaa0334d15`
+  `b0312dd21fa9c3af204923ed8ce4be18a270bad9bb185359feec03e087b7034a`
 - generic full image:
-  `fda5bc5f75f1ad4911695300d910e3b10f79be8808667ac01072e43edb72a0e8`
+  `ac7cccce9202a35c61ea3ff44159290549f9dd4e30b1ce4e6d505781e6d920c8`
 - private full image:
-  `6e302bb3dce2e08f14fdf3b62bb6027f3f0dd9fabe5572a164b6652258e4b355`
+  `60f0a4473331130b7d805ad37ac4cabcbe7f528310c6791573970e9f511fd54d`
 - Companion executable:
   `efd49973c835a68f63b7f48bc713476936a6a4d77128fa44953a2978033aa52e`
 - installer entry point:
