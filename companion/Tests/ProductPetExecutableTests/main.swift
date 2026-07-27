@@ -337,6 +337,162 @@ func testAtlasTranscodeCyclesVisibleFrames() throws {
     }
 }
 
+func testAtlasTranscodeNormalizesOnlyProvenPixelPeriods() throws {
+    let width = 1536
+    let height = 1872
+    let colors: [(UInt8, UInt8, UInt8)] = [
+        (208, 16, 16),
+        (16, 208, 16),
+        (16, 16, 208),
+        (208, 208, 16),
+        (208, 16, 208),
+        (16, 208, 208)
+    ]
+    let sequences: [Int: [Int]] = [
+        0: [0, 1, 2, 3, 0, 1],
+        7: [0, 1, 2, 3, 0, 1],
+        6: [0, 1, 2, 3, 4, 0],
+        8: [0, 1, 2, 3, 4, 5],
+        5: [0, 1, 2, 3, 0, 1, 2, 3]
+    ]
+    var pixels = Data(repeating: 0, count: width * height * 4)
+    pixels.withUnsafeMutableBytes { raw in
+        let bytes = raw.bindMemory(to: UInt8.self)
+        for (row, sequence) in sequences {
+            for (column, colorIndex) in sequence.enumerated() {
+                let color = colors[colorIndex]
+                let originX = column * PetAtlas.cellWidth
+                let originY = row * PetAtlas.cellHeight
+                for y in originY..<(originY + PetAtlas.cellHeight) {
+                    for x in originX..<(originX + PetAtlas.cellWidth) {
+                        let offset = (y * width + x) * 4
+                        bytes[offset] = color.0
+                        bytes[offset + 1] = color.1
+                        bytes[offset + 2] = color.2
+                        bytes[offset + 3] = 255
+                    }
+                }
+            }
+        }
+
+        // WORKING frame 5 is B except for one 2x2 source block. With the
+        // exact 0.5 atlas scale this changes one rendered RGB565 pixel.
+        let changedX = 5 * PetAtlas.cellWidth + 80
+        let changedY = 7 * PetAtlas.cellHeight + 80
+        for y in changedY..<(changedY + 2) {
+            for x in changedX..<(changedX + 2) {
+                let offset = (y * width + x) * 4
+                bytes[offset] = 255
+                bytes[offset + 1] = 255
+                bytes[offset + 2] = 255
+            }
+        }
+    }
+    guard let provider = CGDataProvider(data: pixels as CFData),
+          let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(
+                rawValue: CGImageAlphaInfo.last.rawValue
+            ),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+          ) else {
+        throw HarnessError.failed("create strict-period atlas fixture")
+    }
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let atlas = root.appending(path: "strict-period-atlas.png")
+    guard let destination = CGImageDestinationCreateWithURL(
+        atlas as CFURL,
+        "public.png" as CFString,
+        1,
+        nil
+    ) else {
+        throw HarnessError.failed("create strict-period destination")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    try expect(
+        CGImageDestinationFinalize(destination),
+        "write strict-period atlas fixture"
+    )
+
+    let bundle = try PetTranscoder().transcode(
+        PetSource(id: "strict-period", atlasURL: atlas, atlasVersion: .v1)
+    )
+
+    try expect(
+        bundle.framePayload(state: .idle, frame: 6) ==
+            bundle.framePayload(state: .idle, frame: 2),
+        "proven partial cycle expands frame 6 from C"
+    )
+    try expect(
+        bundle.framePayload(state: .idle, frame: 7) ==
+            bundle.framePayload(state: .idle, frame: 3),
+        "proven partial cycle expands frame 7 from D"
+    )
+    try expect(
+        bundle.framePayload(state: .idle, frame: 6) !=
+            bundle.framePayload(state: .idle, frame: 0),
+        "proven partial cycle does not repeat A at frame 6"
+    )
+
+    try expect(
+        bundle.framePayload(state: .working, frame: 5) !=
+            bundle.framePayload(state: .working, frame: 1),
+        "one-pixel fixture differs from B"
+    )
+    try expect(
+        bundle.framePayload(state: .working, frame: 6) ==
+            bundle.framePayload(state: .working, frame: 0),
+        "one-pixel difference preserves six-frame fallback"
+    )
+    try expect(
+        bundle.framePayload(state: .working, frame: 7) ==
+            bundle.framePayload(state: .working, frame: 1),
+        "one-pixel difference cycles the complete visible sequence"
+    )
+
+    try expect(
+        bundle.framePayload(state: .waiting, frame: 6) ==
+            bundle.framePayload(state: .waiting, frame: 0),
+        "one repeated tail frame cannot prove a shorter period"
+    )
+    try expect(
+        bundle.framePayload(state: .waiting, frame: 7) ==
+            bundle.framePayload(state: .waiting, frame: 1),
+        "single-tail match retains complete-sequence fallback"
+    )
+
+    try expect(
+        bundle.framePayload(state: .review, frame: 6) ==
+            bundle.framePayload(state: .review, frame: 0),
+        "six distinct frames retain fallback frame 6"
+    )
+    try expect(
+        bundle.framePayload(state: .review, frame: 7) ==
+            bundle.framePayload(state: .review, frame: 1),
+        "six distinct frames retain fallback frame 7"
+    )
+
+    try expect(
+        bundle.framePayload(state: .failed, frame: 6) ==
+            bundle.framePayload(state: .failed, frame: 2),
+        "complete authored cycle remains unchanged at frame 6"
+    )
+    try expect(
+        bundle.framePayload(state: .failed, frame: 7) ==
+            bundle.framePayload(state: .failed, frame: 3),
+        "complete authored cycle remains unchanged at frame 7"
+    )
+}
+
 actor FakePetDevice: PetDeviceClient {
     var digest = ""
     var transaction = DevicePetTransaction(
@@ -535,6 +691,7 @@ struct ProductPetHarness {
         try testBundleWireFormat()
         try testAtlasTranscode()
         try testAtlasTranscodeCyclesVisibleFrames()
+        try testAtlasTranscodeNormalizesOnlyProvenPixelPeriods()
         try await testPetSyncCoordinator()
         try await testPetSyncBacksOffFailedInputUntilSourceChanges()
         try testPetSyncCadence()

@@ -56,11 +56,29 @@ public struct PetTranscoder {
             guard !visibleFrames.isEmpty else {
                 throw PetTranscoderError.invalidAtlas
             }
-            states[state] = (0..<8).map {
-                visibleFrames[$0 % visibleFrames.count].pixels
-            }
+            states[state] = expandedFrames(from: visibleFrames)
         }
         return try PetBundleEncoder.encode(petID: source.id, frames: states)
+    }
+
+    private func expandedFrames(
+        from visibleFrames: [RenderedFrame]
+    ) -> [[UInt16]] {
+        let period: Int?
+        if visibleFrames.count >= 3 {
+            period = (1...(visibleFrames.count - 2)).first { candidate in
+                (candidate..<visibleFrames.count).allSatisfy { index in
+                    visibleFrames[index].pixels ==
+                        visibleFrames[index % candidate].pixels
+                }
+            }
+        } else {
+            period = nil
+        }
+        let source = Array(
+            visibleFrames.prefix(period ?? visibleFrames.count)
+        )
+        return (0..<8).map { source[$0 % source.count].pixels }
     }
 
     private func renderFrame(
