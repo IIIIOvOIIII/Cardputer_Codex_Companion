@@ -34,11 +34,11 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
     var metrics = pipeline.metrics
     assert(metrics.receivedFrames == 7)
     assert(metrics.decodedFrames == 1)
-    assert(metrics.decodedSourceSamples == 240)
+    assert(metrics.decodedSourceSamples == 456)
     assert(metrics.sequenceGaps == 1)
-    assert(metrics.outputSamples == 960)
+    assert(metrics.outputSamples == 1_824)
     assert(metrics.sinkShortWrites == 0)
-    assert(sink.writes.map(\.count) == [480, 480])
+    assert(sink.writes.map(\.count) == [912, 912])
     assert(sink.writes[1].allSatisfy {
         $0.bitPattern == Float.zero.bitPattern
     })
@@ -56,9 +56,9 @@ func testPipelineDecodesGapsResamplesAndFlushesRateChanges() throws {
     assert(metrics.rateChanges == 1)
     assert(metrics.streamResets == 2)
     assert(metrics.decodedFrames == 2)
-    assert(metrics.decodedSourceSamples == 400)
+    assert(metrics.decodedSourceSamples == 904)
     assert(sink.resetCount == 2)
-    assert(sink.writes.map(\.count) == [480])
+    assert(sink.writes.map(\.count) == [1_344])
 
     let metricFieldNames = Set(Mirror(reflecting: metrics).children.compactMap {
         $0.label

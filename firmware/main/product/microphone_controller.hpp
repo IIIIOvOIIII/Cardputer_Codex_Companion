@@ -30,7 +30,9 @@ class MicrophoneController {
  public:
   MicrophoneController(IAudioCapture& capture,
                        IBleAudioTransport& transport,
-                       uint16_t initial_sequence = 0);
+                       uint16_t initial_sequence = 0,
+                       AudioSampleRate preferred_rate =
+                           AudioSampleRate::hz16000);
 
   void on_sink_ready(bool ready);
   void on_g0_click();
@@ -49,13 +51,13 @@ class MicrophoneController {
   IAudioCapture& capture_;
   IBleAudioTransport& transport_;
   MicrophoneStateMachine state_machine_{};
-  std::array<int16_t, 240> pcm_{};
+  std::array<int16_t, 456> pcm_{};
   std::array<uint8_t, kAudioPayloadBytes24k> encoded_{};
   std::array<uint8_t, kAudioPacketBytes24k> packet_{};
   std::atomic<MicrophoneState> published_state_{
       MicrophoneState::unavailable};
   std::atomic<AudioSampleRate> active_rate_{
-      AudioSampleRate::hz24000};
+      AudioSampleRate::hz16000};
   std::atomic<uint16_t> next_sequence_{0};
   std::atomic<uint32_t> captured_frames_{0};
   std::atomic<uint32_t> source_overruns_{0};

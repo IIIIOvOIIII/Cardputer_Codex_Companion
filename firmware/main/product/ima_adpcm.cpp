@@ -20,7 +20,7 @@ constexpr std::array<int, 16> kIndexAdjustment{
     -1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
 
 bool valid_sample_count(size_t count) {
-  return count == 160 || count == 240;
+  return count == 448 || count == 456;
 }
 
 }  // namespace

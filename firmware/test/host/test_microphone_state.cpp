@@ -3,7 +3,20 @@
 #include "product/microphone_state.hpp"
 
 int main() {
-  MicrophoneStateMachine state;
+  MicrophoneStateMachine release_default;
+  auto release_transition =
+      release_default.apply({.kind = MicrophoneEventKind::sink_ready});
+  assert(release_transition.state == MicrophoneState::ready);
+  release_transition =
+      release_default.apply({.kind = MicrophoneEventKind::g0_click});
+  assert(release_transition.state == MicrophoneState::starting);
+  assert(release_transition.command ==
+         MicrophoneCommand::start_capture_16k);
+  release_transition =
+      release_default.apply({.kind = MicrophoneEventKind::capture_started});
+  assert(release_transition.state == MicrophoneState::live16);
+
+  MicrophoneStateMachine state(AudioSampleRate::hz24000);
   assert(state.state() == MicrophoneState::unavailable);
 
   auto transition =
@@ -91,7 +104,7 @@ int main() {
       unavailable.apply({.kind = MicrophoneEventKind::g0_ignored});
   assert(transition.state == MicrophoneState::unavailable);
 
-  MicrophoneStateMachine starting;
+  MicrophoneStateMachine starting(AudioSampleRate::hz24000);
   starting.apply({.kind = MicrophoneEventKind::sink_ready});
   starting.apply({.kind = MicrophoneEventKind::g0_click});
   transition = starting.apply({.kind = MicrophoneEventKind::sink_lost});

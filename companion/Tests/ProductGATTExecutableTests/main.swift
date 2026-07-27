@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import ProductAudio
 import ProductGATT
@@ -5,6 +6,7 @@ import ProductGATT
 func testUnifiedDiscoveryAndBindingOrder() {
     assert(ProductGATTContract.centralManagerCount == 1)
     assert(ProductGATTContract.maximumPeripheralCount == 1)
+    assert(ProductGATTContract.callbackQueueQoS == .userInteractive)
     assert(Set(ProductGATTContract.characteristics) == Set([
         .unicodeNotify,
         .unicodeControl,
@@ -88,7 +90,13 @@ func testAudioParseFailureDoesNotDisableUnicodeContract() {
     ) == .unicode)
 }
 
+func testReleaseLinkStatusReportsTheFirmwareDefaultRate() {
+    let status = ProductGATTAudioLinkStatus()
+    assert(status.preferredSampleRateHertz == 16_000)
+}
+
 testUnifiedDiscoveryAndBindingOrder()
 testShutdownAndDisconnectClearAudioWithoutDisablingUnicode()
 testAudioParseFailureDoesNotDisableUnicodeContract()
+testReleaseLinkStatusReportsTheFirmwareDefaultRate()
 print("ProductGATT tests passed")

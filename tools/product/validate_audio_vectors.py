@@ -10,7 +10,8 @@ from typing import Any
 PROTOCOL_VERSION = 1
 HEADER_LENGTH = 8
 VALID_FLAGS = 0x07
-RATE_PAYLOAD_LENGTHS = {1: 124, 2: 84}
+RATE_PAYLOAD_LENGTHS = {1: 232, 2: 228}
+RATE_DURATIONS_MS = {1: 19, 2: 28}
 CONTROL_OPCODES = {
     1: "hello",
     2: "sink_ready",
@@ -40,8 +41,9 @@ def validate_packet(packet_hex: str) -> list[str]:
     expected_payload = RATE_PAYLOAD_LENGTHS.get(packet[4])
     if expected_payload is None:
         errors.append("invalid sample-rate code")
-    if packet[5] != 10:
-        errors.append("frame duration must be 10 ms")
+    expected_duration = RATE_DURATIONS_MS.get(packet[4])
+    if expected_duration is not None and packet[5] != expected_duration:
+        errors.append("frame duration does not match sample rate")
     declared_payload = int.from_bytes(packet[6:8], "little")
     if expected_payload is not None and declared_payload != expected_payload:
         errors.append("payload length does not match sample rate")
@@ -58,7 +60,7 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
     packets = fixture.get("packets")
     if not isinstance(packets, list):
         return errors + ["packets must be a list"]
-    expected_packet_sizes = {"24khz": 132, "16khz": 92}
+    expected_packet_sizes = {"24khz": 240, "16khz": 236}
     names: set[str] = set()
     for item in packets:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):

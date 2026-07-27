@@ -138,7 +138,7 @@ struct PetStore::Impl {
   std::array<uint8_t, 1> command_queue_buffer{};
   QueueHandle_t command_queue = nullptr;
   StaticTask_t upload_task_storage{};
-  std::array<StackType_t, 8192> upload_task_stack{};
+  std::array<StackType_t, 7552> upload_task_stack{};
   TaskHandle_t upload_task_handle = nullptr;
   std::atomic<bool> command_active{false};
   PetUploadBegin command_begin;
@@ -186,7 +186,7 @@ esp_err_t PetStore::start() {
 
   impl_ = impl.release();
   impl_->upload_task_handle = xTaskCreateStatic(
-      upload_task, "product-pet-upload", impl_->upload_task_stack.size(),
+      upload_task, "pet-upload", impl_->upload_task_stack.size(),
       this, tskIDLE_PRIORITY, impl_->upload_task_stack.data(),
       &impl_->upload_task_storage);
   if (impl_->upload_task_handle == nullptr) {

@@ -322,3 +322,86 @@
   LaunchAgent 后最终 `doctor audio` 八项再次全部通过，恢复 Agent 第一次轮询
   回到 READY。
 - Next step: 提交最终修复；最后执行实体 G0、并发 HID 与 30 分钟 HIL。
+
+## 2026-07-26 23:37 HKT
+
+- Current work: 用 USB 串口自动启动麦克风后，对短时音频 HIL 的 BLE 丢帧与重连
+  进行逐层定位，并修复 bonded security 事件乱序、CoreBluetooth 回调调度、任务栈
+  余量和 HIL 计数基线。
+- Expected result: 30 秒 TLS 并发压力下无 BLE 重连，回调间隔不超过 150 ms，
+  稳态 heap/largest、TLS heap 和所有任务 stack 门槛保持不变；剩余丢帧定位到
+  单一可复现路径。
+- Result: Partial。最新真机结果无重连、最大回调间隔 75 ms、稳态 heap 65,780、
+  largest 45,056、TLS heap 57,644，任务栈全部通过。剩余 12 个 transport drop
+  均对应 TLS 突发时 `ble_hs_mbuf_from_flat` 的短时空池，采集端仅 3 个 overrun。
+  已先加入 host RED/GREEN，约束发送 credit 持有期间以 1 ms 间隔最多重试 12 次，
+  总等待低于 19 ms 音频帧周期。
+- Next step: 构建并 app-only 刷写重试修复，运行短时 HIL 验证丢帧；通过后增加
+  串口触发的真实 HID 队列压力，最后执行完整 release gate 和 30 分钟 HIL。
+
+## 2026-07-27 00:57 HKT
+
+- Current work: 修复 16 kHz 采集 DMA cadence 和 BLE 长时通知吞吐，保持 Audio v1
+  单通知完整帧与 150 ms 硬门槛。
+- Expected result: I2S DMA EOF 与每次读取样本数一致；16 kHz 长时通知率低于 Mac
+  BLE 持续吞吐上限；无 mbuf 耗尽断言、协议模式错误或重启。
+- Result: Achieved。采集 backend 改为按活动采样率使用真实 frame samples；
+  16 kHz 改为 448 samples / 28 ms / 228-byte ADPCM payload / 236-byte packet，
+  从约 53 notifications/s 降至约 36 notifications/s，仍保持单 ATT notification。
+  60 秒真机得到 2,184 received、0 sequence gap、0 transport drop、0 reconnect；
+  旧 19 ms 方案曾在约 2–3 分钟线性耗尽通知资源并触发 NimBLE mbuf assert。
+- Next step: 消除首次 TLS 握手造成的 177 ms 单次采集间隔，然后执行 10 分钟门禁。
+
+## 2026-07-27 01:23 HKT
+
+- Current work: 提升音频采集任务优先级并修复 USB HIL 的重复运行清理和 TLS
+  资源采样分类。
+- Expected result: TLS 握手不能抢占 I2S 采集；每轮 HIL 显式停止残留 HID burst；
+  TLS 低水位不被误标为 steady；不降低任何发布门槛。
+- Result: Achieved for code and short HIL。音频任务从 priority 2 提升到 6，
+  高于 ESP-IDF HTTPS 默认 priority 5；60 秒结果为 2,197 received、
+  `max_gap_ms=106`、0 source overrun、0 transport drop、0 sequence gap、
+  0 reconnect，heap/stack 门槛全过。600 秒原始数据为 22,161/22,161 received、
+  0 sequence gap、`max_gap_ms=105`、0 reconnect、1000/1000 HID、0 HID failure。
+  该轮最终报告发现采样器把紧邻 `performing session handshake` 的低水位误标
+  steady，且结束后合法的 `HIL MIC STOP NOOP` 未列入 ACK；两项均已先加
+  RED/GREEN 回归，再用 1.25 秒 TLS settle 窗口和完整 cleanup ACK 修正。
+- Next step: 运行完整自动 release gate，重建/部署最终 payload；最后使用修正后的
+  runner 执行 30 分钟真机门禁并恢复正常 LaunchAgent。
+
+## 2026-07-27 02:09 HKT
+
+- Current work: 修复首次 30 分钟 HIL 暴露的探针计时漂移、BLE watchdog 栈余量
+  与 TLS 握手前资源采样分类问题。
+- Expected result: 1800 秒探针按单调绝对时钟准时结束；watchdog 高水位余量不低于
+  1024 bytes；握手开始前两秒内的实际设备资源样本归入 TLS 窗口，且所有硬门槛
+  保持不变。
+- Result: Achieved for code and focused tests。首次长跑中音频计数约 65,359、
+  0 gap/drop/reconnect，但逐秒相对 sleep 累积约 30 秒漂移而被 runner 超时；
+  watchdog 实测 1004 bytes。现改为绝对 deadline，栈由 1792 增至 1920 bytes，
+  HIL 依据 ESP-IDF 实际 `performing session handshake` 事件回溯标记相邻采样。
+  ProductAudio 与 Python firmware/HIL 定向测试均通过。
+- Next step: 执行完整 clean release gate、app-only 刷写并重跑最终 30 分钟 HIL。
+
+## 2026-07-27 02:54 HKT
+
+- Current work: 完成最终 release gate、app-only 部署、30 分钟实体 HIL，并恢复
+  常驻 Mac Agent。
+- Expected result: 所有自动门禁和硬件门槛通过；最终镜像与设备同源；HIL 后
+  LaunchAgent 回到 BLE/Wi-Fi/Agent OK、MIC READY。
+- Result: Achieved。完整门禁通过 Python 190/190、音频专项 17/17、普通和
+  ASan/UBSan host 各 36/36、ESP-IDF clean build、Swift ProductAudio/
+  ProductGATT/ProductConfiguration、C ring/device/IPC、签名和 private packaging。
+  app-only 镜像写入 `0x20000` 且独立 `verify_flash` digest matched。1800 秒报告
+  `build/hil/cardputer-audio-final-1800s-16k.json` 为 captured 64,293、
+  received 64,287、0 source overrun/drop/gap/reconnect/allocation failure、
+  `max_gap_ms=107`；HID 1000/1000、0 failure、p95 100 us；steady heap
+  70,208、largest 43,008、TLS heap 56,880，全部 task stack 通过。
+  新 ad-hoc CDHash 使旧 macOS Bluetooth TCC 授权失配；重置并由用户允许新版
+  App 后，LaunchAgent PID 66787 连续五次返回 version 1.1.1、BLE/Wi-Fi/Agent
+  OK、MIC READY。app SHA-256
+  `662c82033442f0a07017894101930a8a583a2d1ec86023eabc9fe96d4a8f8bce`，
+  private full SHA-256
+  `463cbff6425ff72cd556b963be2be37c651edf7c13da0da5c5b7a699eaa99467`。
+- Next step: 提交最终代码、验证记录和制品哈希；仓库无 remote，保留本地分支
+  供后续合并。

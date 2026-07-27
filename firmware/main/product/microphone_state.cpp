@@ -30,7 +30,7 @@ MicrophoneTransition MicrophoneStateMachine::apply(MicrophoneEvent event) {
       const bool must_stop = capture_active_or_pending();
       state_ = MicrophoneState::unavailable;
       consecutive_bad_windows_ = 0;
-      target_rate_ = AudioSampleRate::hz24000;
+      target_rate_ = preferred_rate_;
       return result(must_stop ? MicrophoneCommand::stop_capture
                               : MicrophoneCommand::none);
     }
@@ -38,9 +38,12 @@ MicrophoneTransition MicrophoneStateMachine::apply(MicrophoneEvent event) {
     case MicrophoneEventKind::g0_click:
       if (state_ == MicrophoneState::ready && sink_ready_) {
         state_ = MicrophoneState::starting;
-        target_rate_ = AudioSampleRate::hz24000;
+        target_rate_ = preferred_rate_;
         consecutive_bad_windows_ = 0;
-        return result(MicrophoneCommand::start_capture_24k);
+        return result(
+            target_rate_ == AudioSampleRate::hz24000
+                ? MicrophoneCommand::start_capture_24k
+                : MicrophoneCommand::start_capture_16k);
       }
       if (state_ == MicrophoneState::live24 ||
           state_ == MicrophoneState::live16) {
@@ -112,7 +115,7 @@ MicrophoneTransition MicrophoneStateMachine::apply(MicrophoneEvent event) {
     case MicrophoneEventKind::reset: {
       const bool must_stop = capture_active_or_pending();
       state_ = MicrophoneState::unavailable;
-      target_rate_ = AudioSampleRate::hz24000;
+      target_rate_ = preferred_rate_;
       sink_ready_ = false;
       consecutive_bad_windows_ = 0;
       return result(must_stop ? MicrophoneCommand::stop_capture

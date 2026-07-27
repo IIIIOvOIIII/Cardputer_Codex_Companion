@@ -146,10 +146,7 @@ public final class AudioPipeline: @unchecked Sendable {
     }
 
     private func sampleCount(for rate: AudioSampleRate) -> Int {
-        switch rate {
-        case .hz24000: 240
-        case .hz16000: 160
-        }
+        rate.sampleCount
     }
 
     private func sampleRate(for rate: AudioSampleRate) -> Int {

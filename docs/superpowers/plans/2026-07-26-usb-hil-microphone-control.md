@@ -18,6 +18,8 @@
 - PET animation is frozen only in `STARTING`, `LIVE24`, `LIVE16`, and `STOPPING`; status rendering remains active.
 - HIL output remains metrics-only and cannot persist PCM, ADPCM, payloads, or decoded samples.
 - A serial acknowledgement is not proof of capture; the first received audio frame remains the timer gate.
+- The concurrent HID gate uses exactly `HIL HID START\n`, queues 1,000 neutral
+  usage-0 events through `KeyboardProbe`, and never mutates HID metrics directly.
 
 ---
 
@@ -424,3 +426,37 @@ After this plan is complete, use the captured evidence with
 `superpowers:systematic-debugging`, write the smallest failing regression test
 for the proven MIC ERR cause, implement that repair, and only then rerun the
 final 30-minute HIL.
+
+### Task 6: USB-Only Concurrent HID Gate
+
+**Files:**
+- Modify: `firmware/main/product/hil_serial_control.hpp`
+- Modify: `firmware/main/product/hil_serial_control.cpp`
+- Modify: `firmware/main/product/product_controller.cpp`
+- Modify: `firmware/test/host/test_hil_serial_control.cpp`
+- Modify: `scripts/product/run_audio_feasibility_hil.py`
+- Modify: `tools/product/tests/test_audio_feasibility_hil.py`
+
+- [ ] **Step 1: Add RED host and Python tests**
+
+Require exact parsing of `HIL HID START`, rejection when HID is not ready or a
+burst is already active, exactly 1,000 alternating usage-0 events, and runner
+ordering `MIC START -> HID START -> HID COMPLETE -> MIC STOP`.
+
+- [ ] **Step 2: Implement the bounded firmware burst**
+
+Advance one neutral event per 500 ms. Submit each event only through
+`KeyboardProbe::enqueue_stable_key_event`; do not call the report sink or metric
+observer directly. Emit a completion acknowledgement after the thousandth
+event.
+
+- [ ] **Step 3: Integrate the HIL runner**
+
+Start the burst after the resource baseline and accepted microphone start.
+Require the accepted and completion acknowledgements. Preserve STOP cleanup on
+every failure path.
+
+- [ ] **Step 4: Verify**
+
+Run the focused host/Python tests, full host tests, ESP-IDF build, app-only
+flash, and a short concurrent HIL before the final 30-minute gate.

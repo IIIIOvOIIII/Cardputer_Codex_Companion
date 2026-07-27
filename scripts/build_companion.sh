@@ -22,6 +22,12 @@ cp "${repo_root}/dist/CardputerAudioBridge" \
   "${resources_root}/CardputerAudioBridge"
 cp "${repo_root}/dist/com.lynx.cardputer-audio-bridge.plist" \
   "${resources_root}/com.lynx.cardputer-audio-bridge.plist"
+find "${resources_root}/CardputerCodexMicrophone.driver" \
+  -type d -exec chmod 0755 {} +
+find "${resources_root}/CardputerCodexMicrophone.driver" \
+  -type f -exec chmod 0644 {} +
+chmod 0755 \
+  "${resources_root}/CardputerCodexMicrophone.driver/Contents/MacOS/CardputerCodexMicrophone"
 chmod 0755 "${app_root}/Contents/MacOS/cardputer-companion"
 chmod 0755 "${resources_root}/install_audio_driver.sh"
 chmod 0755 "${resources_root}/CardputerAudioBridge"

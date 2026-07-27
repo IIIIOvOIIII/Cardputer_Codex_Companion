@@ -99,18 +99,21 @@ void UiModel::set_ble(ServiceState state) {
   if (ble_ == state) return;
   ble_ = state;
   ++revision_;
+  ++pet_revision_;
 }
 
 void UiModel::set_wifi(ServiceState state) {
   if (wifi_ == state) return;
   wifi_ = state;
   ++revision_;
+  ++pet_revision_;
 }
 
 void UiModel::set_companion(ServiceState state) {
   if (companion_ == state) return;
   companion_ = state;
   ++revision_;
+  ++pet_revision_;
 }
 
 void UiModel::set_microphone(UiMicrophoneState state,
@@ -136,6 +139,7 @@ void UiModel::set_microphone(UiMicrophoneState state,
     microphone_error_until_ms_ = now_ms + 1000;
   }
   ++revision_;
+  ++pet_revision_;
 }
 
 void UiModel::expire_microphone_error(uint64_t now_ms) {
@@ -145,6 +149,7 @@ void UiModel::expire_microphone_error(uint64_t now_ms) {
   microphone_error_.clear();
   microphone_error_until_ms_ = 0;
   ++revision_;
+  ++pet_revision_;
 }
 
 std::string_view UiModel::microphone_indicator() const {
@@ -231,6 +236,7 @@ void UiModel::set_pet(std::string_view id, std::string_view digest,
   pet_state_ = state;
   pet_sync_result_ = std::move(next_result);
   ++revision_;
+  ++pet_revision_;
 }
 
 void UiModel::set_pet_storage(uint32_t used_bytes, uint16_t format_version) {

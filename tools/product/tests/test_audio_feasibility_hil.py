@@ -2,6 +2,7 @@ import importlib.util
 import json
 import socket
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -45,20 +46,26 @@ def valid_report():
     }
 
 
-def resource_sample(scenario: str, free: int, largest: int):
+def resource_sample(
+    scenario: str,
+    free: int,
+    largest: int,
+    *,
+    counter: int = 100,
+):
     return {
         "scenario": scenario,
         "free_internal_heap": free,
         "largest_internal_block": largest,
         "allocation_failures": 0,
         "audio": {
-            "captured_frames": 100,
-            "source_overruns": 0,
-            "transport_drops": 0,
+            "captured_frames": counter,
+            "source_overruns": counter // 10,
+            "transport_drops": counter // 20,
         },
         "hid": {
-            "generated": 1_000,
-            "queued": 1_000,
+            "generated": counter * 10,
+            "queued": counter * 10,
             "queue_failures": 0,
             "p95_upper_bound_us": 1_000,
         },
@@ -140,6 +147,22 @@ def test_tls_probe_schedule_preserves_steady_window_and_repeats():
     assert max(right - left for left, right in zip(schedule, schedule[1:])) <= 15
 
 
+def test_tls_probe_keeps_resource_sampling_window_active_after_curl():
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    wait = source.index("stop.wait(TLS_RESOURCE_SAMPLE_SETTLE_SECONDS)")
+    clear = source.index("active.clear()", wait)
+    assert module_value("TLS_RESOURCE_SAMPLE_SETTLE_SECONDS", source) >= 1.0
+    assert wait < clear
+
+
+def module_value(name, source):
+    assignment = next(
+        line for line in source.splitlines() if line.startswith(f"{name} = ")
+    )
+    return float(assignment.split("=", 1)[1].strip())
+
+
 def test_cli_parses_duration_as_an_integer(tmp_path):
     module = load_script()
     args = module.parse_args(
@@ -181,12 +204,53 @@ def test_gate_rejects_loss_gap_reconnect_and_resource_regressions():
             module.validate_report(report, expected_duration=600)
 
 
+@pytest.mark.parametrize("key", ["captured_frames", "received_frames"])
+def test_gate_rejects_truncated_audio_stream_even_without_reported_loss(key):
+    module = load_script()
+    report = valid_report()
+    report["source_overruns"] = 0
+    report["transport_drops"] = 0
+    report["sequence_gaps"] = 0
+    report[key] = 1_000
+    with pytest.raises(ValueError, match="continuous audio"):
+        module.validate_report(report, expected_duration=600)
+
+
+def test_gate_uses_rate_specific_frame_duration_for_16khz():
+    module = load_script()
+    report = valid_report()
+    report["duration_seconds"] = 60
+    report["sample_rate_hz"] = 16_000
+    report["captured_frames"] = 2_200
+    report["received_frames"] = 2_200
+    report["source_overruns"] = 0
+    report["transport_drops"] = 0
+    report["sequence_gaps"] = 0
+    module.validate_report(report, expected_duration=60)
+
+
+def test_failed_gate_still_persists_the_merged_report(tmp_path):
+    module = load_script()
+    report = valid_report()
+    report["max_gap_ms"] = 151
+    output = tmp_path / "failed-report.json"
+
+    with pytest.raises(ValueError, match="audio gap"):
+        module.persist_and_validate_report(
+            report,
+            output,
+            expected_duration=600,
+        )
+
+    assert json.loads(output.read_text()) == report
+
+
 def test_merge_separates_steady_and_tls_resource_windows():
     module = load_script()
     report = module.merge_metrics(
         {},
         [
-            resource_sample("steady", 70_000, 33_000),
+            resource_sample("steady", 70_000, 33_000, counter=0),
             resource_sample("tls_burst", 45_000, 20_000),
         ],
     )
@@ -196,6 +260,23 @@ def test_merge_separates_steady_and_tls_resource_windows():
     assert report["hid_generated"] == 1_000
     assert report["hid_queued"] == 1_000
     assert report["hid_queue_failures"] == 0
+
+
+def test_merge_uses_run_deltas_for_cumulative_firmware_counters():
+    module = load_script()
+    baseline = resource_sample("steady", 70_000, 33_000, counter=400)
+    final = resource_sample("tls_burst", 45_000, 20_000, counter=500)
+    baseline["hid"]["queue_failures"] = 8
+    final["hid"]["queue_failures"] = 10
+
+    report = module.merge_metrics({}, [baseline, final])
+
+    assert report["captured_frames"] == 100
+    assert report["source_overruns"] == 10
+    assert report["transport_drops"] == 5
+    assert report["hid_generated"] == 1_000
+    assert report["hid_queued"] == 1_000
+    assert report["hid_queue_failures"] == 2
 
 
 @pytest.mark.parametrize("missing", ["steady", "tls_burst"])
@@ -218,6 +299,7 @@ def test_serial_monitor_uses_one_duplex_descriptor():
         monitor.start()
         device_side.sendall(b"BLE audio sink ready=1\n")
         assert monitor.wait_for("BLE audio sink ready=1", timeout=1)
+        assert "BLE audio sink ready=1" in monitor.lines
         monitor.send(b"HIL MIC START\n")
         assert device_side.recv(64) == b"HIL MIC START\n"
     finally:
@@ -226,15 +308,114 @@ def test_serial_monitor_uses_one_duplex_descriptor():
         device_side.close()
 
 
+def test_serial_monitor_marks_samples_seen_during_tls_as_tls_burst():
+    module = load_script()
+    monitor_side, device_side = socket.socketpair()
+    samples = []
+    tls_active = threading.Event()
+    monitor = module.SerialMonitor(
+        monitor_side.fileno(), samples, tls_active=tls_active
+    )
+    try:
+        monitor.start()
+        tls_active.set()
+        device_side.sendall(
+            b'{"scenario":"steady","audio":{"captured_frames":0}}\n'
+        )
+        assert monitor.wait_for_resource_sample(timeout=1)
+        assert samples[-1]["scenario"] == "tls_burst"
+    finally:
+        monitor.stop()
+        monitor_side.close()
+        device_side.close()
+
+
+def test_serial_monitor_reclassifies_sample_preceding_tls_handshake():
+    module = load_script()
+    monitor_side, device_side = socket.socketpair()
+    samples = []
+    monitor = module.SerialMonitor(monitor_side.fileno(), samples)
+    try:
+        monitor.start()
+        device_side.sendall(
+            b'{"scenario":"steady","audio":{"captured_frames":0}}\n'
+        )
+        assert monitor.wait_for_resource_sample(timeout=1)
+        device_side.sendall(
+            b"I (1234) esp_https_server: performing session handshake\n"
+        )
+        assert monitor.wait_for("performing session handshake", timeout=1)
+        assert samples[-1]["scenario"] == "tls_burst"
+    finally:
+        monitor.stop()
+        monitor_side.close()
+        device_side.close()
+
+
 class FakeSerialMonitor:
-    def __init__(self, fail_stop=False):
+    def __init__(
+        self,
+        fail_stop=False,
+        start_results=None,
+        hid_start_results=None,
+    ):
         self.commands = []
         self.fail_stop = fail_stop
+        self.baseline_waits = 0
+        self.cleanup_waits = 0
+        self.start_results = list(
+            start_results or ["HIL MIC START ACCEPTED"]
+        )
+        self.hid_start_results = list(
+            hid_start_results or ["HIL HID START ACCEPTED"]
+        )
 
     def wait_for(self, pattern, timeout):
-        assert pattern == "BLE audio sink ready=1"
-        assert timeout == 30
+        if pattern == "BLE audio sink ready=1":
+            assert timeout == 30
+            return True
+        raise AssertionError(pattern)
+
+    def wait_for_resource_sample(self, timeout):
+        assert timeout == 2
+        self.baseline_waits += 1
         return True
+
+    def clear_lines(self):
+        pass
+
+    def wait_for_any(self, patterns, timeout):
+        if patterns == (
+            "HIL HID STOP STOPPED",
+            "HIL HID STOP NOOP",
+        ):
+            assert timeout == 1
+            self.cleanup_waits += 1
+            return "HIL HID STOP STOPPED"
+        if patterns == (
+            "HIL MIC STOP ACCEPTED",
+            "HIL MIC STOP REJECTED",
+            "HIL MIC STOP NOOP",
+        ):
+            assert timeout == 1
+            self.cleanup_waits += 1
+            return "HIL MIC STOP NOOP"
+        if patterns == (
+            "HIL HID START ACCEPTED",
+            "HIL HID START REJECTED",
+        ):
+            assert timeout == 1
+            if not self.hid_start_results:
+                return None
+            return self.hid_start_results.pop(0)
+        assert patterns == (
+            "HIL MIC START ACCEPTED",
+            "HIL MIC START REJECTED",
+        )
+        assert timeout == 1
+        if not self.start_results:
+            return None
+        return self.start_results.pop(0)
 
     def send(self, command):
         self.commands.append(command)
@@ -266,10 +447,14 @@ def test_probe_process_always_stops_microphone():
         timeout=40,
     )
     assert result == 0
+    assert monitor.baseline_waits == 1
     assert monitor.commands == [
         b"HIL MIC START\n",
+        b"HIL HID START\n",
+        b"HIL HID STOP\n",
         b"HIL MIC STOP\n",
     ]
+    assert monitor.cleanup_waits == 2
 
 
 def test_probe_timeout_still_stops_microphone():
@@ -281,6 +466,48 @@ def test_probe_timeout_still_stops_microphone():
     assert process.terminated
     assert monitor.commands == [
         b"HIL MIC START\n",
+        b"HIL HID START\n",
+        b"HIL HID STOP\n",
+        b"HIL MIC STOP\n",
+    ]
+
+
+def test_probe_retries_start_until_firmware_accepts_readiness():
+    module = load_script()
+    monitor = FakeSerialMonitor(
+        start_results=[
+            "HIL MIC START REJECTED",
+            "HIL MIC START ACCEPTED",
+        ]
+    )
+    assert (
+        module.run_probe_process(FakeProcess(), monitor, timeout=40) == 0
+    )
+    assert monitor.commands == [
+        b"HIL MIC START\n",
+        b"HIL MIC START\n",
+        b"HIL HID START\n",
+        b"HIL HID STOP\n",
+        b"HIL MIC STOP\n",
+    ]
+
+
+def test_probe_retries_hid_until_keyboard_subscription_is_ready(monkeypatch):
+    module = load_script()
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+    monitor = FakeSerialMonitor(
+        hid_start_results=[
+            "HIL HID START REJECTED",
+            "HIL HID START ACCEPTED",
+        ]
+    )
+
+    assert module.run_probe_process(FakeProcess(), monitor, timeout=40) == 0
+    assert monitor.commands == [
+        b"HIL MIC START\n",
+        b"HIL HID START\n",
+        b"HIL HID START\n",
+        b"HIL HID STOP\n",
         b"HIL MIC STOP\n",
     ]
 

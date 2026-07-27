@@ -13,6 +13,10 @@ int main() {
       "7A100006-"));
   static_assert(std::string_view{kAudioStatusCharacteristicUuid}.starts_with(
       "7A100007-"));
+  assert(audio_frame_duration_ms(AudioSampleRate::hz24000) == 19);
+  assert(audio_frame_duration_ms(AudioSampleRate::hz16000) == 28);
+  assert(audio_frame_samples(AudioSampleRate::hz24000) == 456);
+  assert(audio_frame_samples(AudioSampleRate::hz16000) == 448);
 
   std::array<uint8_t, kAudioPacketBytes24k> packet{};
   std::array<uint8_t, kAudioPayloadBytes24k> payload{};
@@ -26,7 +30,8 @@ int main() {
               .flags = kAudioFlagStart,
               .sequence = 0x1234,
               .rate = AudioSampleRate::hz24000,
-              .duration_ms = kAudioFrameDurationMs},
+              .duration_ms =
+                  audio_frame_duration_ms(AudioSampleRate::hz24000)},
              payload, packet, &written) == AudioProtocolError::none);
   assert(written == kAudioPacketBytes24k);
   assert(packet[0] == 1);
@@ -34,28 +39,31 @@ int main() {
   assert(packet[2] == 0x34);
   assert(packet[3] == 0x12);
   assert(packet[4] == static_cast<uint8_t>(AudioSampleRate::hz24000));
-  assert(packet[5] == 10);
-  assert(packet[6] == 124);
+  assert(packet[5] == 19);
+  assert(packet[6] == 232);
   assert(packet[7] == 0);
   assert(packet[8] == 0);
-  assert(packet[131] == 123);
+  assert(packet[239] == 231);
 
   AudioFrameView decoded{};
   assert(decode_audio_packet(packet, &decoded) == AudioProtocolError::none);
   assert(decoded.header.sequence == 0x1234);
   assert(decoded.header.payload_length == kAudioPayloadBytes24k);
   assert(decoded.payload.size() == kAudioPayloadBytes24k);
-  assert(decoded.payload[123] == 123);
+  assert(decoded.payload[231] == 231);
 
   std::array<uint8_t, kAudioPayloadBytes16k> payload16{};
   std::array<uint8_t, kAudioPacketBytes16k> packet16{};
   assert(encode_audio_packet(
              {.sequence = 0xFFFF,
               .rate = AudioSampleRate::hz16000,
-              .duration_ms = kAudioFrameDurationMs},
+              .duration_ms =
+                  audio_frame_duration_ms(AudioSampleRate::hz16000)},
              payload16, packet16, &written) == AudioProtocolError::none);
   assert(written == kAudioPacketBytes16k);
   assert(packet16[2] == 0xFF && packet16[3] == 0xFF);
+  assert(packet16[5] == 28);
+  assert(packet16[6] == 228 && packet16[7] == 0);
 
   auto malformed = packet16;
   malformed[6] = 85;
@@ -78,14 +86,15 @@ int main() {
          AudioProtocolError::invalid_rate);
 
   auto bad_duration = packet16;
-  bad_duration[5] = 20;
+  bad_duration[5] = 10;
   assert(decode_audio_packet(bad_duration, &decoded) ==
          AudioProtocolError::invalid_duration);
 
   std::array<uint8_t, kAudioPacketBytes16k - 1> short_output{};
   assert(encode_audio_packet(
              {.rate = AudioSampleRate::hz16000,
-              .duration_ms = kAudioFrameDurationMs},
+              .duration_ms =
+                  audio_frame_duration_ms(AudioSampleRate::hz16000)},
              payload16, short_output, &written) ==
          AudioProtocolError::output_too_small);
 

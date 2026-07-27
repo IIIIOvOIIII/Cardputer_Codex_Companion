@@ -12,7 +12,7 @@ func makeAudioFrame(
     bytes[2] = UInt8(sequence & 0xFF)
     bytes[3] = UInt8(sequence >> 8)
     bytes[4] = rate.rawValue
-    bytes[5] = 10
+    bytes[5] = UInt8(rate.durationMilliseconds)
     bytes[6] = UInt8(rate.payloadLength & 0xFF)
     bytes[7] = UInt8(rate.payloadLength >> 8)
     return try AudioWireFrame(data: Data(bytes))
@@ -31,7 +31,7 @@ func testJitterBufferOrdersFramesAndInsertsOneFrameOfSilence() throws {
         }
     }
 
-    assert(jitter.targetDepthMilliseconds == 60)
+    assert(jitter.targetDepthMilliseconds == 114)
     assert(output.count == 2)
     guard case .frame(let first) = output[0] else {
         return assertionFailure("first output must be frame")
@@ -90,5 +90,5 @@ func testJitterBufferFlushesOnStartDiscontinuityAndRateChange() throws {
     ))
     assert(rateChange.didReset)
     assert(jitter.pendingFrameCount == 1)
-    assert(jitter.targetDepthMilliseconds == 80)
+    assert(jitter.targetDepthMilliseconds == 224)
 }

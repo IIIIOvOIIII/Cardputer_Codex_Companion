@@ -85,11 +85,26 @@ uint16_t ble_gap_appearance();
 std::size_t ble_hid_legacy_advertising_payload_bytes(std::string_view name);
 int32_t ble_hid_advertising_duration_ms();
 uint32_t ble_advertising_watchdog_interval_ms();
+uint8_t ble_audio_notify_pipeline_depth();
+uint16_t ble_audio_notify_credit_wait_ms();
+uint32_t ble_audio_notify_min_interval_us();
+constexpr std::size_t ble_audio_notification_allocation_bytes(
+    std::size_t payload_bytes) {
+  constexpr std::size_t kLegacyVhciAttHeadroomBytes =
+      4 + 4 + 5 + 1;  // HCI + L2CAP + largest ATT base + packet type.
+  return kLegacyVhciAttHeadroomBytes + payload_bytes;
+}
+uint16_t ble_audio_preferred_connection_interval_min();
+uint16_t ble_audio_preferred_connection_interval_max();
+uint16_t ble_audio_preferred_connection_latency();
+uint16_t ble_audio_preferred_supervision_timeout();
 uint8_t ble_pairing_io_capability();
 bool ble_pairing_requires_mitm();
 uint32_t ble_pairing_passkey();
 bool ble_pairing_requires_keyboard_input();
 bool ble_pairing_initiates_security_on_connect();
+bool ble_should_initiate_security_on_connect(
+    bool encrypted, bool authenticated);
 bool ble_keyboard_ready_requires_successful_encryption();
 bool ble_keyboard_ready_requires_authenticated_link();
 bool ble_keyboard_ready_requires_input_report_subscription();
@@ -114,7 +129,9 @@ bool ble_should_signal_gatt_database_change(
     bool indicate_enabled);
 bool ble_should_start_advertising(bool connected, bool advertising_active);
 uint32_t ble_stale_link_timeout_ms();
-bool ble_should_reset_stale_link(const BleKeyboardLinkState& state,
+bool ble_should_reset_stale_link(bool gap_connected,
+                                 bool keyboard_ready,
+                                 bool audio_sink_ready,
                                  uint64_t now_ms,
                                  uint64_t state_changed_ms);
 std::vector<uint8_t> encode_product_text_fragment(

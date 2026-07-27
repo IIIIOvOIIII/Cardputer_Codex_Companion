@@ -1,9 +1,11 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
 
+#include "product/audio_protocol.hpp"
 #include "probe/ble_services.hpp"
 
 enum class BleAudioNotifyResult : uint8_t {
@@ -54,7 +56,7 @@ class BleAudioTransport final : public IBleAudioTransport {
       std::span<const uint8_t> frame) override;
   BleAudioSendResult send_status(
       std::span<const uint8_t> status) override;
-  void clear() override {}
+  void clear() override;
   [[nodiscard]] uint32_t transport_drops() const override {
     return transport_drops_;
   }
@@ -62,9 +64,13 @@ class BleAudioTransport final : public IBleAudioTransport {
 
  private:
   BleAudioSendResult map_result(BleAudioNotifyResult result,
-                                bool count_frame);
+                                uint8_t frame_count);
 
   BleAudioNotifier& notifier_;
+  std::array<uint8_t, kAudioPacketBytes24k> pending_{};
+  size_t pending_size_ = 0;
+  size_t pending_frame_size_ = 0;
+  uint8_t pending_frame_count_ = 0;
   uint32_t sent_frames_ = 0;
   uint32_t transport_drops_ = 0;
 };

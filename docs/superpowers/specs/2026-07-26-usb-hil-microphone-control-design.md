@@ -116,3 +116,25 @@ USB physical access is required. The feature introduces no network-reachable
 microphone start path, does not bypass BLE encryption or Companion ownership,
 does not auto-start after reboot or reconnect, and does not change the existing
 physical G0 behavior.
+
+## Concurrent HID Gate Extension
+
+The same physical USB-only parser also accepts the exact command
+`HIL HID START`. When the bonded HID link is fully ready and no prior burst is
+active, firmware schedules exactly 1,000 neutral HID source events at one event
+per 500 ms.
+
+Each event uses HID keyboard usage `0x00` (`NoEvent`) and alternates press and
+release state. It therefore traverses the real fixed-capacity
+`KeyboardProbe` sender queue and `esp_hidd_dev_input_set` path without typing
+characters or shortcuts on the Mac. The existing HID generated, queued,
+overflow, latency, and sender-task stack metrics remain the release evidence;
+the gate does not directly increment or synthesize metric counters.
+
+Firmware emits `HIL HID START ACCEPTED`, `HIL HID START REJECTED`, and
+`HIL HID COMPLETE 1000` acknowledgements. The HIL runner starts the burst only
+after its pre-run resource baseline and microphone-start acknowledgement.
+The existing report gate requires at least 1,000 generated and queued events,
+so short diagnostic runs may finish before the completion line while the final
+30-minute run cannot pass without the full burst. The command is not
+exposed through BLE, Wi-Fi, Web, Companion, or Codex Agent surfaces.

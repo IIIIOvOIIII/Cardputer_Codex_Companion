@@ -51,6 +51,11 @@ int main() {
       },
   };
   model.set_codex("gpt-5.6", "high", true, limits);
+  const uint32_t pet_chrome_revision = model.pet_revision();
+  model.set_heartbeat_age(1);
+  assert(model.pet_revision() == pet_chrome_revision);
+  model.set_pet("rocky", "0123456789abcdef", PetState::working, "ok");
+  assert(model.pet_revision() > pet_chrome_revision);
   const uint32_t runtime_revision = model.revision();
   model.set_mode(InputMode::codex_remote);
   model.set_ble(ServiceState::ok);
@@ -126,7 +131,7 @@ int main() {
   model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
   assert(device.count == 6);
-  assert(device.lines[0] == "VERSION:1.1.0");
+  assert(device.lines[0] == "VERSION:1.1.1");
   assert(device.lines[1] == "PIN:12345678");
   assert(device.lines[2] == "BLE:OK");
   assert(device.lines[3] == "WIFI:OFF");
@@ -136,7 +141,7 @@ int main() {
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
-  assert(joined.find("VERSION:1.1.0") != std::string::npos);
+  assert(joined.find("VERSION:1.1.1") != std::string::npos);
   assert(joined.find("PIN:12345678") != std::string::npos);
   assert(joined.find("********") == std::string::npos);
   assert(joined.find("BLE:OK") != std::string::npos);

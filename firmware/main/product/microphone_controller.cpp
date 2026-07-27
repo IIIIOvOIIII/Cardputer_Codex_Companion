@@ -6,11 +6,19 @@
 #include "product/audio_protocol.hpp"
 #include "product/ima_adpcm.hpp"
 
+#ifdef ESP_PLATFORM
+#include "esp_log.h"
+#endif
+
 namespace {
 
 uint32_t saturating_increment(uint32_t value) {
   return value == std::numeric_limits<uint32_t>::max() ? value : value + 1;
 }
+
+#ifdef ESP_PLATFORM
+constexpr char kMicrophoneTag[] = "microphone";
+#endif
 
 }  // namespace
 
@@ -21,8 +29,10 @@ MicrophoneButtonEvent microphone_button_event(uint32_t held_ms) {
 
 MicrophoneController::MicrophoneController(
     IAudioCapture& capture, IBleAudioTransport& transport,
-    uint16_t initial_sequence)
+    uint16_t initial_sequence, AudioSampleRate preferred_rate)
     : capture_(capture), transport_(transport),
+      state_machine_(preferred_rate),
+      active_rate_(preferred_rate),
       next_sequence_(initial_sequence) {}
 
 void MicrophoneController::publish_state() {
@@ -35,6 +45,7 @@ void MicrophoneController::execute(MicrophoneTransition transition) {
       return;
 
     case MicrophoneCommand::start_capture_24k:
+    case MicrophoneCommand::start_capture_16k:
     case MicrophoneCommand::restart_capture_16k: {
       const bool fallback =
           transition.command == MicrophoneCommand::restart_capture_16k;
@@ -47,10 +58,15 @@ void MicrophoneController::execute(MicrophoneTransition transition) {
         discontinuity_pending_ = true;
       }
       const AudioSampleRate rate =
-          fallback ? AudioSampleRate::hz16000
-                   : AudioSampleRate::hz24000;
+          transition.command == MicrophoneCommand::start_capture_24k
+              ? AudioSampleRate::hz24000
+              : AudioSampleRate::hz16000;
       const AudioCaptureResult result = capture_.start({.rate = rate});
       if (result != AudioCaptureResult::ok) {
+#ifdef ESP_PLATFORM
+        ESP_LOGE(kMicrophoneTag, "capture start failed: result=%u",
+                 static_cast<unsigned>(result));
+#endif
         fail();
         return;
       }
@@ -66,6 +82,7 @@ void MicrophoneController::execute(MicrophoneTransition transition) {
       if (capture_.running()) {
         capture_.stop();
       }
+      transport_.clear();
       if (transition.state == MicrophoneState::stopping) {
         const MicrophoneTransition stopped = state_machine_.apply(
             {.kind = MicrophoneEventKind::capture_stopped});
@@ -141,14 +158,17 @@ bool MicrophoneController::run_once() {
       state == MicrophoneState::live24
           ? AudioSampleRate::hz24000
           : AudioSampleRate::hz16000;
-  const size_t sample_count =
-      rate == AudioSampleRate::hz24000 ? 240U : 160U;
+  const size_t sample_count = audio_frame_samples(rate);
   const AudioCaptureResult capture_result =
       capture_.read_frame(std::span<int16_t>(pcm_.data(), sample_count));
   source_overruns_.store(capture_.overrun_count());
   if (capture_result != AudioCaptureResult::ok) {
     if (capture_result != AudioCaptureResult::timeout &&
         capture_result != AudioCaptureResult::overrun) {
+#ifdef ESP_PLATFORM
+      ESP_LOGE(kMicrophoneTag, "capture read failed: result=%u",
+               static_cast<unsigned>(capture_result));
+#endif
       fail();
     }
     return false;
@@ -164,6 +184,12 @@ bool MicrophoneController::run_once() {
           std::span<uint8_t>(encoded_.data(), payload_size),
           &encoded_size) != ImaAdpcmError::none ||
       encoded_size != payload_size) {
+#ifdef ESP_PLATFORM
+    ESP_LOGE(kMicrophoneTag,
+             "ADPCM encode failed: expected=%u encoded=%u",
+             static_cast<unsigned>(payload_size),
+             static_cast<unsigned>(encoded_size));
+#endif
     fail();
     return false;
   }
@@ -180,11 +206,14 @@ bool MicrophoneController::run_once() {
               .flags = flags,
               .sequence = sequence,
               .rate = rate,
-              .duration_ms = kAudioFrameDurationMs,
+              .duration_ms = audio_frame_duration_ms(rate),
               .payload_length = static_cast<uint16_t>(payload_size),
           },
           std::span<const uint8_t>(encoded_.data(), encoded_size),
           packet_, &packet_size) != AudioProtocolError::none) {
+#ifdef ESP_PLATFORM
+    ESP_LOGE(kMicrophoneTag, "audio packet encode failed");
+#endif
     fail();
     return false;
   }
@@ -204,6 +233,9 @@ bool MicrophoneController::run_once() {
   if (send_result == BleAudioSendResult::not_ready) {
     stop_for_disconnect();
   } else if (send_result == BleAudioSendResult::fatal_failure) {
+#ifdef ESP_PLATFORM
+    ESP_LOGE(kMicrophoneTag, "BLE audio transport fatal failure");
+#endif
     fail();
   }
   return false;
@@ -216,7 +248,6 @@ void MicrophoneController::stop_for_disconnect() {
   execute(transition);
   start_pending_ = false;
   discontinuity_pending_ = false;
-  transport_.clear();
 }
 
 MicrophoneSnapshot MicrophoneController::snapshot() const {

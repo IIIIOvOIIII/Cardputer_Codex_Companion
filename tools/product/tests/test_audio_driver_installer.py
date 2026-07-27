@@ -1,5 +1,6 @@
 import os
 import plistlib
+import stat
 import subprocess
 from pathlib import Path
 
@@ -114,6 +115,17 @@ def test_installer_stages_validated_bundle_and_uninstalls_exact_target(tmp_path)
     )["CFBundleIdentifier"] == (
         "com.lynx.cardputer-codex-microphone.driver"
     )
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert stat.S_IMODE((target / "Contents").stat().st_mode) == 0o755
+    assert stat.S_IMODE(
+        (target / "Contents/Info.plist").stat().st_mode
+    ) == 0o644
+    assert stat.S_IMODE(
+        (
+            target
+            / "Contents/MacOS/CardputerCodexMicrophone"
+        ).stat().st_mode
+    ) == 0o755
     installed_bridge = (
         test_root
         / "Library/PrivilegedHelperTools"
@@ -151,6 +163,10 @@ def test_built_app_contains_only_its_bundled_driver_source():
     )
     subprocess.run([str(BUILD_SCRIPT)], check=True, cwd=ROOT)
     assert APP_DRIVER.is_dir()
+    assert stat.S_IMODE(APP_DRIVER.stat().st_mode) == 0o755
+    assert stat.S_IMODE(
+        (APP_DRIVER / "Contents/Info.plist").stat().st_mode
+    ) == 0o644
     assert APP_HELPER.is_file()
     assert os.access(APP_HELPER, os.X_OK)
     assert APP_BRIDGE.is_file()

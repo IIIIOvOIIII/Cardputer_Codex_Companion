@@ -1,4 +1,5 @@
 @preconcurrency import CoreBluetooth
+import Dispatch
 import Foundation
 import ProductAudio
 
@@ -23,6 +24,8 @@ public enum ProductGATTConnectionAction: Equatable, Sendable {
 public enum ProductGATTContract {
     public static let centralManagerCount = 1
     public static let maximumPeripheralCount = 1
+    public static let callbackQueueQoS: DispatchQoS.QoSClass =
+        .userInteractive
     public static let serviceUUID =
         "7A100001-2C4D-4F20-9F20-434F44455831"
     public static let characteristics: [ProductGATTCharacteristic] = [
@@ -141,7 +144,7 @@ public struct ProductGATTSessionState: Equatable, Sendable {
 
 public enum ProductGATTValueRoute: Equatable, Sendable {
     case unicode
-    case audio(AudioWireFrame)
+    case audio([AudioWireFrame])
     case audioStatus
     case invalidAudio
     case ignored
@@ -156,10 +159,10 @@ public enum ProductGATTValueRouter {
         case .unicodeNotify:
             return .unicode
         case .audioData:
-            guard let frame = try? AudioWireFrame(data: value) else {
+            guard let frames = try? AudioWireFrame.decodeBatch(value) else {
                 return .invalidAudio
             }
-            return .audio(frame)
+            return .audio(frames)
         case .audioStatus:
             return .audioStatus
         case .unicodeControl, .audioControl:
@@ -214,7 +217,14 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         case sinkNotReadyOnly
     }
 
-    private let queue = DispatchQueue(label: "com.lynx.cardputer.gatt")
+    private let queue = DispatchQueue(
+        label: "com.lynx.cardputer.gatt",
+        qos: DispatchQoS(
+            qosClass: ProductGATTContract.callbackQueueQoS,
+            relativePriority: 0
+        ),
+        autoreleaseFrequency: .workItem
+    )
     private weak var delegate: ProductGATTConnectionDelegate?
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?

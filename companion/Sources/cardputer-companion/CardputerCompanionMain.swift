@@ -288,9 +288,27 @@ struct CardputerCompanionMain {
             }
         }
         let baseline = receiver.audioMetrics
-        for elapsed in 0..<duration {
-            try await Task.sleep(for: .seconds(1))
-            if elapsed % 5 == 4 {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let deadline = AudioProbeDeadline(
+            durationSeconds: duration,
+            startedAtNanoseconds: startedAt
+        )
+        var nextReportSecond = 5
+        while true {
+            let remaining = deadline.remainingNanoseconds(
+                at: DispatchTime.now().uptimeNanoseconds
+            )
+            if remaining == 0 {
+                break
+            }
+            try await Task.sleep(
+                for: .nanoseconds(Int64(min(remaining, 1_000_000_000)))
+            )
+            let elapsedSeconds = Int(
+                (DispatchTime.now().uptimeNanoseconds - startedAt)
+                    / 1_000_000_000
+            )
+            if elapsedSeconds >= nextReportSecond {
                 let value = receiver.audioMetrics
                 print(
                     "audio metrics: received=" +
@@ -299,6 +317,8 @@ struct CardputerCompanionMain {
                     "\(value.pipeline.sequenceGaps - baseline.pipeline.sequenceGaps) " +
                     "max_gap_ms=\(value.maximumGapMilliseconds)"
                 )
+                nextReportSecond =
+                    (elapsedSeconds / 5 + 1) * 5
             }
         }
         let metrics = receiver.audioMetrics

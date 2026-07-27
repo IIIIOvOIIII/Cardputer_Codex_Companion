@@ -107,6 +107,20 @@ int main() {
   assert(ble_pairing_passkey() == 123456);
   assert(ble_pairing_requires_keyboard_input());
   assert(ble_pairing_initiates_security_on_connect());
+  assert(ble_should_initiate_security_on_connect(false, false));
+  assert(ble_should_initiate_security_on_connect(true, false));
+  assert(!ble_should_initiate_security_on_connect(true, true));
+  assert(ble_audio_notify_pipeline_depth() == 6);
+  assert(ble_audio_notify_credit_wait_ms() == 60);
+  assert(ble_audio_notify_min_interval_us() == 15'000);
+  assert(ble_audio_notification_allocation_bytes(240) == 254);
+  assert(ble_audio_notification_allocation_bytes(236) == 250);
+  assert(ble_audio_notification_allocation_bytes(240) > 128);
+  assert(ble_audio_notification_allocation_bytes(240) <= 320);
+  assert(ble_audio_preferred_connection_interval_min() == 6);
+  assert(ble_audio_preferred_connection_interval_max() == 12);
+  assert(ble_audio_preferred_connection_latency() == 0);
+  assert(ble_audio_preferred_supervision_timeout() == 400);
   assert(ble_keyboard_ready_requires_successful_encryption());
   assert(ble_keyboard_ready_requires_authenticated_link());
   assert(ble_keyboard_ready_requires_input_report_subscription());
@@ -193,34 +207,16 @@ int main() {
   assert(!ble_should_start_advertising(true, false));
   assert(!ble_should_start_advertising(false, true));
   assert(ble_stale_link_timeout_ms() == 15000);
-  assert(ble_should_reset_stale_link(BleKeyboardLinkState{
-      .gap_connected = true,
-      .encrypted = false,
-      .authenticated = false,
-      .hidd_connected = false,
-      .input_report_subscribed = false,
-  }, 16000, 0));
-  assert(!ble_should_reset_stale_link(BleKeyboardLinkState{
-      .gap_connected = true,
-      .encrypted = true,
-      .authenticated = true,
-      .hidd_connected = true,
-      .input_report_subscribed = true,
-  }, 60000, 0));
-  assert(!ble_should_reset_stale_link(BleKeyboardLinkState{
-      .gap_connected = false,
-      .encrypted = false,
-      .authenticated = false,
-      .hidd_connected = false,
-      .input_report_subscribed = false,
-  }, 60000, 0));
-  assert(!ble_should_reset_stale_link(BleKeyboardLinkState{
-      .gap_connected = true,
-      .encrypted = false,
-      .authenticated = false,
-      .hidd_connected = false,
-      .input_report_subscribed = false,
-  }, 14999, 0));
+  assert(ble_should_reset_stale_link(
+      true, false, false, 16000, 0));
+  assert(!ble_should_reset_stale_link(
+      true, false, true, 16000, 0));
+  assert(!ble_should_reset_stale_link(
+      true, true, false, 60000, 0));
+  assert(!ble_should_reset_stale_link(
+      false, false, false, 60000, 0));
+  assert(!ble_should_reset_stale_link(
+      true, false, false, 14999, 0));
 
   CompanionBindingProof proof{};
   proof.conn_handle = 7;

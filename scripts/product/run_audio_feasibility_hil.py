@@ -38,6 +38,9 @@ REQUIRED_REPORT_FIELDS = {
     "stack_passed",
 }
 FORBIDDEN_CONTENT_KEYS = {"audio", "pcm", "adpcm", "payload", "samples"}
+AUDIO_FRAME_DURATION_MS_BY_RATE = {24_000: 19, 16_000: 28}
+TLS_RESOURCE_SAMPLE_SETTLE_SECONDS = 1.25
+TLS_HANDSHAKE_LOOKBACK_SECONDS = 2.0
 
 
 def validate_duration(duration: int | str) -> int:
@@ -97,6 +100,17 @@ def validate_report(report: dict[str, Any], expected_duration: int) -> None:
     captured = int(report["captured_frames"])
     if captured <= 0:
         raise ValueError("no captured audio frames")
+    received = int(report["received_frames"])
+    duration_ms = AUDIO_FRAME_DURATION_MS_BY_RATE.get(
+        int(report["sample_rate_hz"])
+    )
+    if duration_ms is None:
+        raise ValueError("unsupported sample rate")
+    minimum_continuous_frames = (
+        expected_duration * 1_000 // duration_ms * 99 // 100
+    )
+    if captured < minimum_continuous_frames or received < minimum_continuous_frames:
+        raise ValueError("continuous audio stream ended before the HIL window")
     losses = (
         int(report["source_overruns"])
         + int(report["transport_drops"])
@@ -143,6 +157,15 @@ def validate_report(report: dict[str, Any], expected_duration: int) -> None:
             raise ValueError(message)
 
 
+def persist_and_validate_report(
+    report: dict[str, Any],
+    output: Path,
+    expected_duration: int,
+) -> None:
+    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    validate_report(report, expected_duration=expected_duration)
+
+
 def _parse_json_from_line(line: str) -> dict[str, Any] | None:
     start = line.find("{")
     if start < 0:
@@ -159,12 +182,16 @@ class SerialMonitor:
         self,
         descriptor: int,
         samples: list[dict[str, Any]],
+        tls_active: threading.Event | None = None,
     ) -> None:
         self._descriptor = descriptor
         self._samples = samples
+        self._tls_active = tls_active
         self._stop = threading.Event()
         self._condition = threading.Condition()
         self._lines: list[str] = []
+        self._all_lines: list[str] = []
+        self._recent_samples: list[tuple[float, dict[str, Any]]] = []
         self._thread = threading.Thread(target=self._read, daemon=True)
 
     def start(self) -> None:
@@ -201,6 +228,45 @@ class SerialMonitor:
                     return False
                 self._condition.wait(remaining)
 
+    def wait_for_resource_sample(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                if any(
+                    isinstance(sample.get("audio"), dict)
+                    for sample in self._samples
+                ):
+                    return True
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+
+    def clear_lines(self) -> None:
+        with self._condition:
+            self._lines.clear()
+
+    @property
+    def lines(self) -> list[str]:
+        with self._condition:
+            return list(self._all_lines)
+
+    def wait_for_any(
+        self,
+        patterns: tuple[str, ...],
+        timeout: float,
+    ) -> str | None:
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                for pattern in patterns:
+                    if any(pattern in line for line in self._lines):
+                        return pattern
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self._condition.wait(remaining)
+
     def _read(self) -> None:
         pending = b""
         while not self._stop.is_set():
@@ -221,11 +287,34 @@ class SerialMonitor:
             while b"\n" in pending:
                 raw, pending = pending.split(b"\n", 1)
                 line = raw.decode("utf-8", errors="replace").rstrip("\r")
+                received_at = time.monotonic()
                 value = _parse_json_from_line(line)
                 if value is not None:
+                    if (
+                        self._tls_active is not None
+                        and self._tls_active.is_set()
+                    ):
+                        value["scenario"] = "tls_burst"
                     self._samples.append(value)
+                    self._recent_samples.append((received_at, value))
+                if "performing session handshake" in line:
+                    for sample_at, sample in self._recent_samples:
+                        if (
+                            received_at - sample_at
+                            <= TLS_HANDSHAKE_LOOKBACK_SECONDS
+                        ):
+                            sample["scenario"] = "tls_burst"
+                self._recent_samples = [
+                    (sample_at, sample)
+                    for sample_at, sample in self._recent_samples
+                    if (
+                        received_at - sample_at
+                        <= TLS_HANDSHAKE_LOOKBACK_SECONDS
+                    )
+                ]
                 with self._condition:
                     self._lines.append(line)
+                    self._all_lines.append(line)
                     if len(self._lines) > 128:
                         del self._lines[:-128]
                     self._condition.notify_all()
@@ -242,24 +331,88 @@ def run_probe_process(
             process.terminate()
             process.wait(timeout=5)
             raise TimeoutError("BLE audio sink readiness timed out")
-        monitor.send(b"HIL MIC START\n")
+        if not monitor.wait_for_resource_sample(timeout=2):
+            process.terminate()
+            process.wait(timeout=5)
+            raise TimeoutError("firmware metric baseline timed out")
+        accepted = False
+        for _ in range(10):
+            monitor.clear_lines()
+            monitor.send(b"HIL MIC START\n")
+            response = monitor.wait_for_any(
+                (
+                    "HIL MIC START ACCEPTED",
+                    "HIL MIC START REJECTED",
+                ),
+                timeout=1,
+            )
+            if response == "HIL MIC START ACCEPTED":
+                accepted = True
+                break
+        if not accepted:
+            process.terminate()
+            process.wait(timeout=5)
+            raise TimeoutError("microphone START was not accepted")
+        hid_accepted = False
+        for _ in range(20):
+            monitor.clear_lines()
+            monitor.send(b"HIL HID START\n")
+            hid_response = monitor.wait_for_any(
+                (
+                    "HIL HID START ACCEPTED",
+                    "HIL HID START REJECTED",
+                ),
+                timeout=1,
+            )
+            if hid_response == "HIL HID START ACCEPTED":
+                hid_accepted = True
+                break
+            time.sleep(0.25)
+        if not hid_accepted:
+            process.terminate()
+            process.wait(timeout=5)
+            raise TimeoutError("HID burst was not accepted")
         try:
-            return process.wait(timeout=timeout)
+            return_code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired as error:
             process.terminate()
             process.wait(timeout=5)
             raise TimeoutError("audio probe timed out") from error
+        return return_code
     except BaseException:
         failed = True
         raise
     finally:
-        try:
-            monitor.send(b"HIL MIC STOP\n")
-        except Exception as cleanup_error:
-            if not failed:
-                raise
+        cleanup_errors = []
+        cleanup_commands = (
+            (
+                b"HIL HID STOP\n",
+                ("HIL HID STOP STOPPED", "HIL HID STOP NOOP"),
+            ),
+            (
+                b"HIL MIC STOP\n",
+                (
+                    "HIL MIC STOP ACCEPTED",
+                    "HIL MIC STOP REJECTED",
+                    "HIL MIC STOP NOOP",
+                ),
+            ),
+        )
+        for command, responses in cleanup_commands:
+            try:
+                monitor.clear_lines()
+                monitor.send(command)
+                if monitor.wait_for_any(responses, timeout=1) is None:
+                    raise TimeoutError(
+                        f"no cleanup acknowledgement for {command!r}"
+                    )
+            except Exception as cleanup_error:
+                cleanup_errors.append(cleanup_error)
+        if cleanup_errors and not failed:
+            raise cleanup_errors[0]
+        for cleanup_error in cleanup_errors:
             print(
-                f"warning: microphone STOP failed: {cleanup_error}",
+                f"warning: HIL cleanup failed: {cleanup_error}",
                 file=sys.stderr,
             )
 
@@ -269,23 +422,29 @@ def _exercise_tls(
     duration: int,
     started_at: float,
     stop: threading.Event,
+    active: threading.Event,
 ) -> None:
     for offset in tls_probe_schedule(duration):
         wait_seconds = max(0.0, started_at + offset - time.monotonic())
         if stop.wait(wait_seconds):
             return
-        subprocess.run(
-            [
-                "/usr/bin/curl",
-                "-sk",
-                "--max-time",
-                "5",
-                status_url,
-            ],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        active.set()
+        try:
+            subprocess.run(
+                [
+                    "/usr/bin/curl",
+                    "-sk",
+                    "--max-time",
+                    "5",
+                    status_url,
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        finally:
+            stop.wait(TLS_RESOURCE_SAMPLE_SETTLE_SECONDS)
+            active.clear()
 
 
 def _stack_passed(samples: list[dict[str, Any]]) -> bool:
@@ -300,6 +459,17 @@ def _stack_passed(samples: list[dict[str, Any]]) -> bool:
         >= max(1024, int(task["configured"]) // 5)
         for task in task_rows
     )
+
+
+def _counter_growth(values: list[int]) -> int:
+    if len(values) < 2:
+        return 0
+    total = 0
+    previous = values[0]
+    for current in values[1:]:
+        total += current - previous if current >= previous else current
+        previous = current
+    return total
 
 
 def merge_metrics(
@@ -329,7 +499,11 @@ def merge_metrics(
     ]
     if not tls_samples:
         raise ValueError("no tls_burst firmware resource samples captured")
-    last_audio = audio_rows[-1]
+    def audio_growth(name: str) -> int:
+        return _counter_growth(
+            [int(row.get(name, 0)) for row in audio_rows]
+        )
+
     hid_values = [
         int(sample.get("hid", {}).get("p95_upper_bound_us", 0))
         for sample in resource_samples
@@ -340,18 +514,20 @@ def merge_metrics(
         for sample in resource_samples
         if isinstance(sample.get("hid"), dict)
     ]
-    last_hid = hid_rows[-1] if hid_rows else {}
+    def hid_growth(name: str) -> int:
+        return _counter_growth(
+            [int(row.get(name, 0)) for row in hid_rows]
+        )
+
     report = dict(companion)
     report.update(
         {
-            "captured_frames": int(last_audio.get("captured_frames", 0)),
-            "source_overruns": int(last_audio.get("source_overruns", 0)),
-            "transport_drops": int(last_audio.get("transport_drops", 0)),
-            "hid_generated": int(last_hid.get("generated", 0)),
-            "hid_queued": int(last_hid.get("queued", 0)),
-            "hid_queue_failures": int(
-                last_hid.get("queue_failures", 0)
-            ),
+            "captured_frames": audio_growth("captured_frames"),
+            "source_overruns": audio_growth("source_overruns"),
+            "transport_drops": audio_growth("transport_drops"),
+            "hid_generated": hid_growth("generated"),
+            "hid_queued": hid_growth("queued"),
+            "hid_queue_failures": hid_growth("queue_failures"),
             "hid_p95_us": max(hid_values, default=0),
             "steady_free_internal": min(
                 int(sample.get("free_internal_heap", 0))
@@ -365,10 +541,10 @@ def merge_metrics(
                 int(sample.get("free_internal_heap", 0))
                 for sample in tls_samples
             ),
-            "allocation_failures": max(
+            "allocation_failures": _counter_growth([
                 int(sample.get("allocation_failures", 0))
                 for sample in resource_samples
-            ),
+            ]),
             "stack_passed": _stack_passed(resource_samples),
         }
     )
@@ -400,8 +576,11 @@ def main(argv: list[str] | None = None) -> int:
     companion_metrics = args.output.with_suffix(".companion.json")
     samples: list[dict[str, Any]] = []
     stop = threading.Event()
+    tls_active = threading.Event()
     descriptor = os.open(args.port, os.O_RDWR | os.O_NONBLOCK)
-    monitor = SerialMonitor(descriptor, samples)
+    monitor = SerialMonitor(
+        descriptor, samples, tls_active=tls_active
+    )
     monitor.start()
     print("USB HIL control ready; microphone will start automatically.")
     started_at = time.monotonic()
@@ -417,7 +596,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     tls_probe = threading.Thread(
         target=_exercise_tls,
-        args=(args.device_url, args.duration, started_at, stop),
+        args=(
+            args.device_url,
+            args.duration,
+            started_at,
+            stop,
+            tls_active,
+        ),
         daemon=True,
     )
     tls_probe.start()
@@ -433,14 +618,18 @@ def main(argv: list[str] | None = None) -> int:
         stop.set()
         tls_probe.join(timeout=6)
         monitor.stop()
+        args.output.with_suffix(".serial.log").write_text(
+            "\n".join(monitor.lines) + "\n"
+        )
         os.close(descriptor)
     if return_code != 0:
         raise SystemExit(f"audio probe exited with {return_code}")
     companion_report = json.loads(companion_metrics.read_text())
     report = merge_metrics(companion_report, samples)
-    validate_report(report, expected_duration=args.duration)
-    args.output.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n"
+    persist_and_validate_report(
+        report,
+        args.output,
+        expected_duration=args.duration,
     )
     print(f"PASS: {args.output}")
     return 0

@@ -60,10 +60,13 @@ class FakeCaptureBackend final : public AudioCaptureBackend {
 }  // namespace
 
 int main() {
+  assert(audio_capture_read_timeout_ms(24000) == 100);
+  assert(audio_capture_read_timeout_ms(16000) == 100);
+
   FakeCaptureBackend backend;
   PdmAudioCapture capture(backend);
 
-  std::array<int16_t, 240> frame24{};
+  std::array<int16_t, 456> frame24{};
   assert(capture.read_frame(frame24) == AudioCaptureResult::not_started);
   assert(backend.read_calls == 0);
 
@@ -74,17 +77,17 @@ int main() {
   assert(!backend.speaker_running());
   assert(backend.prepare_calls == 1);
   assert(backend.prepared_rate_hz == 24000);
-  assert(backend.prepared_maximum_samples == 240);
+  assert(backend.prepared_maximum_samples == 456);
   assert(backend.enable_calls == 1);
 
-  std::array<int16_t, 160> wrong_frame{};
+  std::array<int16_t, 448> wrong_frame{};
   assert(capture.read_frame(wrong_frame) ==
          AudioCaptureResult::invalid_frame_size);
   assert(backend.read_calls == 0);
 
   assert(capture.read_frame(frame24) == AudioCaptureResult::ok);
   assert(frame24.front() == 0);
-  assert(frame24.back() == 239);
+  assert(frame24.back() == 455);
   assert(backend.read_calls == 1);
   assert(backend.prepare_calls == 1);
 
@@ -114,7 +117,7 @@ int main() {
   assert(backend.speaker_stop_calls == 1);
   assert(backend.prepare_calls == 2);
   assert(backend.prepared_rate_hz == 16000);
-  assert(backend.prepared_maximum_samples == 240);
+  assert(backend.prepared_maximum_samples == 448);
   assert(capture.read_frame(wrong_frame) == AudioCaptureResult::ok);
 
   assert(capture.stop() == AudioCaptureResult::ok);

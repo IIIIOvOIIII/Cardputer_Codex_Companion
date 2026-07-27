@@ -139,6 +139,10 @@ trap cleanup EXIT
 /usr/bin/ditto "$source_driver" "$staged_driver"
 /bin/cp "$source_bridge" "$staged_bridge"
 /bin/cp "$source_launchd" "$staged_launchd"
+/usr/bin/find "$staged_driver" -type d -exec /bin/chmod 0755 {} +
+/usr/bin/find "$staged_driver" -type f -exec /bin/chmod 0644 {} +
+/bin/chmod 0755 \
+  "$staged_driver/Contents/MacOS/CardputerCodexMicrophone"
 /bin/chmod 0755 "$staged_bridge"
 /bin/chmod 0644 "$staged_launchd"
 validate_driver "$staged_driver"

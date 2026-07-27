@@ -12,6 +12,8 @@ struct AudioCaptureConfig {
   AudioSampleRate rate = AudioSampleRate::hz24000;
 };
 
+uint32_t audio_capture_read_timeout_ms(uint32_t rate_hz);
+
 enum class AudioCaptureResult : uint8_t {
   ok,
   not_started,
@@ -61,7 +63,7 @@ class PdmAudioCapture final : public IAudioCapture {
   }
 
  private:
-  static constexpr size_t kMaximumFrameSamples = 240;
+  static constexpr size_t kMaximumFrameSamples = 456;
 
   std::unique_ptr<AudioCaptureBackend> owned_backend_{};
   AudioCaptureBackend* backend_ = nullptr;

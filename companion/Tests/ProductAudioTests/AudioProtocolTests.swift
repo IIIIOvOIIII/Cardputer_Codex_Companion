@@ -8,13 +8,13 @@ func testParsesBothCommittedPacketSizesAndFields() throws {
     assert(frame24.sequence == 65_535)
     assert(frame24.sampleRate == .hz24000)
     assert(frame24.flags == [.start])
-    assert(frame24.payload.count == 124)
+    assert(frame24.payload.count == 232)
 
     let frame16 = try AudioWireFrame(data: fixture.packet(named: "16khz"))
     assert(frame16.sequence == 0)
     assert(frame16.sampleRate == .hz16000)
     assert(frame16.flags == [.degradedRate])
-    assert(frame16.payload.count == 84)
+    assert(frame16.payload.count == 228)
 }
 
 func testRejectsMalformedFieldsBeforeCodecUse() throws {
@@ -30,6 +30,37 @@ func testRejectsMalformedFieldsBeforeCodecUse() throws {
             data: fixture.invalidPacket(named: "unsupported_version")
         )
     }
+}
+
+func testParsesTwoFramesFromOneGattNotification() throws {
+    let fixture = try AudioFixture.load()
+    var notification = try fixture.packet(named: "24khz")
+    notification.append(try fixture.packet(named: "16khz"))
+
+    let frames = try AudioWireFrame.decodeBatch(notification)
+
+    assert(frames.count == 2)
+    assert(frames[0].sequence == 65_535)
+    assert(frames[1].sequence == 0)
+    assert(frames[0].sampleRate == .hz24000)
+    assert(frames[1].sampleRate == .hz16000)
+}
+
+func testParsesMaximumAdaptiveGattBatches() throws {
+    let fixture = try AudioFixture.load()
+    let packet24 = try fixture.packet(named: "24khz")
+    let packet16 = try fixture.packet(named: "16khz")
+    let notification24 = (0..<3).reduce(into: Data()) { value, _ in
+        value.append(packet24)
+    }
+    let notification16 = (0..<5).reduce(into: Data()) { value, _ in
+        value.append(packet16)
+    }
+
+    let frames24 = try AudioWireFrame.decodeBatch(notification24)
+    let frames16 = try AudioWireFrame.decodeBatch(notification16)
+    assert(frames24.count == 3)
+    assert(frames16.count == 5)
 }
 
 func expectThrows<Expected: Error & Equatable>(

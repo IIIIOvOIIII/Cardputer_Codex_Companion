@@ -74,6 +74,9 @@ xcrun --sdk macosx clang \
   -framework CoreAudio \
   -framework CoreFoundation \
   -o "$executable"
+find "$bundle" -type d -exec chmod 0755 {} +
+find "$bundle" -type f -exec chmod 0644 {} +
+chmod 0755 "$executable"
 codesign --force --sign - "$bundle"
 codesign --verify --strict "$bundle"
 

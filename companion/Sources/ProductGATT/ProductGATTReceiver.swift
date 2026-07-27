@@ -35,7 +35,7 @@ public struct ProductGATTAudioLinkStatus: Equatable, Sendable {
     public var protocolNegotiated = false
     public var audioReady = false
     public var protocolVersion = 1
-    public var preferredSampleRateHertz = 24_000
+    public var preferredSampleRateHertz = 16_000
 
     public init() {}
 }
@@ -173,8 +173,10 @@ extension ProductGATTReceiver: ProductGATTConnectionDelegate {
         ) {
         case .unicode:
             receiveUnicode(value)
-        case .audio(let frame):
-            receiveAudio(frame)
+        case .audio(let frames):
+            for frame in frames {
+                receiveAudio(frame)
+            }
         case .invalidAudio:
             metricsLock.lock()
             metricsStorage.parseErrors &+= 1

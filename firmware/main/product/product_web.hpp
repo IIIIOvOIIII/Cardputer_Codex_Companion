@@ -13,7 +13,7 @@
 
 enum class ProductHttpMethod : uint8_t { get, post, put, delete_ };
 inline constexpr bool kProductWebUsesTls = true;
-inline constexpr std::size_t kProductWebTaskStackBytes = 7168;
+inline constexpr std::size_t kProductWebTaskStackBytes = 4864;
 inline constexpr uint64_t kProductWebTlsCleanupWindowUs = 5'000'000;
 inline constexpr std::size_t kProductWebPinLength = 8;
 

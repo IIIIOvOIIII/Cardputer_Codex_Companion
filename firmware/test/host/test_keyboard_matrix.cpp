@@ -4,7 +4,7 @@
 #include "product/keyboard_matrix.hpp"
 
 int main() {
-  assert(kKeyboardScannerTaskStackBytes == 3840);
+  assert(kKeyboardScannerTaskStackBytes == 3328);
 
   assert(matrix_key_id(0, 0) == 43);  // selector 0, input 0 -> row 3 col 1
   assert(matrix_key_id(3, 6) == 13);  // selector 3, input 6 -> row 0 col 13

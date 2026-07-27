@@ -7,13 +7,7 @@
 namespace {
 
 size_t frame_samples(AudioSampleRate rate) {
-  switch (rate) {
-    case AudioSampleRate::hz24000:
-      return 240;
-    case AudioSampleRate::hz16000:
-      return 160;
-  }
-  return 0;
+  return audio_frame_samples(rate);
 }
 
 uint32_t sample_rate_hz(AudioSampleRate rate) {
@@ -31,6 +25,10 @@ uint32_t saturating_increment(uint32_t value) {
 }
 
 }  // namespace
+
+uint32_t audio_capture_read_timeout_ms(uint32_t rate_hz) {
+  return rate_hz == 16000 || rate_hz == 24000 ? 100U : 0U;
+}
 
 PdmAudioCapture::PdmAudioCapture(AudioCaptureBackend& backend)
     : backend_(&backend) {}
@@ -59,7 +57,7 @@ AudioCaptureResult PdmAudioCapture::start(AudioCaptureConfig config) {
     return AudioCaptureResult::speaker_active;
   }
   AudioCaptureResult result =
-      backend_->prepare(rate_hz, kMaximumFrameSamples);
+      backend_->prepare(rate_hz, samples);
   if (result != AudioCaptureResult::ok) {
     return result;
   }
@@ -114,9 +112,12 @@ AudioCaptureResult PdmAudioCapture::stop() {
 
 #include "M5Unified.h"
 #include "driver/i2s_pdm.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
 namespace {
+
+constexpr char kAudioCaptureTag[] = "audio-capture";
 
 class EspPdmCaptureBackend final : public AudioCaptureBackend {
  public:
@@ -138,20 +139,36 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
   }
 
   AudioCaptureResult prepare(uint32_t rate_hz,
-                             size_t maximum_samples) override {
+                             size_t frame_samples) override {
     if (rate_hz != 16000 && rate_hz != 24000) {
       return AudioCaptureResult::invalid_rate;
     }
-    if (maximum_samples != 240) {
+    if (frame_samples != 448 && frame_samples != 456) {
       return AudioCaptureResult::invalid_frame_size;
+    }
+    if (enabled_) {
+      ESP_LOGE(kAudioCaptureTag, "i2s reconfigure requested while enabled");
+      return AudioCaptureResult::backend_error;
+    }
+    if (channel_ != nullptr &&
+        (configured_rate_hz_ != rate_hz ||
+         configured_frame_samples_ != frame_samples)) {
+      i2s_del_channel(channel_);
+      channel_ = nullptr;
+      configured_rate_hz_ = 0;
+      configured_frame_samples_ = 0;
     }
     if (channel_ == nullptr) {
       i2s_chan_config_t channel_config =
           I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
       channel_config.dma_desc_num = 4;
       channel_config.dma_frame_num =
-          static_cast<uint32_t>(maximum_samples);
-      if (i2s_new_channel(&channel_config, nullptr, &channel_) != ESP_OK) {
+          static_cast<uint32_t>(frame_samples);
+      const esp_err_t create_result =
+          i2s_new_channel(&channel_config, nullptr, &channel_);
+      if (create_result != ESP_OK) {
+        ESP_LOGE(kAudioCaptureTag, "i2s_new_channel failed: %s",
+                 esp_err_to_name(create_result));
         channel_ = nullptr;
         return AudioCaptureResult::backend_error;
       }
@@ -166,7 +183,11 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
                   .invert_flags = {.clk_inv = false},
               },
       };
-      if (i2s_channel_init_pdm_rx_mode(channel_, &config) != ESP_OK) {
+      const esp_err_t init_result =
+          i2s_channel_init_pdm_rx_mode(channel_, &config);
+      if (init_result != ESP_OK) {
+        ESP_LOGE(kAudioCaptureTag, "i2s PDM init failed: %s",
+                 esp_err_to_name(init_result));
         i2s_del_channel(channel_);
         channel_ = nullptr;
         return AudioCaptureResult::backend_error;
@@ -177,28 +198,31 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
           .on_sent = nullptr,
           .on_send_q_ovf = nullptr,
       };
-      if (i2s_channel_register_event_callback(
-              channel_, &callbacks, this) != ESP_OK) {
+      const esp_err_t callback_result =
+          i2s_channel_register_event_callback(channel_, &callbacks, this);
+      if (callback_result != ESP_OK) {
+        ESP_LOGE(kAudioCaptureTag, "i2s callback registration failed: %s",
+                 esp_err_to_name(callback_result));
         i2s_del_channel(channel_);
         channel_ = nullptr;
         return AudioCaptureResult::backend_error;
       }
       configured_rate_hz_ = rate_hz;
+      configured_frame_samples_ = frame_samples;
       return AudioCaptureResult::ok;
-    }
-    if (configured_rate_hz_ != rate_hz) {
-      i2s_pdm_rx_clk_config_t clock =
-          I2S_PDM_RX_CLK_DEFAULT_CONFIG(rate_hz);
-      if (i2s_channel_reconfig_pdm_rx_clock(channel_, &clock) != ESP_OK) {
-        return AudioCaptureResult::backend_error;
-      }
-      configured_rate_hz_ = rate_hz;
     }
     return AudioCaptureResult::ok;
   }
 
   AudioCaptureResult enable() override {
-    if (channel_ == nullptr || i2s_channel_enable(channel_) != ESP_OK) {
+    if (channel_ == nullptr) {
+      ESP_LOGE(kAudioCaptureTag, "i2s enable requested without channel");
+      return AudioCaptureResult::backend_error;
+    }
+    const esp_err_t result = i2s_channel_enable(channel_);
+    if (result != ESP_OK) {
+      ESP_LOGE(kAudioCaptureTag, "i2s enable failed: %s",
+               esp_err_to_name(result));
       return AudioCaptureResult::backend_error;
     }
     enabled_ = true;
@@ -216,11 +240,18 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
     const size_t bytes_requested = samples.size_bytes();
     const esp_err_t result =
         i2s_channel_read(channel_, samples.data(), bytes_requested,
-                         &bytes_read, pdMS_TO_TICKS(25));
+                         &bytes_read,
+                         pdMS_TO_TICKS(audio_capture_read_timeout_ms(
+                             configured_rate_hz_)));
     if (result == ESP_ERR_TIMEOUT) {
       return AudioCaptureResult::timeout;
     }
     if (result != ESP_OK || bytes_read != bytes_requested) {
+      ESP_LOGE(kAudioCaptureTag,
+               "i2s read failed: result=%s requested=%u read=%u",
+               esp_err_to_name(result),
+               static_cast<unsigned>(bytes_requested),
+               static_cast<unsigned>(bytes_read));
       return AudioCaptureResult::backend_error;
     }
     return AudioCaptureResult::ok;
@@ -251,6 +282,7 @@ class EspPdmCaptureBackend final : public AudioCaptureBackend {
 
   i2s_chan_handle_t channel_ = nullptr;
   uint32_t configured_rate_hz_ = 0;
+  size_t configured_frame_samples_ = 0;
   std::atomic<uint32_t> pending_overruns_{0};
   bool enabled_ = false;
 };

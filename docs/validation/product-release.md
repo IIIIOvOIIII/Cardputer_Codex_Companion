@@ -59,7 +59,7 @@ runs on Cardputer while the Mac Companion, BLE HID/GATT, Wi-Fi, HTTPS Web
 control, Codex status synchronization, reconnect cases, latency and resource
 telemetry are exercised together.
 
-For release 1.1.0, that soak additionally requires the installed
+For release 1.1.1, that soak additionally requires the installed
 `Cardputer Codex Microphone`, physical G0 start/stop, continuous Core Audio
 consumption, Core Audio/Companion restart recovery, and proof that disconnect
 or reboot never resumes capture.

@@ -203,7 +203,7 @@ esp_netif_t* g_ap_netif = nullptr;
 std::array<char, 16> g_ipv4{"0.0.0.0"};
 std::array<char, 13> g_ap_password{};
 StaticTask_t g_wifi_task_storage{};
-std::array<StackType_t, 3072> g_wifi_task_stack{};
+std::array<StackType_t, 2304> g_wifi_task_stack{};
 
 void notify(WifiState state, const char* detail) {
   if (g_handler != nullptr) {

@@ -41,7 +41,9 @@ public struct AudioJitterBuffer: Sendable {
     }
 
     public var targetDepthMilliseconds: Int {
-        targetDepthFrames * 10
+        targetDepthFrames *
+            (activeRate?.durationMilliseconds ??
+             AudioSampleRate.hz24000.durationMilliseconds)
     }
 
     public var pendingFrameCount: Int {

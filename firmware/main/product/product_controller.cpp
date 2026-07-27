@@ -32,13 +32,11 @@ void ProductController::start() {
 #include <array>
 #include <cinttypes>
 #include <cstdio>
-#include <fcntl.h>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 
 #include "M5Unified.h"
 #include "esp_heap_caps.h"
@@ -48,6 +46,7 @@ void ProductController::start() {
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "probe/ble_services.hpp"
@@ -76,6 +75,7 @@ constexpr std::size_t kMacroQueueDepth = 16;
 constexpr std::size_t kSettingsQueueDepth = 4;
 constexpr std::size_t kMicrophoneQueueDepth = 8;
 constexpr char kSettingsNvsNamespace[] = "product";
+constexpr UBaseType_t kAudioTaskPriority = tskIDLE_PRIORITY + 6;
 
 struct MacroInvocation {
   uint8_t layer = 0;
@@ -165,11 +165,11 @@ std::array<uint8_t,
     g_microphone_queue_buffer{};
 QueueHandle_t g_microphone_queue = nullptr;
 StaticTask_t g_macro_task_storage{};
-std::array<StackType_t, 2048> g_macro_task_stack{};
+std::array<StackType_t, 1920> g_macro_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
 StaticTask_t g_audio_task_storage{};
-std::array<StackType_t, 4096> g_audio_task_stack{};
+std::array<StackType_t, 3584> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_macro_task_handle = nullptr;
 TaskHandle_t g_ui_task_handle = nullptr;
@@ -192,6 +192,7 @@ std::unique_ptr<IAudioCapture> g_audio_capture;
 std::unique_ptr<IBleAudioTransport> g_audio_transport;
 std::unique_ptr<MicrophoneController> g_microphone;
 HilSerialCommandParser g_hil_serial_parser;
+HilHidBurst g_hil_hid_burst;
 
 class SemaphoreLock {
  public:
@@ -262,6 +263,12 @@ void emit_runtime_metrics(uint64_t now_us) {
       "{\"name\":\"ui\",\"configured\":%zu,"
       "\"high_water_free_bytes\":%u},"
       "{\"name\":\"https\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"pet-upload\",\"configured\":%u,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"ble-watchdog\",\"configured\":%u,"
+      "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"wifi-state\",\"configured\":%u,"
       "\"high_water_free_bytes\":%u}]}\n",
       scenario.data(),
       now_us,
@@ -297,7 +304,16 @@ void emit_runtime_metrics(uint64_t now_us) {
           task_stack_free_bytes(g_ui_task_handle)),
       kProductWebTaskStackBytes,
       static_cast<unsigned>(
-          task_stack_free_bytes(xTaskGetHandle("httpd"))));
+          task_stack_free_bytes(xTaskGetHandle("httpd"))),
+      7552U,
+      static_cast<unsigned>(
+          task_stack_free_bytes(xTaskGetHandle("pet-upload"))),
+      1920U,
+      static_cast<unsigned>(
+          task_stack_free_bytes(xTaskGetHandle("ble-watchdog"))),
+      2304U,
+      static_cast<unsigned>(
+          task_stack_free_bytes(xTaskGetHandle("wifi-state"))));
   std::fflush(stdout);
 }
 
@@ -811,13 +827,24 @@ void enqueue_microphone_event(MicrophoneRuntimeEvent event,
 
 void poll_hil_serial_control() {
   std::array<uint8_t, 32> input{};
-  const ssize_t count =
-      read(STDIN_FILENO, input.data(), input.size());
-  if (count <= 0) return;
-  for (ssize_t index = 0; index < count; ++index) {
+  const uint32_t count =
+      usb_serial_jtag_ll_read_rxfifo(input.data(), input.size());
+  for (uint32_t index = 0; index < count; ++index) {
     const HilMicrophoneCommand command =
         g_hil_serial_parser.consume(input[static_cast<std::size_t>(index)]);
     if (command == HilMicrophoneCommand::none) continue;
+    if (command == HilMicrophoneCommand::hid_start) {
+      const bool accepted = g_hil_hid_burst.start(
+          g_keyboard.has_value() && ble_keyboard_ready());
+      std::printf("HIL HID START %s\n",
+                  accepted ? "ACCEPTED" : "REJECTED");
+      continue;
+    }
+    if (command == HilMicrophoneCommand::hid_stop) {
+      std::printf("HIL HID STOP %s\n",
+                  g_hil_hid_burst.stop() ? "STOPPED" : "NOOP");
+      continue;
+    }
     const MicrophoneState state =
         g_microphone == nullptr
             ? MicrophoneState::unavailable
@@ -836,6 +863,18 @@ void poll_hil_serial_control() {
             : command == HilMicrophoneCommand::start ? "REJECTED"
                                                      : "NOOP";
     std::printf("HIL MIC %s %s\n", action, result);
+  }
+}
+
+void advance_hil_hid_burst() {
+  if (!g_hil_hid_burst.active() || !g_keyboard.has_value()) return;
+  const auto event = g_hil_hid_burst.next(
+      static_cast<uint64_t>(esp_timer_get_time()));
+  if (!event.has_value()) return;
+  g_keyboard->enqueue_stable_key_event(*event);
+  if (!g_hil_hid_burst.active()) {
+    std::printf("HIL HID COMPLETE %u\n",
+                static_cast<unsigned>(g_hil_hid_burst.generated()));
   }
 }
 
@@ -876,7 +915,6 @@ void audio_task(void*) {
   uint64_t warmup_ends_ms = 0;
   uint64_t window_started_ms = 0;
   MicrophoneSnapshot window_baseline{};
-  uint8_t consecutive_missing = 0;
   while (true) {
     MicrophoneRuntimeEvent event;
     while (g_microphone_queue != nullptr &&
@@ -919,28 +957,12 @@ void audio_task(void*) {
       warmup_ends_ms = now_ms + 2000;
       window_started_ms = warmup_ends_ms;
       window_baseline = after;
-      consecutive_missing = 0;
     }
     if (live && active) {
-      const bool frame_missing =
-          after.captured_frames == before.captured_frames ||
-          after.transport_drops != before.transport_drops;
-      consecutive_missing =
-          frame_missing
-              ? static_cast<uint8_t>(
-                    std::min<unsigned>(10, consecutive_missing + 1))
-              : 0;
-      if (consecutive_missing >= 10) {
-        g_microphone->on_loss_window(false);
-        g_microphone->on_loss_window(false);
-        after = g_microphone->snapshot();
-        consecutive_missing = 0;
-        warmup_ends_ms = now_ms + 2000;
-        window_started_ms = warmup_ends_ms;
-        window_baseline = after;
-      } else if (now_ms >= warmup_ends_ms &&
-                 now_ms - window_started_ms >= 5000) {
-        constexpr uint32_t kExpectedFrames = 500;
+      if (now_ms >= warmup_ends_ms &&
+          now_ms - window_started_ms >= 5000) {
+        const uint32_t expected_frames =
+            5000U / audio_frame_duration_ms(after.active_rate);
         const uint32_t captured =
             after.captured_frames - window_baseline.captured_frames;
         const uint32_t transport_lost =
@@ -948,17 +970,22 @@ void audio_task(void*) {
         const uint32_t source_lost =
             after.source_overruns - window_baseline.source_overruns;
         const uint32_t schedule_lost =
-            captured < kExpectedFrames ? kExpectedFrames - captured : 0;
+            captured < expected_frames ? expected_frames - captured : 0;
         const uint32_t lost =
             std::max(source_lost, schedule_lost) + transport_lost;
+        const MicrophoneState evaluated_state = after.state;
         g_microphone->on_loss_window(
-            static_cast<uint64_t>(lost) * 100U <= kExpectedFrames);
+            static_cast<uint64_t>(lost) * 100U <= expected_frames);
         after = g_microphone->snapshot();
-        window_started_ms = now_ms;
+        if (after.state != evaluated_state) {
+          warmup_ends_ms = now_ms + 2000;
+          window_started_ms = warmup_ends_ms;
+        } else {
+          window_started_ms = now_ms;
+        }
         window_baseline = after;
       }
     } else if (!live) {
-      consecutive_missing = 0;
       warmup_ends_ms = 0;
       window_started_ms = 0;
     }
@@ -1088,6 +1115,7 @@ void ui_task(void*) {
   while (true) {
     M5.update();
     poll_hil_serial_control();
+    advance_hil_hid_burst();
     const uint64_t button_now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
     if (M5.BtnA.wasPressed()) {
@@ -1385,7 +1413,7 @@ class EspProductStartup final : public ProductStartupBackend {
             *g_audio_capture, *g_audio_transport);
         g_audio_task_handle = xTaskCreateStatic(
             audio_task, "product-audio", g_audio_task_stack.size(), nullptr,
-            tskIDLE_PRIORITY + 2, g_audio_task_stack.data(),
+            kAudioTaskPriority, g_audio_task_stack.data(),
             &g_audio_task_storage);
         if (g_microphone == nullptr || g_audio_task_handle == nullptr) {
           result = ESP_ERR_NO_MEM;
@@ -1465,9 +1493,6 @@ class EspProductStartup final : public ProductStartupBackend {
       heap_caps_free(g_runtime_heap_reserve);
       g_runtime_heap_reserve = nullptr;
     }
-    if (!display_prepare_pet_frame_buffer()) {
-      ESP_LOGW(kTag, "pet frame buffer unavailable; using row stream");
-    }
     g_ui_task_handle = xTaskCreateStatic(
         ui_task, "product-ui", g_ui_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 1, g_ui_task_stack.data(), &g_ui_task_storage);
@@ -1507,11 +1532,6 @@ void product_runtime_start() {
       g_companion_mutex == nullptr) {
     ESP_LOGE(kTag, "runtime mutex initialization failed");
     return;
-  }
-  const int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-  if (stdin_flags < 0 ||
-      fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK) < 0) {
-    ESP_LOGW(kTag, "USB HIL serial input could not be non-blocking");
   }
   static EspProductStartup startup;
   static ProductController controller(startup);

@@ -37,8 +37,8 @@ def test_audio_fixture_validates_without_errors(audio_fixture):
 def test_audio_fixture_covers_exact_packet_sizes(audio_fixture):
     packets = {item["name"]: item for item in audio_fixture["packets"]}
 
-    assert len(bytes.fromhex(packets["24khz"]["packet_hex"])) == 132
-    assert len(bytes.fromhex(packets["16khz"]["packet_hex"])) == 92
+    assert len(bytes.fromhex(packets["24khz"]["packet_hex"])) == 240
+    assert len(bytes.fromhex(packets["16khz"]["packet_hex"])) == 236
 
 
 def test_audio_fixture_covers_sequence_wrap(audio_fixture):

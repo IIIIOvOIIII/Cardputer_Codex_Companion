@@ -5,7 +5,7 @@
 
 int main() {
   assert(kProductWebUsesTls);
-  assert(kProductWebTaskStackBytes == 7168);
+  assert(kProductWebTaskStackBytes == 4864);
   assert(kProductWebTlsCleanupWindowUs == 5'000'000);
   assert(product_web_resource_scenario(0) == "steady");
   assert(product_web_resource_scenario(1) == "tls_burst");

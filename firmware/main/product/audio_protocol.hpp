@@ -12,10 +12,35 @@ inline constexpr char kAudioStatusCharacteristicUuid[] =
     "7A100007-2C4D-4F20-9F20-434F44455831";
 
 inline constexpr uint8_t kAudioProtocolVersion = 1;
-inline constexpr uint8_t kAudioFrameDurationMs = 10;
+
+enum class AudioSampleRate : uint8_t {
+  hz24000 = 1,
+  hz16000 = 2,
+};
+
+constexpr uint8_t audio_frame_duration_ms(AudioSampleRate rate) {
+  switch (rate) {
+    case AudioSampleRate::hz24000:
+      return 19;
+    case AudioSampleRate::hz16000:
+      return 28;
+  }
+  return 0;
+}
+
+constexpr size_t audio_frame_samples(AudioSampleRate rate) {
+  switch (rate) {
+    case AudioSampleRate::hz24000:
+      return 456;
+    case AudioSampleRate::hz16000:
+      return 448;
+  }
+  return 0;
+}
+
 inline constexpr size_t kAudioFrameHeaderBytes = 8;
-inline constexpr size_t kAudioPayloadBytes24k = 124;
-inline constexpr size_t kAudioPayloadBytes16k = 84;
+inline constexpr size_t kAudioPayloadBytes24k = 232;
+inline constexpr size_t kAudioPayloadBytes16k = 228;
 inline constexpr size_t kAudioPacketBytes24k =
     kAudioFrameHeaderBytes + kAudioPayloadBytes24k;
 inline constexpr size_t kAudioPacketBytes16k =
@@ -27,17 +52,12 @@ inline constexpr uint8_t kAudioFlagDegradedRate = 1U << 2U;
 inline constexpr uint8_t kAudioFlagMask =
     kAudioFlagStart | kAudioFlagDiscontinuity | kAudioFlagDegradedRate;
 
-enum class AudioSampleRate : uint8_t {
-  hz24000 = 1,
-  hz16000 = 2,
-};
-
 struct AudioFrameHeader {
   uint8_t version = kAudioProtocolVersion;
   uint8_t flags = 0;
   uint16_t sequence = 0;
   AudioSampleRate rate = AudioSampleRate::hz24000;
-  uint8_t duration_ms = kAudioFrameDurationMs;
+  uint8_t duration_ms = audio_frame_duration_ms(rate);
   uint16_t payload_length = 0;
 };
 

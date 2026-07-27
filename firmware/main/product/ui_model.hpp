@@ -73,6 +73,9 @@ class UiModel {
   void navigate(UiNavAction action);
   void return_to_pet();
   [[nodiscard]] uint32_t revision() const { return revision_; }
+  [[nodiscard]] uint32_t pet_revision() const {
+    return pet_revision_;
+  }
   [[nodiscard]] std::string runtime_text() const;
   [[nodiscard]] UiPage page() const { return page_; }
   [[nodiscard]] uint8_t scroll_offset() const { return scroll_offset_; }
@@ -137,4 +140,5 @@ class UiModel {
   uint8_t settings_selected_ = 0;
   uint8_t settings_scroll_ = 0;
   uint32_t revision_ = 0;
+  uint32_t pet_revision_ = 0;
 };

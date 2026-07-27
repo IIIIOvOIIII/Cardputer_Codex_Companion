@@ -6,8 +6,22 @@ public enum AudioSampleRate: UInt8, Sendable {
 
     public var payloadLength: Int {
         switch self {
-        case .hz24000: 124
-        case .hz16000: 84
+        case .hz24000: 232
+        case .hz16000: 228
+        }
+    }
+
+    public var durationMilliseconds: Int {
+        switch self {
+        case .hz24000: 19
+        case .hz16000: 28
+        }
+    }
+
+    public var sampleCount: Int {
+        switch self {
+        case .hz24000: 456
+        case .hz16000: 448
         }
     }
 }
@@ -39,7 +53,6 @@ public enum AudioProtocolError: Error, Equatable, Sendable {
 public struct AudioWireFrame: Equatable, Sendable {
     public static let protocolVersion: UInt8 = 1
     public static let headerLength = 8
-
     public let flags: AudioFrameFlags
     public let sequence: UInt16
     public let sampleRate: AudioSampleRate
@@ -60,7 +73,7 @@ public struct AudioWireFrame: Equatable, Sendable {
         guard let rate = AudioSampleRate(rawValue: bytes[4]) else {
             throw AudioProtocolError.invalidRate
         }
-        guard bytes[5] == 10 else {
+        guard bytes[5] == rate.durationMilliseconds else {
             throw AudioProtocolError.invalidDuration
         }
         let declaredLength = Int(bytes[6]) | (Int(bytes[7]) << 8)
@@ -73,5 +86,29 @@ public struct AudioWireFrame: Equatable, Sendable {
         sequence = UInt16(bytes[2]) | (UInt16(bytes[3]) << 8)
         sampleRate = rate
         payload = Data(bytes[Self.headerLength...])
+    }
+
+    public static func decodeBatch(_ data: Data) throws -> [AudioWireFrame] {
+        guard !data.isEmpty else {
+            throw AudioProtocolError.packetTooShort
+        }
+        var frames: [AudioWireFrame] = []
+        var offset = 0
+        while offset < data.count {
+            guard data.count - offset >= Self.headerLength else {
+                throw AudioProtocolError.packetTooShort
+            }
+            let declaredLength =
+                Int(data[offset + 6]) | (Int(data[offset + 7]) << 8)
+            let packetLength = Self.headerLength + declaredLength
+            guard packetLength <= data.count - offset else {
+                throw AudioProtocolError.payloadLength
+            }
+            frames.append(try AudioWireFrame(
+                data: data.subdata(in: offset..<(offset + packetLength))
+            ))
+            offset += packetLength
+        }
+        return frames
     }
 }

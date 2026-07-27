@@ -5,6 +5,7 @@
 #include <dispatch/dispatch.h>
 #include <fcntl.h>
 #include <mach/mach_time.h>
+#include <os/log.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -251,6 +252,11 @@ static bool authorize_producer(xpc_connection_t connection) {
   char team_id[128] = {0};
   CardputerAudioIPCPeer peer = {0};
   if (!peer_identity(connection, bundle_id, team_id, &peer)) {
+    os_log_error(
+        OS_LOG_DEFAULT,
+        "Cardputer audio producer identity lookup failed: pid=%d uid=%u",
+        xpc_connection_get_pid(connection),
+        (unsigned)xpc_connection_get_euid(connection));
     return false;
   }
   const CardputerAudioIPCPolicy policy = {
@@ -260,7 +266,18 @@ static bool authorize_producer(xpc_connection_t connection) {
       .development = CARDPUTER_AUDIO_DEVELOPMENT != 0,
       .require_apple_platform = false,
   };
-  return cardputer_audio_ipc_authorize(&policy, &peer);
+  const bool authorized = cardputer_audio_ipc_authorize(&policy, &peer);
+  if (!authorized) {
+    os_log_error(
+        OS_LOG_DEFAULT,
+        "Cardputer audio producer rejected: bundle=%{public}s "
+        "team=%{public}s uid=%u adhoc=%d",
+        bundle_id,
+        team_id,
+        (unsigned)peer.effective_uid,
+        peer.ad_hoc);
+  }
+  return authorized;
 }
 
 static bool authorize_consumer(xpc_connection_t connection) {

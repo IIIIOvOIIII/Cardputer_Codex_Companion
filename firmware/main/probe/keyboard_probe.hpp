@@ -16,7 +16,7 @@
 #include "freertos/task.h"
 #endif
 
-inline constexpr uint32_t kHidSenderTaskStackBytes = 2048;
+inline constexpr uint32_t kHidSenderTaskStackBytes = 3072;
 
 class KeyboardReportSink {
  public:

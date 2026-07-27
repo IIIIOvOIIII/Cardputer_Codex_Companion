@@ -39,11 +39,11 @@ class FakeAudioNotifier final : public BleAudioNotifier {
 int main() {
   FakeAudioNotifier notifier;
   BleAudioTransport transport(notifier);
-  std::array<uint8_t, 132> frame{};
+  std::array<uint8_t, 240> frame{};
 
   assert(transport.try_send(frame) == BleAudioSendResult::sent);
   assert(notifier.frame_calls == 1);
-  assert(notifier.last_size == 132);
+  assert(notifier.last_size == 240);
   assert(transport.sent_frames() == 1);
   assert(transport.transport_drops() == 0);
 
@@ -53,22 +53,32 @@ int main() {
   assert(transport.sent_frames() == 1);
   assert(transport.transport_drops() == 1);
 
-  notifier.next_result = BleAudioNotifyResult::transient_failure;
-  assert(transport.try_send(frame) == BleAudioSendResult::dropped);
-  assert(notifier.frame_calls == 3);
-  assert(transport.transport_drops() == 2);
+  notifier.next_result = BleAudioNotifyResult::sent;
+  assert(transport.try_send(frame) == BleAudioSendResult::sent);
+  transport.clear();
+  assert(transport.try_send(frame) == BleAudioSendResult::sent);
+  assert(notifier.frame_calls == 4);
+  transport.clear();
 
   notifier.ready = false;
-  notifier.next_result = BleAudioNotifyResult::sent;
   assert(transport.try_send(frame) == BleAudioSendResult::not_ready);
-  assert(notifier.frame_calls == 3);
-  assert(transport.transport_drops() == 3);
+  assert(notifier.frame_calls == 4);
+  assert(transport.transport_drops() == 2);
 
   notifier.ready = true;
   notifier.next_result = BleAudioNotifyResult::fatal_failure;
   assert(transport.try_send(frame) == BleAudioSendResult::fatal_failure);
-  assert(notifier.frame_calls == 4);
-  assert(transport.transport_drops() == 4);
+  assert(notifier.frame_calls == 5);
+  assert(transport.transport_drops() == 3);
+
+  FakeAudioNotifier fallback_notifier;
+  BleAudioTransport fallback_transport(fallback_notifier);
+  std::array<uint8_t, 236> fallback_frame{};
+  assert(fallback_transport.try_send(fallback_frame) ==
+         BleAudioSendResult::sent);
+  assert(fallback_notifier.frame_calls == 1);
+  assert(fallback_notifier.last_size == 236);
+  assert(fallback_transport.sent_frames() == 1);
 
   std::array<uint8_t, 12> status{};
   notifier.ready = false;
@@ -77,7 +87,7 @@ int main() {
   assert(transport.send_status(status) == BleAudioSendResult::sent);
   assert(notifier.status_calls == 1);
   assert(notifier.last_size == 12);
-  assert(transport.sent_frames() == 1);
+  assert(transport.sent_frames() == 3);
 
   const BleKeyboardLinkState hid_ready{
       .gap_connected = true,

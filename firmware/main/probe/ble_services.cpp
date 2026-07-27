@@ -15,6 +15,13 @@ constexpr int32_t kBleHidAdvertisingDurationMs =
     std::numeric_limits<int32_t>::max();
 constexpr uint32_t kBleAdvertisingWatchdogIntervalMs = 5000;
 constexpr uint32_t kBleStaleLinkTimeoutMs = 15000;
+constexpr uint8_t kBleAudioNotifyPipelineDepth = 6;
+constexpr uint16_t kBleAudioNotifyCreditWaitMs = 60;
+constexpr uint32_t kBleAudioNotifyMinIntervalUs = 15'000;
+constexpr uint16_t kBleAudioConnectionIntervalMin = 6;
+constexpr uint16_t kBleAudioConnectionIntervalMax = 12;
+constexpr uint16_t kBleAudioConnectionLatency = 0;
+constexpr uint16_t kBleAudioSupervisionTimeout = 400;
 constexpr uint8_t kBlePairingIoCapability = 2;
 constexpr bool kBlePairingRequiresMitm = true;
 constexpr uint32_t kBlePairingPasskey = 123456;
@@ -82,6 +89,34 @@ uint32_t ble_advertising_watchdog_interval_ms() {
   return kBleAdvertisingWatchdogIntervalMs;
 }
 
+uint8_t ble_audio_notify_pipeline_depth() {
+  return kBleAudioNotifyPipelineDepth;
+}
+
+uint16_t ble_audio_notify_credit_wait_ms() {
+  return kBleAudioNotifyCreditWaitMs;
+}
+
+uint32_t ble_audio_notify_min_interval_us() {
+  return kBleAudioNotifyMinIntervalUs;
+}
+
+uint16_t ble_audio_preferred_connection_interval_min() {
+  return kBleAudioConnectionIntervalMin;
+}
+
+uint16_t ble_audio_preferred_connection_interval_max() {
+  return kBleAudioConnectionIntervalMax;
+}
+
+uint16_t ble_audio_preferred_connection_latency() {
+  return kBleAudioConnectionLatency;
+}
+
+uint16_t ble_audio_preferred_supervision_timeout() {
+  return kBleAudioSupervisionTimeout;
+}
+
 uint8_t ble_pairing_io_capability() {
   return kBlePairingIoCapability;
 }
@@ -100,6 +135,12 @@ bool ble_pairing_requires_keyboard_input() {
 
 bool ble_pairing_initiates_security_on_connect() {
   return kBlePairingInitiatesSecurityOnConnect;
+}
+
+bool ble_should_initiate_security_on_connect(
+    bool encrypted, bool authenticated) {
+  return ble_pairing_initiates_security_on_connect() &&
+         !(encrypted && authenticated);
 }
 
 bool ble_keyboard_ready_requires_successful_encryption() {
@@ -196,11 +237,14 @@ uint32_t ble_stale_link_timeout_ms() {
   return kBleStaleLinkTimeoutMs;
 }
 
-bool ble_should_reset_stale_link(const BleKeyboardLinkState& state,
+bool ble_should_reset_stale_link(bool gap_connected,
+                                 bool keyboard_ready,
+                                 bool audio_sink_ready,
                                  uint64_t now_ms,
                                  uint64_t state_changed_ms) {
-  return state.gap_connected &&
-         !ble_keyboard_ready_from_state(state) &&
+  return gap_connected &&
+         !audio_sink_ready &&
+         !keyboard_ready &&
          now_ms - state_changed_ms >= ble_stale_link_timeout_ms();
 }
 
@@ -283,6 +327,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
@@ -294,6 +339,7 @@ std::vector<uint8_t> encode_product_text_fragment(
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
 #include "nimble/ble.h"
+#include "host/ble_esp_gap.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "nvs.h"
@@ -344,15 +390,21 @@ std::atomic<bool> g_audio_status_subscribed{false};
 std::atomic<bool> g_audio_companion_bound{false};
 std::atomic<bool> g_audio_encrypted{false};
 std::atomic<bool> g_last_audio_sink_ready{false};
+std::atomic<uint32_t> g_audio_notify_credit_timeouts{0};
+std::atomic<uint32_t> g_audio_notify_allocation_failures{0};
+std::atomic<uint32_t> g_audio_notify_stack_failures{0};
+std::atomic<uint64_t> g_audio_last_notify_started_us{0};
 std::atomic<bool> g_gatt_database_change_pending{false};
 uint16_t g_hid_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 std::atomic<uint64_t> g_hid_state_changed_ms{0};
+StaticSemaphore_t g_audio_notify_credit_storage{};
+SemaphoreHandle_t g_audio_notify_credits = nullptr;
 uint16_t g_pending_passkey_conn = BLE_HS_CONN_HANDLE_NONE;
 uint32_t g_pending_passkey_value = 0;
 uint8_t g_pending_passkey_count = 0;
 ble_uuid16_t g_hid_service_uuid = BLE_UUID16_INIT(0x1812);
 StaticTask_t g_ble_watchdog_storage{};
-std::array<StackType_t, 3072> g_ble_watchdog_stack{};
+std::array<StackType_t, 1920> g_ble_watchdog_stack{};
 TaskHandle_t g_ble_watchdog_task = nullptr;
 
 const ble_uuid128_t kServiceUuid = BLE_UUID128_INIT(
@@ -404,6 +456,18 @@ BleAudioSubscriptionState current_audio_subscription_state() {
   };
 }
 
+void reset_audio_notify_credits(bool enabled) {
+  g_audio_last_notify_started_us.store(0);
+  if (g_audio_notify_credits == nullptr) return;
+  while (xSemaphoreTake(g_audio_notify_credits, 0) == pdTRUE) {
+  }
+  if (!enabled) return;
+  for (uint8_t index = 0;
+       index < ble_audio_notify_pipeline_depth(); ++index) {
+    (void)xSemaphoreGive(g_audio_notify_credits);
+  }
+}
+
 void publish_audio_sink_ready_if_changed() {
   const bool ready =
       ble_audio_sink_ready_from_state(current_audio_subscription_state());
@@ -417,6 +481,7 @@ void publish_audio_sink_ready_if_changed() {
 }
 
 void reset_audio_link_state() {
+  reset_audio_notify_credits(false);
   g_audio_data_subscribed.store(false);
   g_audio_status_subscribed.store(false);
   g_audio_companion_bound.store(false);
@@ -718,12 +783,11 @@ void ble_reconnect_watchdog_task(void*) {
   while (true) {
     const bool advertising_active = ble_gap_adv_active();
     const bool connected = g_hid_gap_connected.load();
-    const bool ready = g_hid_ready.load();
     const uint64_t current_ms = now_ms();
     const uint64_t changed_ms = g_hid_state_changed_ms.load();
-    if (connected && !ready &&
-        current_ms - changed_ms >= ble_stale_link_timeout_ms() &&
-        !g_hid_ready.load()) {
+    if (ble_should_reset_stale_link(
+            connected, g_hid_ready.load(), ble_audio_sink_ready(),
+            current_ms, changed_ms)) {
       ESP_LOGW(kTag, "terminating stale HID link for reconnect");
       if (g_hid_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gap_terminate(g_hid_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
@@ -750,12 +814,46 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       }
       g_hid_conn_handle = event->connect.conn_handle;
       reset_audio_link_state();
+      {
+        const ble_gap_upd_params params{
+            .itvl_min =
+                ble_audio_preferred_connection_interval_min(),
+            .itvl_max =
+                ble_audio_preferred_connection_interval_max(),
+            .latency = ble_audio_preferred_connection_latency(),
+            .supervision_timeout =
+                ble_audio_preferred_supervision_timeout(),
+            .min_ce_len = 0,
+            .max_ce_len = 0,
+        };
+        rc = ble_gap_update_params(event->connect.conn_handle, &params);
+        ESP_LOGI(kTag, "audio connection parameters requested: rc=%d", rc);
+        rc = ble_hs_hci_util_set_data_len(
+            event->connect.conn_handle, 251, 2120);
+        ESP_LOGI(kTag, "audio data length requested: rc=%d", rc);
+        rc = ble_gap_set_prefered_le_phy(
+            event->connect.conn_handle,
+            BLE_GAP_LE_PHY_2M_MASK,
+            BLE_GAP_LE_PHY_2M_MASK,
+            BLE_GAP_LE_PHY_CODED_ANY);
+        ESP_LOGI(kTag, "audio 2M PHY requested: rc=%d", rc);
+      }
       g_hid_state = ble_keyboard_state_after_gap_connected(g_hid_state);
       mark_hid_state_changed();
       publish_hid_ready_if_changed("gap-connect");
-      if (ble_pairing_initiates_security_on_connect()) {
-        rc = ble_gap_security_initiate(event->connect.conn_handle);
-        ESP_LOGI(kTag, "HID GAP security initiate: rc=%d", rc);
+      {
+        rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+        const bool encrypted =
+            rc == 0 && desc.sec_state.encrypted;
+        const bool authenticated =
+            rc == 0 && desc.sec_state.authenticated;
+        if (ble_should_initiate_security_on_connect(
+                encrypted, authenticated)) {
+          rc = ble_gap_security_initiate(event->connect.conn_handle);
+          ESP_LOGI(kTag, "HID GAP security initiate: rc=%d", rc);
+        } else {
+          ESP_LOGI(kTag, "HID GAP security already restored");
+        }
       }
       return 0;
     case BLE_GAP_EVENT_DISCONNECT:
@@ -827,7 +925,9 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         return 0;
       }
       if (event->subscribe.attr_handle == g_audio_data_handle) {
-        g_audio_data_subscribed.store(event->subscribe.cur_notify != 0);
+        const bool subscribed = event->subscribe.cur_notify != 0;
+        g_audio_data_subscribed.store(subscribed);
+        reset_audio_notify_credits(subscribed);
         publish_audio_sink_ready_if_changed();
         return 0;
       }
@@ -838,6 +938,13 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
       g_hid_state.input_report_subscribed = event->subscribe.cur_notify != 0;
       mark_hid_state_changed();
       publish_hid_ready_if_changed("hid-subscribe");
+      return 0;
+    case BLE_GAP_EVENT_NOTIFY_TX:
+      if (event->notify_tx.attr_handle == g_audio_data_handle &&
+          event->notify_tx.indication == 0 &&
+          g_audio_notify_credits != nullptr) {
+        (void)xSemaphoreGive(g_audio_notify_credits);
+      }
       return 0;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
       rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
@@ -977,6 +1084,20 @@ void ble_hidd_event_callback(
   }
 }
 
+void pace_audio_notification() {
+  uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
+  const uint64_t last_us = g_audio_last_notify_started_us.load();
+  const uint64_t earliest_us =
+      last_us + ble_audio_notify_min_interval_us();
+  if (last_us != 0 && now_us < earliest_us) {
+    const uint64_t wait_us = earliest_us - now_us;
+    vTaskDelay(pdMS_TO_TICKS(
+        static_cast<uint32_t>((wait_us + 999) / 1000)));
+    now_us = static_cast<uint64_t>(esp_timer_get_time());
+  }
+  g_audio_last_notify_started_us.store(now_us);
+}
+
 }  // namespace
 
 esp_err_t load_or_create_device_id(DeviceId* device_id) {
@@ -1030,6 +1151,14 @@ esp_err_t initialize_ble(
     esp_hidd_dev_t** hid_device) {
   if (hid_device == nullptr || !device_id_is_valid(device_id)) {
     return ESP_ERR_INVALID_ARG;
+  }
+  if (g_audio_notify_credits == nullptr) {
+    g_audio_notify_credits = xSemaphoreCreateCountingStatic(
+        ble_audio_notify_pipeline_depth(), 0,
+        &g_audio_notify_credit_storage);
+  }
+  if (g_audio_notify_credits == nullptr) {
+    return ESP_ERR_NO_MEM;
   }
 
   std::copy(device_id.begin(), device_id.end(), g_device_id.begin());
@@ -1238,15 +1367,61 @@ esp_err_t notify_audio_frame(std::span<const uint8_t> frame) {
       frame.empty() || frame.size() > UINT16_MAX) {
     return ESP_ERR_INVALID_STATE;
   }
-  os_mbuf* payload = ble_hs_mbuf_from_flat(
-      frame.data(), static_cast<uint16_t>(frame.size()));
-  if (payload == nullptr) {
+  pace_audio_notification();
+  if (g_audio_notify_credits == nullptr ||
+      xSemaphoreTake(g_audio_notify_credits,
+                     pdMS_TO_TICKS(
+                         ble_audio_notify_credit_wait_ms())) != pdTRUE) {
+    const uint32_t failures =
+        g_audio_notify_credit_timeouts.fetch_add(1) + 1;
+    if (failures <= 8) {
+      ESP_LOGW(kTag, "audio notify credit timeout count=%u",
+               static_cast<unsigned>(failures));
+    }
+    return ESP_ERR_TIMEOUT;
+  }
+  const std::size_t allocation_bytes =
+      ble_audio_notification_allocation_bytes(frame.size());
+  os_mbuf* payload = os_msys_get_pkthdr(
+      static_cast<uint16_t>(allocation_bytes), 0);
+  constexpr std::size_t kLegacyVhciAttHeadroomBytes =
+      ble_audio_notification_allocation_bytes(0);
+  if (payload == nullptr ||
+      OS_MBUF_TRAILINGSPACE(payload) < allocation_bytes) {
+    os_mbuf_free_chain(payload);
+    (void)xSemaphoreGive(g_audio_notify_credits);
+    const uint32_t failures =
+        g_audio_notify_allocation_failures.fetch_add(1) + 1;
+    if (failures <= 8) {
+      ESP_LOGW(kTag, "audio notify mbuf allocation failed count=%u",
+               static_cast<unsigned>(failures));
+    }
+    return ESP_ERR_NO_MEM;
+  }
+  payload->om_data += kLegacyVhciAttHeadroomBytes;
+  if (os_mbuf_append(payload, frame.data(),
+                     static_cast<uint16_t>(frame.size())) != 0) {
+    os_mbuf_free_chain(payload);
+    (void)xSemaphoreGive(g_audio_notify_credits);
+    const uint32_t failures =
+        g_audio_notify_allocation_failures.fetch_add(1) + 1;
+    if (failures <= 8) {
+      ESP_LOGW(kTag, "audio notify mbuf append failed count=%u",
+               static_cast<unsigned>(failures));
+    }
     return ESP_ERR_NO_MEM;
   }
   const int rc = ble_gatts_notify_custom(
       g_bound_conn, g_audio_data_handle, payload);
   if (rc == 0) {
     return ESP_OK;
+  }
+  (void)xSemaphoreGive(g_audio_notify_credits);
+  const uint32_t failures =
+      g_audio_notify_stack_failures.fetch_add(1) + 1;
+  if (failures <= 8) {
+    ESP_LOGW(kTag, "audio notify stack failure rc=%d count=%u",
+             rc, static_cast<unsigned>(failures));
   }
   return rc == BLE_HS_ENOMEM || rc == BLE_HS_EBUSY
              ? ESP_ERR_NO_MEM

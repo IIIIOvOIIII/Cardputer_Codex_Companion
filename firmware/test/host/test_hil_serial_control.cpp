@@ -25,6 +25,10 @@ int main() {
          HilMicrophoneCommand::start);
   assert(feed(parser, "HIL MIC STOP\r\n") ==
          HilMicrophoneCommand::stop);
+  assert(feed(parser, "HIL HID START\n") ==
+         HilMicrophoneCommand::hid_start);
+  assert(feed(parser, "HIL HID STOP\n") ==
+         HilMicrophoneCommand::hid_stop);
   assert(feed(parser, "HIL MIC START") ==
          HilMicrophoneCommand::none);
   assert(feed(parser, "\n") == HilMicrophoneCommand::start);
@@ -34,6 +38,31 @@ int main() {
          HilMicrophoneCommand::none);
   assert(feed(parser, "HIL MIC STOP\n") ==
          HilMicrophoneCommand::stop);
+
+  HilHidBurst hid_burst;
+  assert(!hid_burst.start(false));
+  assert(hid_burst.start(true));
+  assert(!hid_burst.start(true));
+  assert(hid_burst.stop());
+  assert(!hid_burst.active());
+  assert(!hid_burst.stop());
+  assert(hid_burst.start(true));
+  for (uint16_t index = 0; index < kHilHidBurstEvents; ++index) {
+    const uint64_t due =
+        1'000 + static_cast<uint64_t>(index) * kHilHidBurstIntervalUs;
+    const auto event = hid_burst.next(due);
+    assert(event.has_value());
+    assert(event->physical_key == 0);
+    assert(event->pressed == (index % 2 == 0));
+    assert(event->stable_at_us == due);
+    if (index + 1 < kHilHidBurstEvents) {
+      assert(!hid_burst.next(due + kHilHidBurstIntervalUs - 1)
+                  .has_value());
+    }
+  }
+  assert(!hid_burst.active());
+  assert(hid_burst.generated() == kHilHidBurstEvents);
+  assert(!hid_burst.next(2'001).has_value());
 
   assert(hil_microphone_event(HilMicrophoneCommand::start,
                               MicrophoneState::ready) ==

@@ -56,16 +56,101 @@ def test_product_release_uses_product_ble_gap_name():
     assert 'CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="Cardputer Codex"' in defaults
 
 
-def test_pet_display_uses_only_a_single_rgb565_row():
+def test_product_release_suppresses_per_packet_nimble_info_logs():
+    defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y" in defaults
+
+
+def test_product_release_uses_usb_serial_jtag_as_bidirectional_console():
+    defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
+        encoding="utf-8"
+    )
+    controller = (
+        REPO_ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y" in defaults
+    assert "CONFIG_ESP_CONSOLE_SECONDARY_NONE=y" in defaults
+    assert "CONFIG_LIBC_STDIN_LINE_ENDING_LF=y" in defaults
+    assert "usb_serial_jtag_ll_read_rxfifo" in controller
+    assert "read(STDIN_FILENO" not in controller
+
+
+def test_product_release_mtu_fits_one_unfragmented_audio_frame():
+    defaults = (REPO_ROOT / "firmware/sdkconfig.defaults").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247" in defaults
+    assert "CONFIG_BT_NIMBLE_LEGACY_VHCI_ENABLE=y" in defaults
+    assert "CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=24" in defaults
+    assert "CONFIG_BT_NIMBLE_MSYS_1_BLOCK_SIZE=128" in defaults
+    assert "CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=24" in defaults
+    assert "CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=320" in defaults
+
+
+def test_audio_notifications_allocate_directly_from_the_large_mbuf_pool():
+    services = (
+        REPO_ROOT / "firmware/main/probe/ble_services.cpp"
+    ).read_text(encoding="utf-8")
+    start = services.index(
+        "esp_err_t notify_audio_frame(std::span<const uint8_t> frame)"
+    )
+    end = services.index(
+        "esp_err_t notify_audio_status", start
+    )
+    audio_notify = services[start:end]
+
+    assert "os_msys_get_pkthdr" in audio_notify
+    assert "ble_audio_notification_allocation_bytes" in audio_notify
+    assert "ble_hs_mbuf_from_flat" not in audio_notify
+
+
+def test_audio_notifications_are_paced_before_allocating_mbufs():
+    services = (
+        REPO_ROOT / "firmware/main/probe/ble_services.cpp"
+    ).read_text(encoding="utf-8")
+    start = services.index(
+        "esp_err_t notify_audio_frame(std::span<const uint8_t> frame)"
+    )
+    end = services.index("esp_err_t notify_audio_status", start)
+    audio_notify = services[start:end]
+
+    pace = audio_notify.index("pace_audio_notification();")
+    allocate = audio_notify.index("os_msys_get_pkthdr")
+    notify = audio_notify.index("ble_gatts_notify_custom")
+    assert pace < allocate < notify
+
+
+def test_pet_display_streams_one_lcd_window_without_a_full_frame_buffer():
     display = (
         REPO_ROOT / "firmware/main/product/display.cpp"
     ).read_text(encoding="utf-8")
 
+    assert "display_prepare_pet_frame_buffer" not in display
     assert "g_pet_frame" not in display
-    assert (
-        "pushImage(kPetX, kPetY + static_cast<int32_t>(row)," in display
+    assert "M5.Display.setAddrWindow(" in display
+    assert "M5.Display.writePixels(" in display
+    assert "kPetFrameWidth, 1" in display
+    assert "stream.next_row == kPetFrameHeight" in display
+
+
+def test_status_pages_restore_body_cursor_after_header_microphone():
+    display = (
+        REPO_ROOT / "firmware/main/product/display.cpp"
+    ).read_text(encoding="utf-8")
+
+    microphone = display.index(
+        "draw_microphone_status(model, kBackground);"
     )
-    assert "kPetFrameWidth, 1, pixels.data()" in display
+    body_cursor = display.index("M5.Display.setCursor(0, 20);", microphone)
+    content = display.index(
+        "const UiPageContent content = model.page_content();"
+    )
+    assert microphone < body_cursor < content
 
 
 def test_product_runtime_uses_measured_static_stack_budgets():
@@ -74,17 +159,53 @@ def test_product_runtime_uses_measured_static_stack_budgets():
     ).read_text(encoding="utf-8")
 
     assert (
-        "std::array<StackType_t, 2048> g_macro_task_stack{};"
+        "std::array<StackType_t, 1920> g_macro_task_stack{};"
         in controller
     )
     assert (
-        "std::array<StackType_t, 2048> g_audio_task_stack{};"
+        "std::array<StackType_t, 3584> g_audio_task_stack{};"
         in controller
     )
     assert (
         "std::array<StackType_t, 4096> g_ui_task_stack{};"
         in controller
     )
+    assert 'xTaskGetHandle("pet-upload")' in controller
+    assert 'xTaskGetHandle("ble-watchdog")' in controller
+    assert 'xTaskGetHandle("wifi-state")' in controller
+    assert "constexpr uint32_t kHidSenderTaskStackBytes = 3072;" in (
+        REPO_ROOT / "firmware/main/probe/keyboard_probe.hpp"
+    ).read_text(encoding="utf-8")
+    assert "std::array<StackType_t, 1920> g_ble_watchdog_stack{};" in (
+        REPO_ROOT / "firmware/main/probe/ble_services.cpp"
+    ).read_text(encoding="utf-8")
+    assert "std::array<StackType_t, 2304> g_wifi_task_stack{};" in (
+        REPO_ROOT / "firmware/main/product/wifi_manager.cpp"
+    ).read_text(encoding="utf-8")
+    assert "std::array<StackType_t, 7552> upload_task_stack{};" in (
+        REPO_ROOT / "firmware/main/product/pet_store.cpp"
+    ).read_text(encoding="utf-8")
+
+
+def test_audio_capture_preempts_https_tls_work():
+    controller = (
+        REPO_ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "constexpr UBaseType_t kAudioTaskPriority = tskIDLE_PRIORITY + 6;" in controller
+    assert (
+        'audio_task, "product-audio", g_audio_task_stack.size(), nullptr,\n'
+        "            kAudioTaskPriority,"
+    ) in controller
+
+
+def test_microphone_fallback_uses_complete_loss_windows_only():
+    controller = (
+        REPO_ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "consecutive_missing" not in controller
+    assert controller.count("g_microphone->on_loss_window(") == 1
 
 
 def test_wifi_cfg_partition_is_optional_for_wrong_or_generic_flash_layouts():

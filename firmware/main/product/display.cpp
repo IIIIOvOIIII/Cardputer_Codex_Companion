@@ -18,11 +18,25 @@ constexpr int32_t kPetY = 20;
 constexpr int32_t kPetWidth = 96;
 constexpr int32_t kPetHeight = 104;
 
-bool draw_pet_row(
-    void*, std::size_t row,
+struct PetFrameStream {
+  std::size_t next_row{0};
+};
+
+bool stream_pet_row(
+    void* context, std::size_t row,
     std::span<const uint16_t, kPetFrameWidth> pixels) {
-  M5.Display.pushImage(kPetX, kPetY + static_cast<int32_t>(row),
-                       kPetFrameWidth, 1, pixels.data());
+  auto* stream = static_cast<PetFrameStream*>(context);
+  if (stream == nullptr || row != stream->next_row ||
+      row >= kPetFrameHeight) {
+    return false;
+  }
+  M5.Display.startWrite();
+  M5.Display.setAddrWindow(
+      kPetX, kPetY + static_cast<int32_t>(row),
+      kPetFrameWidth, 1);
+  M5.Display.writePixels(pixels.data(), kPetFrameWidth, true);
+  M5.Display.endWrite();
+  ++stream->next_row;
   return true;
 }
 
@@ -165,6 +179,9 @@ void display_render_page(const UiModel& model) {
   }
   begin_page(page_title(model.page()));
   draw_microphone_status(model, kBackground);
+  M5.Display.setTextColor(kForeground, kBackground);
+  M5.Display.setTextSize(kDisplayBodyTextSize);
+  M5.Display.setCursor(0, 20);
   const UiPageContent content = model.page_content();
   const uint8_t visible = model.page() == UiPage::settings ? 5 : 6;
   const uint8_t end = std::min<uint8_t>(
@@ -185,14 +202,13 @@ void display_render_page(const UiModel& model) {
 
 bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
-  M5.Display.startWrite();
   const bool previous_swap = M5.Display.getSwapBytes();
   M5.Display.setSwapBytes(true);
+  PetFrameStream stream;
   const bool decoded =
-      store.decode_rows(state, frame_index, draw_pet_row, nullptr);
+      store.decode_rows(state, frame_index, stream_pet_row, &stream);
   M5.Display.setSwapBytes(previous_swap);
-  M5.Display.endWrite();
-  return decoded;
+  return decoded && stream.next_row == kPetFrameHeight;
 }
 
 void display_render_placeholder(PetState state) {

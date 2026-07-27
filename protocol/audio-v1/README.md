@@ -1,9 +1,9 @@
 # Cardputer Codex Audio Protocol v1
 
-Audio v1 carries independent 10 ms IMA-ADPCM microphone blocks over the
-existing bonded and encrypted Companion GATT service. It never uses Wi-Fi and
-contains no command that can start microphone capture. A local, valid G0 click
-is the only capture-start authority.
+Audio v1 carries independent, rate-specific IMA-ADPCM microphone blocks over
+the existing bonded and encrypted Companion GATT service. It never uses Wi-Fi
+and contains no command that can start microphone capture. A local, valid G0
+click is the only capture-start authority.
 
 ## Characteristics
 
@@ -26,14 +26,19 @@ All multibyte integers are little-endian.
 | 1 | 1 | Flags: bit 0 start, bit 1 discontinuity, bit 2 degraded rate |
 | 2 | 2 | Wrapping sequence number |
 | 4 | 1 | Rate: `1` = 24 kHz, `2` = 16 kHz |
-| 5 | 1 | Duration, always 10 ms |
+| 5 | 1 | Duration: 19 ms at 24 kHz, 28 ms at 16 kHz |
 | 6 | 2 | ADPCM payload length |
 | 8 | variable | Independent IMA-ADPCM block |
 
 The only valid combinations are:
 
-- 24 kHz: 240 samples, 124-byte payload, 132-byte packet.
-- 16 kHz: 160 samples, 84-byte payload, 92-byte packet.
+- 24 kHz: 456 samples, 232-byte payload, 240-byte packet.
+- 16 kHz: 448 samples, 228-byte payload, 236-byte packet.
+
+The 240-byte maximum packet fits in one ATT notification with a 251-byte LE
+Data Length (244 bytes remain after L2CAP and ATT overhead), avoiding
+link-layer fragmentation. The 16 kHz release mode emits about 36 notifications
+per second; 24 kHz emits about 53 per second.
 
 Unknown flags, versions, rates, durations, and mismatched lengths are rejected.
 Sequence `65535` is followed by `0`.

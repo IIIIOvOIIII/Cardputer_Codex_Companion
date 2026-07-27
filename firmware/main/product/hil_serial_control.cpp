@@ -6,6 +6,8 @@ namespace {
 
 constexpr std::string_view kStartCommand = "HIL MIC START";
 constexpr std::string_view kStopCommand = "HIL MIC STOP";
+constexpr std::string_view kHidStartCommand = "HIL HID START";
+constexpr std::string_view kHidStopCommand = "HIL HID STOP";
 
 }  // namespace
 
@@ -31,6 +33,8 @@ HilMicrophoneCommand HilSerialCommandParser::consume(uint8_t byte) {
       line == kStartCommand
           ? HilMicrophoneCommand::start
           : line == kStopCommand ? HilMicrophoneCommand::stop
+          : line == kHidStartCommand ? HilMicrophoneCommand::hid_start
+          : line == kHidStopCommand ? HilMicrophoneCommand::hid_stop
                                  : HilMicrophoneCommand::none;
   reset();
   return command;
@@ -39,6 +43,37 @@ HilMicrophoneCommand HilSerialCommandParser::consume(uint8_t byte) {
 void HilSerialCommandParser::reset() {
   length_ = 0;
   overflow_ = false;
+}
+
+bool HilHidBurst::start(bool hid_ready) {
+  if (!hid_ready || active_) return false;
+  generated_ = 0;
+  next_due_us_ = 0;
+  active_ = true;
+  return true;
+}
+
+bool HilHidBurst::stop() {
+  const bool was_active = active_;
+  active_ = false;
+  next_due_us_ = 0;
+  return was_active;
+}
+
+std::optional<StableKeyEvent> HilHidBurst::next(uint64_t stable_at_us) {
+  if (!active_ ||
+      (next_due_us_ != 0 && stable_at_us < next_due_us_)) {
+    return std::nullopt;
+  }
+  const StableKeyEvent event{
+      .physical_key = 0,
+      .pressed = generated_ % 2 == 0,
+      .stable_at_us = stable_at_us,
+  };
+  next_due_us_ = stable_at_us + kHilHidBurstIntervalUs;
+  ++generated_;
+  if (generated_ == kHilHidBurstEvents) active_ = false;
+  return event;
 }
 
 MicrophoneEventKind hil_microphone_event(HilMicrophoneCommand command,

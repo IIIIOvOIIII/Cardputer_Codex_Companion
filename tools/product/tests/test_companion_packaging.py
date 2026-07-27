@@ -118,17 +118,25 @@ def test_ble_watchdog_and_keyboard_use_atomic_link_snapshot():
     assert "return g_hid_ready.load();" in ble
 
 
-def test_pet_renderer_streams_bounded_rows_without_full_frame_buffer():
+def test_pet_renderer_streams_one_lcd_window_without_full_frame_buffer():
     display = (ROOT / "firmware/main/product/display.cpp").read_text()
+    controller = (
+        ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text()
     assert "g_pet_frame" not in display
+    assert "display_prepare_pet_frame_buffer" not in display
+    assert "kPetFramePixels * sizeof(uint16_t)" not in display
+    assert "std::array<uint16_t, kPetFramePixels>" not in display
     assert "constexpr int32_t kPetWidth = 96" in display
     assert "constexpr int32_t kPetHeight = 104" in display
     frame_body = display.split("bool display_render_pet_frame", 1)[1]
     frame_body = frame_body.split("void display_render_placeholder", 1)[0]
     assert "store.decode_rows(" in frame_body
-    assert "draw_pet_row" in display
-    assert "kPetFrameWidth, 1, pixels.data()" in display
+    assert "stream_pet_row" in display
     assert "fillScreen" not in frame_body
+    assert "heap_caps_free(g_runtime_heap_reserve);" in controller
+    assert "M5.Display.setAddrWindow(" in display
+    assert "M5.Display.writePixels(" in display
 
 
 def test_pet_renderer_declares_native_rgb565_byte_order():
@@ -182,7 +190,7 @@ def test_pet_storage_worker_runs_below_keyboard_and_ui_tasks():
     keyboard = (
         ROOT / "firmware/main/product/keyboard_matrix.cpp"
     ).read_text()
-    assert 'upload_task, "product-pet-upload"' in store
+    assert 'upload_task, "pet-upload"' in store
     assert "tskIDLE_PRIORITY, impl_->upload_task_stack.data()" in store
     assert 'ui_task, "product-ui"' in controller
     assert "tskIDLE_PRIORITY + 1" in controller
@@ -194,7 +202,7 @@ def test_pet_storage_worker_uses_declared_static_stack_depth():
     store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
     header = (ROOT / "firmware/main/product/pet_store.hpp").read_text()
 
-    assert "std::array<StackType_t, 8192> upload_task_stack" in store
+    assert "std::array<StackType_t, 7552> upload_task_stack" in store
     assert "impl_->upload_task_stack.size(),\n      this" in store
     assert "sizeof(impl_->upload_task_stack)" not in store
     assert "do_initialize" in header

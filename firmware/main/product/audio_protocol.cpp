@@ -29,7 +29,7 @@ AudioProtocolError validate_header(const AudioFrameHeader& header,
   if (!valid_rate(header.rate)) {
     return AudioProtocolError::invalid_rate;
   }
-  if (header.duration_ms != kAudioFrameDurationMs) {
+  if (header.duration_ms != audio_frame_duration_ms(header.rate)) {
     return AudioProtocolError::invalid_duration;
   }
   const size_t expected = payload_size(header.rate);
