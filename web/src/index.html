@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="release-base-url" content="__PUBLIC_RELEASE_BASE_URL__">
   <title>Cardputer Codex Companion</title>
   <!--STYLE-->
 </head>
@@ -12,7 +13,23 @@
     <span id="status">未鉴权</span>
   </header>
 
-  <main id="auth-screen" class="auth-layout">
+  <main id="setup-screen" class="auth-layout">
+    <section class="panel auth-card setup-card">
+      <small>FIRST-RUN SETUP</small>
+      <h2>初始化 Cardputer Codex Companion</h2>
+      <p id="setup-step" class="setup-step">正在读取设备状态…</p>
+      <ol class="setup-progress">
+        <li id="setup-wifi">在 Cardputer 上选择 Wi-Fi 并输入密码</li>
+        <li id="setup-ble">在电脑蓝牙设置中配对 Cardputer Codex</li>
+        <li id="setup-agent">安装并启动 Machine Agent</li>
+      </ol>
+      <p class="hint">Wi-Fi 密码只在 Cardputer 上输入，不会由此页面采集。</p>
+      <a id="agent-install-link" class="button-link primary hidden" href="#" rel="noopener">下载此电脑适用的 Machine Agent</a>
+      <p id="agent-install-note" class="hint hidden">如果在线清单尚未发布，请从当前 release 包的 dist 目录安装。</p>
+    </section>
+  </main>
+
+  <main id="auth-screen" class="auth-layout hidden">
     <section class="panel auth-card">
       <h2>Codex Companion Login</h2>
       <p class="hint">请输入设备PIN码进行鉴权</p>
@@ -92,6 +109,11 @@
             <label>密码 <input id="wifi-password" type="password" maxlength="64" autocomplete="new-password"></label>
             <button id="save-wifi" class="primary" type="submit">保存并重连</button>
           </form>
+        </section>
+        <section>
+          <h2>重新运行初始化向导</h2>
+          <p class="hint">此操作会回到设备端 Wi-Fi 选择步骤，不会自动删除现有 Wi-Fi、蓝牙绑定或 Profile。</p>
+          <button id="restart-setup" type="button">重新运行初始化向导</button>
         </section>
       </div>
     </section>

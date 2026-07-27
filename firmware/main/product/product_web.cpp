@@ -41,6 +41,7 @@ SemaphoreHandle_t g_profile_mutex = nullptr;
 std::atomic<ServiceState> g_ble{ServiceState::offline};
 std::atomic<ServiceState> g_wifi{ServiceState::offline};
 std::atomic<ServiceState> g_companion{ServiceState::offline};
+std::atomic<OnboardingStep> g_onboarding_step{OnboardingStep::wifi_scan};
 std::atomic<ProductWebMicrophoneState> g_microphone_state{
     ProductWebMicrophoneState::unavailable};
 std::atomic<uint32_t> g_microphone_sample_rate_hz{0};
@@ -54,6 +55,7 @@ std::atomic<uint64_t> g_tls_cleanup_until_us{0};
 std::array<int, 3> g_tls_session_fds{-1, -1, -1};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
+ProductOnboardingRestartHandler g_onboarding_restart_handler = nullptr;
 PetStore* g_pet_store = nullptr;
 ProfileCatalogStore* g_profile_catalog = nullptr;
 PinRotationState g_pin_rotation;
@@ -132,6 +134,19 @@ esp_err_t json_response(httpd_req_t* request, const char* json,
 esp_err_t reject_pairing(httpd_req_t* request) {
   return json_response(request, "{\"error\":\"pairing_required\"}",
                        "401 Unauthorized");
+}
+
+esp_err_t reject_setup_incomplete(httpd_req_t* request) {
+  return json_response(
+      request, "{\"error\":\"setup_incomplete\"}", "409 Conflict");
+}
+
+bool normal_configuration_available(httpd_req_t* request) {
+  if (product_web_configuration_available(g_onboarding_step.load())) {
+    return true;
+  }
+  reject_setup_incomplete(request);
+  return false;
 }
 
 std::string read_body(httpd_req_t* request) {
@@ -429,7 +444,14 @@ esp_err_t root_handler(httpd_req_t* request) {
   return httpd_resp_send(request, kProductWebHtml, kProductWebHtmlSize);
 }
 
+esp_err_t setup_handler(httpd_req_t* request) {
+  const std::string json =
+      product_web_setup_json(g_onboarding_step.load());
+  return json_response(request, json.c_str());
+}
+
 esp_err_t status_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
   char json[384]{};
   const ServiceState ble = g_ble.load();
   const ServiceState wifi = g_wifi.load();
@@ -459,6 +481,7 @@ esp_err_t status_handler(httpd_req_t* request) {
 
 esp_err_t get_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   std::string json;
   ProfileCatalogResult catalog_result = ProfileCatalogResult::ok;
   {
@@ -484,6 +507,7 @@ esp_err_t get_profile_handler(httpd_req_t* request) {
 
 esp_err_t put_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   const std::string body = read_body(request);
   auto candidate = std::make_unique<Profile>();
   if (decode_profile(body, *candidate) != ProfileCodecResult::ok) {
@@ -535,6 +559,7 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
 
 esp_err_t list_profiles_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -573,6 +598,7 @@ esp_err_t list_profiles_handler(httpd_req_t* request) {
 
 esp_err_t create_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -617,6 +643,7 @@ esp_err_t create_profile_handler(httpd_req_t* request) {
 
 esp_err_t activate_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -656,6 +683,7 @@ esp_err_t activate_profile_handler(httpd_req_t* request) {
 
 esp_err_t delete_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -678,6 +706,7 @@ esp_err_t delete_profile_handler(httpd_req_t* request) {
 
 esp_err_t wifi_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   const std::string body = read_body(request);
   cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
   const cJSON* ssid = root == nullptr ? nullptr
@@ -700,6 +729,7 @@ esp_err_t wifi_handler(httpd_req_t* request) {
 
 esp_err_t pin_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
   const std::string body = read_body(request);
   cJSON* root = body.empty() ? nullptr : cJSON_ParseWithLength(body.data(), body.size());
   const cJSON* pin = root == nullptr ? nullptr
@@ -715,6 +745,33 @@ esp_err_t pin_handler(httpd_req_t* request) {
              ? json_response(request, "{\"saved\":true}")
              : json_response(request, "{\"error\":\"pin_save_failed\"}",
                              "400 Bad Request");
+}
+
+esp_err_t restart_setup_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr
+                   : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* confirmation =
+      root == nullptr ? nullptr
+                      : cJSON_GetObjectItemCaseSensitive(root, "confirm");
+  const bool confirmed =
+      cJSON_IsString(confirmation) &&
+      product_web_restart_confirmation_valid(confirmation->valuestring);
+  cJSON_Delete(root);
+  if (!confirmed) {
+    return json_response(
+        request, "{\"error\":\"confirmation_required\"}",
+        "400 Bad Request");
+  }
+  if (g_onboarding_restart_handler == nullptr ||
+      !g_onboarding_restart_handler()) {
+    return json_response(
+        request, "{\"error\":\"setup_restart_failed\"}",
+        "500 Internal Server Error");
+  }
+  return json_response(request, "{\"restarted\":true}");
 }
 
 void note_companion_activity() {
@@ -974,8 +1031,10 @@ esp_err_t product_web_start() {
   config.prvtkey_len = identity.private_key_length;
   result = httpd_ssl_start(&g_server, &config);
   if (result != ESP_OK) return result;
-  const std::array<httpd_uri_t, 16> routes{{
+  const std::array<httpd_uri_t, 18> routes{{
       {.uri = "/", .method = HTTP_GET, .handler = root_handler},
+      {.uri = "/api/v1/setup", .method = HTTP_GET,
+       .handler = setup_handler},
       {.uri = "/api/v1/status", .method = HTTP_GET, .handler = status_handler},
       {.uri = "/api/v1/profile", .method = HTTP_GET,
        .handler = get_profile_handler},
@@ -991,6 +1050,8 @@ esp_err_t product_web_start() {
        .handler = activate_profile_handler},
       {.uri = "/api/v1/wifi", .method = HTTP_POST, .handler = wifi_handler},
       {.uri = "/api/v1/pin", .method = HTTP_POST, .handler = pin_handler},
+      {.uri = "/api/v1/setup/restart", .method = HTTP_POST,
+       .handler = restart_setup_handler},
       {.uri = "/api/v1/companion/status", .method = HTTP_POST,
        .handler = companion_status_handler},
       {.uri = "/api/v1/companion/action", .method = HTTP_GET,
@@ -1029,6 +1090,10 @@ void product_web_set_status(ServiceState ble, ServiceState wifi,
   g_companion.store(companion);
 }
 
+void product_web_set_onboarding(OnboardingStep step) {
+  g_onboarding_step.store(step);
+}
+
 void product_web_set_microphone(ProductWebMicrophoneStatus status) {
   g_microphone_state.store(status.state);
   g_microphone_sample_rate_hz.store(status.sample_rate_hz);
@@ -1045,6 +1110,11 @@ void product_web_set_companion_snapshot_handler(
 void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler) {
   g_heartbeat_handler = handler;
+}
+
+void product_web_set_onboarding_restart_handler(
+    ProductOnboardingRestartHandler handler) {
+  g_onboarding_restart_handler = handler;
 }
 
 void product_web_set_pet_store(PetStore* store) {

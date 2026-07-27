@@ -9,6 +9,12 @@ small{color:#4fd1c5;letter-spacing:.22em}
 .hidden{display:none!important}
 .auth-layout{min-height:calc(100vh - 80px);display:grid;place-items:center;padding:18px}
 .auth-card{width:min(420px,100%)}
+.setup-card h2{margin-top:8px}
+.setup-step{font-size:16px;color:#9ee8df;margin:18px 0}
+.setup-progress{display:flex;flex-direction:column;gap:10px;padding-left:24px;color:#718b9d}
+.setup-progress li.active{color:#e7edf5}
+.setup-progress li.complete{color:#70e1d5}
+.button-link{display:block;text-align:center;text-decoration:none;border:1px solid #37afa4;border-radius:8px;padding:10px;margin-top:16px;color:#e7edf5}
 #pin-form{display:flex;flex-direction:column;gap:16px;margin-top:18px}
 #pin-form .primary{width:100%}
 main#app-shell{display:block;padding:18px}

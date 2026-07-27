@@ -109,3 +109,44 @@ def test_generated_asset_header_is_current() -> None:
         ["python3", "scripts/build_web_assets.py", "--check"],
         check=True,
     )
+
+
+def test_setup_mode_is_public_bounded_and_hides_normal_configuration() -> None:
+    html = Path("web/src/index.html").read_text()
+    script = Path("web/src/app.js").read_text()
+
+    assert 'id="setup-screen"' in html
+    assert 'id="setup-step"' in html
+    assert 'id="agent-install-link"' in html
+    assert "/api/v1/setup" in script
+    assert "probeSetup" in script
+    assert "showSetup" in script
+    assert "setup.complete" in script
+    assert "showAuth" in script
+    assert "showApp" not in script.split("async function probeSetup", 1)[1].split(
+        "}", 1
+    )[0]
+
+
+def test_agent_download_uses_platform_and_packaging_base_url() -> None:
+    html = Path("web/src/index.html").read_text()
+    script = Path("web/src/app.js").read_text()
+    builder = Path("scripts/build_web_assets.py").read_text()
+
+    assert "__PUBLIC_RELEASE_BASE_URL__" in html
+    assert "navigator.userAgentData" in script or "navigator.platform" in script
+    assert "release-manifest.json" in script
+    assert "windows" in script.lower()
+    assert "macos" in script.lower()
+    assert "--release-base-url" in builder
+    assert "PUBLIC_RELEASE_BASE_URL" in builder
+
+
+def test_restart_setup_requires_an_explicit_confirmation() -> None:
+    html = Path("web/src/index.html").read_text()
+    script = Path("web/src/app.js").read_text()
+
+    assert 'id="restart-setup"' in html
+    assert "/api/v1/setup/restart" in script
+    assert "RUN_SETUP_AGAIN" in script
+    assert "confirm(" in script

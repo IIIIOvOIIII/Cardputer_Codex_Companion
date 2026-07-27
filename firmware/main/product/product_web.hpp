@@ -8,6 +8,7 @@
 
 #include "product/profile.hpp"
 #include "product/profile_catalog.hpp"
+#include "product/onboarding.hpp"
 #include "product/pet_store.hpp"
 #include "product/product_types.hpp"
 
@@ -144,15 +145,54 @@ inline std::string product_web_microphone_json(
   return json;
 }
 
+constexpr std::string_view product_web_onboarding_step_name(
+    OnboardingStep step
+) {
+  switch (step) {
+    case OnboardingStep::wifi_scan: return "wifi_scan";
+    case OnboardingStep::wifi_select: return "wifi_select";
+    case OnboardingStep::wifi_password: return "wifi_password";
+    case OnboardingStep::wifi_connect_verify: return "wifi_connect";
+    case OnboardingStep::ble_pair_guide: return "ble_pair";
+    case OnboardingStep::agent_install_guide: return "agent_install";
+    case OnboardingStep::complete: return "complete";
+  }
+  return "wifi_scan";
+}
+
+constexpr bool product_web_configuration_available(OnboardingStep step) {
+  return step == OnboardingStep::complete;
+}
+
+constexpr bool product_web_restart_confirmation_valid(
+    std::string_view confirmation
+) {
+  return confirmation == "RUN_SETUP_AGAIN";
+}
+
+inline std::string product_web_setup_json(OnboardingStep step) {
+  char json[192]{};
+  const std::string_view name = product_web_onboarding_step_name(step);
+  std::snprintf(
+      json, sizeof(json),
+      "{\"product\":\"Cardputer Codex Companion\","
+      "\"version\":\"%.*s\",\"complete\":%s,\"step\":\"%.*s\"}",
+      static_cast<int>(kProductVersion.size()), kProductVersion.data(),
+      step == OnboardingStep::complete ? "true" : "false",
+      static_cast<int>(name.size()), name.data());
+  return json;
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;
   bool requires_pairing;
 };
 
-inline constexpr std::array<ProductWebRoute, 16> kProductWebRoutes{{
+inline constexpr std::array<ProductWebRoute, 18> kProductWebRoutes{{
     {ProductHttpMethod::get, "/", false},
-    {ProductHttpMethod::get, "/api/v1/status", false},
+    {ProductHttpMethod::get, "/api/v1/setup", false},
+    {ProductHttpMethod::get, "/api/v1/status", true},
     {ProductHttpMethod::get, "/api/v1/profile", true},
     {ProductHttpMethod::put, "/api/v1/profile", true},
     {ProductHttpMethod::delete_, "/api/v1/profile", true},
@@ -161,6 +201,7 @@ inline constexpr std::array<ProductWebRoute, 16> kProductWebRoutes{{
     {ProductHttpMethod::post, "/api/v1/profile/activate", true},
     {ProductHttpMethod::post, "/api/v1/wifi", true},
     {ProductHttpMethod::post, "/api/v1/pin", true},
+    {ProductHttpMethod::post, "/api/v1/setup/restart", true},
     {ProductHttpMethod::post, "/api/v1/companion/status", true},
     {ProductHttpMethod::get, "/api/v1/companion/action", true},
     {ProductHttpMethod::post, "/api/v1/companion/pet/begin", true},
@@ -174,17 +215,21 @@ inline constexpr std::array<ProductWebRoute, 16> kProductWebRoutes{{
 
 using ProductCompanionSnapshotHandler = void (*)(std::string_view json);
 using ProductCompanionHeartbeatHandler = void (*)();
+using ProductOnboardingRestartHandler = bool (*)();
 
 esp_err_t product_web_start();
 bool product_web_tls_resource_window_active();
 const char* product_web_pairing_code();
 void product_web_set_status(ServiceState ble, ServiceState wifi,
                             ServiceState companion);
+void product_web_set_onboarding(OnboardingStep step);
 void product_web_set_microphone(ProductWebMicrophoneStatus status);
 void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler);
 void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler);
+void product_web_set_onboarding_restart_handler(
+    ProductOnboardingRestartHandler handler);
 void product_web_set_pet_store(PetStore* store);
 void product_web_set_profile_catalog(ProfileCatalogStore* catalog);
 esp_err_t product_web_prepare_profile_catalog(ProfileCatalogStore* catalog);

@@ -1,4 +1,5 @@
 #include <cassert>
+#include <string>
 #include <string_view>
 
 #include "product/product_web.hpp"
@@ -52,27 +53,40 @@ int main() {
   assert(product_web_microphone_error_name(
              ProductWebMicrophoneError::mic_no_signal) ==
          "MIC_NO_SIGNAL");
-  assert(kProductWebRoutes.size() == 16);
+  const std::string setup_json =
+      product_web_setup_json(OnboardingStep::agent_install_guide);
+  assert(setup_json ==
+         "{\"product\":\"Cardputer Codex Companion\","
+         "\"version\":\"1.1.8\",\"complete\":false,"
+         "\"step\":\"agent_install\"}");
+  assert(setup_json.size() < 192);
+  assert(setup_json.find("pin") == std::string::npos);
+  assert(setup_json.find("password") == std::string::npos);
+  assert(setup_json.find("profile") == std::string::npos);
+  assert(product_web_setup_json(OnboardingStep::complete).find(
+             "\"complete\":true") != std::string::npos);
+  assert(!product_web_configuration_available(
+      OnboardingStep::agent_install_guide));
+  assert(product_web_configuration_available(OnboardingStep::complete));
+  assert(product_web_restart_confirmation_valid("RUN_SETUP_AGAIN"));
+  assert(!product_web_restart_confirmation_valid("yes"));
+  assert(kProductWebRoutes.size() == 18);
   assert(kProductWebRoutes[0].path == "/");
-  assert(kProductWebRoutes[1].path == "/api/v1/status");
-  assert(kProductWebRoutes[2].path == "/api/v1/profile");
+  assert(kProductWebRoutes[1].path == "/api/v1/setup");
+  assert(kProductWebRoutes[2].path == "/api/v1/status");
   assert(kProductWebRoutes[3].path == "/api/v1/profile");
-  assert(kProductWebRoutes[4].path == "/api/v1/profile");
-  assert(kProductWebRoutes[4].method == ProductHttpMethod::delete_);
-  assert(kProductWebRoutes[5].path == "/api/v1/profiles");
-  assert(kProductWebRoutes[5].method == ProductHttpMethod::get);
+  assert(kProductWebRoutes[5].method == ProductHttpMethod::delete_);
   assert(kProductWebRoutes[6].path == "/api/v1/profiles");
-  assert(kProductWebRoutes[6].method == ProductHttpMethod::post);
-  assert(kProductWebRoutes[7].path == "/api/v1/profile/activate");
-  assert(kProductWebRoutes[7].method == ProductHttpMethod::post);
-  assert(kProductWebRoutes[8].path == "/api/v1/wifi");
-  assert(kProductWebRoutes[9].path == "/api/v1/pin");
-  assert(kProductWebRoutes[10].path == "/api/v1/companion/status");
-  assert(kProductWebRoutes[11].path == "/api/v1/companion/action");
-  assert(kProductWebRoutes[12].path == "/api/v1/companion/pet/begin");
-  assert(kProductWebRoutes[13].path == "/api/v1/companion/pet/chunk");
-  assert(kProductWebRoutes[14].path == "/api/v1/companion/pet/commit");
-  assert(kProductWebRoutes[15].path == "/api/v1/companion/pet");
+  assert(kProductWebRoutes[8].path == "/api/v1/profile/activate");
+  assert(kProductWebRoutes[9].path == "/api/v1/wifi");
+  assert(kProductWebRoutes[10].path == "/api/v1/pin");
+  assert(kProductWebRoutes[11].path == "/api/v1/setup/restart");
+  assert(kProductWebRoutes[12].path == "/api/v1/companion/status");
+  assert(kProductWebRoutes[13].path == "/api/v1/companion/action");
+  assert(kProductWebRoutes[14].path == "/api/v1/companion/pet/begin");
+  assert(kProductWebRoutes[15].path == "/api/v1/companion/pet/chunk");
+  assert(kProductWebRoutes[16].path == "/api/v1/companion/pet/commit");
+  assert(kProductWebRoutes[17].path == "/api/v1/companion/pet");
   assert(!kProductWebRoutes[0].requires_pairing);
   assert(!kProductWebRoutes[1].requires_pairing);
   assert(kProductWebRoutes[2].requires_pairing);

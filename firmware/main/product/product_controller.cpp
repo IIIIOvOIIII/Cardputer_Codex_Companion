@@ -338,6 +338,7 @@ void emit_runtime_metrics(uint64_t now_us) {
 
 void update_web_status() {
   product_web_set_status(g_ble_state, g_wifi_state, g_companion_state.load());
+  product_web_set_onboarding(g_onboarding_state.step());
 }
 
 UiMicrophoneState ui_microphone_state(MicrophoneState state) {
@@ -451,6 +452,7 @@ void update_settings_ui_locked() {
 }
 
 void update_onboarding_ui_locked() {
+  product_web_set_onboarding(g_onboarding_state.step());
   const OnboardingContent content = g_onboarding.content();
   std::array<std::string_view, 12> rows{};
   for (uint8_t index = 0; index < content.count; ++index) {
@@ -1261,6 +1263,32 @@ void companion_heartbeat() {
   g_last_companion_ms.store(now_ms);
 }
 
+bool restart_onboarding_from_web() {
+  OnboardingInputResult result;
+  {
+    SemaphoreLock input_lock(g_input_mutex);
+    if (!input_lock.locked() ||
+        g_onboarding_state.restart_setup() != OnboardingResult::ok) {
+      return false;
+    }
+    result = g_onboarding.begin();
+    if (g_keyboard.has_value()) g_keyboard->on_mode_changed();
+    g_pressed.fill(false);
+    update_onboarding_ui_locked();
+  }
+  if (result.command == OnboardingCommandKind::scan_wifi &&
+      product_wifi_scan(wifi_scan_finished) != ESP_OK) {
+    SemaphoreLock input_lock(g_input_mutex);
+    if (input_lock.locked()) {
+      g_onboarding.wifi_failed("WIFI SCAN FAILED");
+      update_onboarding_ui_locked();
+    }
+    return false;
+  }
+  update_web_status();
+  return true;
+}
+
 void ui_task(void*) {
   uint64_t g0_pressed_at_ms = 0;
   TickType_t wake = xTaskGetTickCount();
@@ -1669,6 +1697,7 @@ class EspProductStartup final : public ProductStartupBackend {
     }
     product_web_set_companion_snapshot_handler(companion_snapshot);
     product_web_set_companion_heartbeat_handler(companion_heartbeat);
+    product_web_set_onboarding_restart_handler(restart_onboarding_from_web);
     ESP_LOGI(kTag, "heap before HTTPS: free=%u largest=%u",
              static_cast<unsigned>(
                  heap_caps_get_free_size(MALLOC_CAP_8BIT)),

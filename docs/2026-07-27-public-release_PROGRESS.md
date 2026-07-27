@@ -77,3 +77,18 @@
   and the ESP32-S3 build succeeds at 0x18a920 bytes with 49 percent free.
 - Next step: Add a restricted setup status surface to the authenticated Web
   application and a deliberate restart-onboarding action.
+
+## 2026-07-28 01:05 HKT
+
+- Current work: Added the setup-only Web experience, bounded public progress
+  endpoint, packaging-injected release base URL, platform-selected Agent
+  download, and confirmed restart-setup action.
+- Expected result: Before completion, browsers see only the current setup
+  phase; detailed status and all normal configuration APIs remain PIN
+  protected, while Agent heartbeat endpoints remain usable to complete setup.
+- Result: Achieved. The public setup JSON contains only product, version,
+  completion, and step. Ten Web asset tests, the firmware Web contract test,
+  JavaScript syntax validation, deterministic embedded-asset verification, and
+  an ESP32-S3 build all pass. The image is 0x18c420 bytes with 48 percent free.
+- Next step: Implement the Windows Agent's secure configuration store and
+  authenticated device client against the frozen product-v1 fixtures.
