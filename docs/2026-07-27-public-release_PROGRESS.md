@@ -147,3 +147,23 @@
 - Next step: Add deterministic Windows build/package scripts, per-user
   Scheduled Task auto-start, status and redacted doctor commands, and complete
   uninstall symmetry without a driver, service, UAC, or embedded pairing data.
+
+## 2026-07-28 01:24 HKT
+
+- Current work: Completed Windows first-pair CLI, masked PIN entry, status and
+  redacted doctor commands, bounded logs, deterministic dual-architecture
+  builds, reproducible portable archives, per-user NSIS install, least-
+  privilege login Scheduled Task, Start Menu entries, and purge uninstall.
+- Expected result: Windows users can install and pair without command-line
+  secrets or elevation; Agent restart is user-scoped, and uninstall removes
+  its task, binaries, configuration, logs, and shortcuts without touching a
+  driver or service.
+- Result: Achieved at build/static gate. Five packaging policy tests pass,
+  rebuilds are byte-reproducible, produced binaries are PE32+ x86-64 and ARM64,
+  and the x64 setup is a valid NSIS GUI executable. Go race and cross-build
+  gates pass. The all-history/current-artifact security audit remains clean at
+  7 refs, 198 reflog commits, 17 retained unreachable objects, 1369 Git blobs,
+  and 433 current/artifact files.
+- Next step: Advance every live firmware, macOS, Windows, installer, manifest,
+  and documentation version surface to 1.2.0, then run the complete public
+  release build and security gate.

@@ -56,6 +56,7 @@ companion/.build/release/cardputer-companion doctor
 scripts/package_product_firmware.sh
 scripts/build_companion.sh
 scripts/package_mac_installer.sh
+scripts/package_windows_agent.sh
 
 test -f dist/cardputer_codex_companion-full.bin
 test -x dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion
@@ -74,11 +75,15 @@ test -x \
   dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge
 test -f \
   dist/CardputerCompanion.app/Contents/Resources/com.lynx.cardputer-audio-bridge.plist
+test -f dist/CardputerCompanion-1.2.0-windows-amd64.zip
+test -f dist/CardputerCompanion-1.2.0-windows-arm64.zip
+test -f dist/CardputerCompanion-1.2.0-windows-x64-setup.exe
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_driver_bundle.py \
   tools/product/tests/test_audio_driver_installer.py \
   tools/product/tests/test_launch_agent_installer.py \
-  tools/product/tests/test_mac_installer.py
+  tools/product/tests/test_mac_installer.py \
+  tools/product/tests/test_windows_agent_packaging.py
 codesign --verify --strict \
   dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver
 codesign --verify --deep --strict dist/CardputerCompanion.app
