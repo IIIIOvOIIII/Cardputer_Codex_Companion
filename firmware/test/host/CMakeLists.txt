@@ -194,6 +194,13 @@ add_executable(test_hil_serial_control
 target_include_directories(test_hil_serial_control PRIVATE ../../main)
 add_test(NAME hil_serial_control COMMAND test_hil_serial_control)
 
+add_executable(test_display_policy
+  test_display_policy.cpp
+  ../../main/product/display_policy.cpp
+)
+target_include_directories(test_display_policy PRIVATE ../../main)
+add_test(NAME display_policy COMMAND test_display_policy)
+
 add_executable(test_ui_model
   test_ui_model.cpp
   ../../main/product/ui_model.cpp

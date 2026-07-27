@@ -55,6 +55,7 @@ void ProductController::start() {
 #include "product/audio_capture.hpp"
 #include "product/ble_audio_transport.hpp"
 #include "product/display.hpp"
+#include "product/display_policy.hpp"
 #include "product/device_settings.hpp"
 #include "product/hil_serial_control.hpp"
 #include "product/input_router.hpp"
@@ -1207,6 +1208,11 @@ void ui_task(void*) {
     }
     UiPage current_page = UiPage::pet;
     PetState current_pet_state = PetState::waiting;
+    bool pet_chrome_changed = false;
+    const MicrophoneState microphone_state =
+        g_microphone == nullptr
+            ? MicrophoneState::unavailable
+            : g_microphone->snapshot().state;
     {
       SemaphoreLock lock(g_ui_mutex);
       if (lock.locked()) {
@@ -1250,6 +1256,7 @@ void ui_task(void*) {
                 : revision != rendered_revision;
         if (render_page) {
           display_render_page(g_ui);
+          pet_chrome_changed = current_page == UiPage::pet;
           rendered_revision = revision;
           rendered_pet_revision =
               current_page == UiPage::pet
@@ -1258,13 +1265,13 @@ void ui_task(void*) {
         }
       }
     }
-    const MicrophoneState microphone_state =
-        g_microphone == nullptr
-            ? MicrophoneState::unavailable
-            : g_microphone->snapshot().state;
-    if (current_page == UiPage::pet &&
-        pet_animation_allowed(microphone_state) &&
-        now_ms >= next_frame_ms) {
+    const PetFrameRenderMode frame_mode =
+        current_page == UiPage::pet
+            ? pet_frame_render_mode(
+                  microphone_state, pet_chrome_changed,
+                  now_ms >= next_frame_ms)
+            : PetFrameRenderMode::none;
+    if (frame_mode != PetFrameRenderMode::none) {
       if (current_pet_state != rendered_pet_state) {
         frame_index = 0;
         rendered_pet_state = current_pet_state;
@@ -1273,12 +1280,14 @@ void ui_task(void*) {
               g_pet_store, current_pet_state, frame_index)) {
         display_render_placeholder(current_pet_state);
       }
-      frame_index = static_cast<uint8_t>((frame_index + 1) % 8);
-      const uint32_t interval = g_pet_frame_interval_ms.load();
-      next_frame_ms = now_ms > next_frame_ms + interval * 2
-                          ? now_ms + interval
-                          : next_frame_ms + interval;
-      if (next_frame_ms == interval) next_frame_ms = now_ms + interval;
+      if (frame_mode == PetFrameRenderMode::animated_frame) {
+        frame_index = static_cast<uint8_t>((frame_index + 1) % 8);
+        const uint32_t interval = g_pet_frame_interval_ms.load();
+        next_frame_ms = now_ms > next_frame_ms + interval * 2
+                            ? now_ms + interval
+                            : next_frame_ms + interval;
+        if (next_frame_ms == interval) next_frame_ms = now_ms + interval;
+      }
     }
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(50));
   }

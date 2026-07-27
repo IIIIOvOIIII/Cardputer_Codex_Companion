@@ -30,12 +30,7 @@ bool stream_pet_row(
       row >= kPetFrameHeight) {
     return false;
   }
-  M5.Display.startWrite();
-  M5.Display.setAddrWindow(
-      kPetX, kPetY + static_cast<int32_t>(row),
-      kPetFrameWidth, 1);
   M5.Display.writePixels(pixels.data(), kPetFrameWidth, true);
-  M5.Display.endWrite();
   ++stream->next_row;
   return true;
 }
@@ -174,7 +169,6 @@ void display_render_page(const UiModel& model) {
     draw_microphone_error(model);
     draw_page_dots(model.page());
     M5.Display.endWrite();
-    display_render_placeholder(effective);
     return;
   }
   begin_page(page_title(model.page()));
@@ -203,11 +197,15 @@ void display_render_page(const UiModel& model) {
 bool display_render_pet_frame(PetStore& store, PetState state,
                               uint8_t frame_index) {
   const bool previous_swap = M5.Display.getSwapBytes();
+  M5.Display.startWrite();
   M5.Display.setSwapBytes(true);
+  M5.Display.setAddrWindow(
+      kPetX, kPetY, kPetFrameWidth, kPetFrameHeight);
   PetFrameStream stream;
   const bool decoded =
       store.decode_rows(state, frame_index, stream_pet_row, &stream);
   M5.Display.setSwapBytes(previous_swap);
+  M5.Display.endWrite();
   return decoded && stream.next_row == kPetFrameHeight;
 }
 
