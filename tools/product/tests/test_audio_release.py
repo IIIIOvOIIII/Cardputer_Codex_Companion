@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION = "1.1.6"
+VERSION = "1.1.7"
 
 
 def test_release_version_is_consistent():

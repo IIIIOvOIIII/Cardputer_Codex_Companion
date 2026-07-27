@@ -21,8 +21,8 @@ def test_driver_bundle_manifest_is_input_only():
         "com.lynx.cardputer-codex-microphone.driver"
     )
     assert info["CFBundleExecutable"] == "CardputerCodexMicrophone"
-    assert info["CFBundleShortVersionString"] == "1.1.6"
-    assert info["CFBundleVersion"] == "1.1.6"
+    assert info["CFBundleShortVersionString"] == "1.1.7"
+    assert info["CFBundleVersion"] == "1.1.7"
     assert info["AudioServerPlugIn_MachServices"] == [
         "com.lynx.cardputer-codex-microphone.ipc"
     ]

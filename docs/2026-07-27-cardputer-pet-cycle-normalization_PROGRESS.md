@@ -23,3 +23,15 @@
   最小已证明周期和非周期回退；保持 CCPT v1 与固件渲染不变，并禁止串口作为
   post-flash 被动监控。
 - Next step: 自检并提交实施计划；由用户选择 subagent-driven 或当前会话内联执行。
+
+## 2026-07-27 21:20 HKT
+
+- Current work: 完成严格周期重建、1.1.6 构建与 app-only 烧录，并执行实体动画
+  门禁。
+- Expected result: Rocky 在 B+W+M- 与 B+W+M+ 下均遍历完整动作周期。
+- Result: Partial。B+W+M- 已恢复完整周期；B+W+M+ 仍只显示两次静态画面。
+  代码检查证明 `display_policy.cpp` 会在 MIC starting/live16/live24/stopping
+  状态禁止动画帧索引递增，所以素材周期修复无法覆盖 MIC 活跃态。
+- Next step: 先以主机测试要求 MIC 活跃态在帧到期时返回
+  `animated_frame`，观察 RED；再移除运行时冻结策略、提升版本至 1.1.7，
+  重新执行完整门禁与实体 M+ 验收。

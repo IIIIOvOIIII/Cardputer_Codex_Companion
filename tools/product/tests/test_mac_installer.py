@@ -32,7 +32,7 @@ def make_app(
     executable.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "--version" ]; then\n'
-        '  echo "cardputer-companion 1.1.6"\n'
+        '  echo "cardputer-companion 1.1.7"\n'
         "fi\n"
     )
     executable.chmod(0o755)
@@ -40,8 +40,8 @@ def make_app(
         plistlib.dumps(
             {
                 "CFBundleIdentifier": "com.lynx.cardputer-companion",
-                "CFBundleVersion": "1.1.6",
-                "CFBundleShortVersionString": "1.1.6",
+                "CFBundleVersion": "1.1.7",
+                "CFBundleShortVersionString": "1.1.7",
                 "CFBundleExecutable": "cardputer-companion",
             }
         )
@@ -60,8 +60,8 @@ def make_app(
                 "CFBundleIdentifier": (
                     "com.lynx.cardputer-codex-microphone.driver"
                 ),
-                "CFBundleVersion": "1.1.6",
-                "CFBundleShortVersionString": "1.1.6",
+                "CFBundleVersion": "1.1.7",
+                "CFBundleShortVersionString": "1.1.7",
                 "CFBundleExecutable": "CardputerCodexMicrophone",
             }
         )
