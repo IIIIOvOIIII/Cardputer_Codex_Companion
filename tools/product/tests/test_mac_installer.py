@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[3]
 INSTALLER = ROOT / "scripts/mac_installer.py"
@@ -15,8 +17,14 @@ WRAPPER = ROOT / "scripts/mac_installer.sh"
 PIN = "87654321"
 
 
-def make_app(tmp_path: Path) -> Path:
-    app = tmp_path / "source/CardputerCompanion.app"
+def make_app(
+    tmp_path: Path,
+    *,
+    name: str = "source",
+    driver_payload: bytes = b"driver",
+    bridge_payload: bytes = b"bridge",
+) -> Path:
+    app = tmp_path / name / "CardputerCompanion.app"
     executable = app / "Contents/MacOS/cardputer-companion"
     resources = app / "Contents/Resources"
     executable.parent.mkdir(parents=True)
@@ -44,7 +52,7 @@ def make_app(tmp_path: Path) -> Path:
         driver / "Contents/MacOS/CardputerCodexMicrophone"
     )
     driver_executable.parent.mkdir(parents=True)
-    driver_executable.write_bytes(b"driver")
+    driver_executable.write_bytes(driver_payload)
     driver_executable.chmod(0o755)
     (driver / "Contents/Info.plist").write_bytes(
         plistlib.dumps(
@@ -59,7 +67,7 @@ def make_app(tmp_path: Path) -> Path:
         )
     )
     bridge = resources / "CardputerAudioBridge"
-    bridge.write_bytes(b"bridge")
+    bridge.write_bytes(bridge_payload)
     bridge.chmod(0o755)
     (resources / "com.lynx.cardputer-audio-bridge.plist").write_bytes(
         plistlib.dumps(
@@ -371,6 +379,80 @@ def test_launch_agent_status_uses_top_level_state_and_pid(monkeypatch, tmp_path)
 
     assert line == "AGENT RUNNING pid=4242"
     assert healthy
+
+
+def test_launch_agent_running_ignores_nested_running_state(monkeypatch):
+    module = load_installer()
+
+    class Result:
+        returncode = 0
+        stdout = (
+            "com.lynx.cardputer-companion = {\n"
+            "\tstate = exited\n"
+            "\tcoalition = {\n"
+            "\t\tstate = running\n"
+            "\t\tpid = 4242\n"
+            "\t}\n"
+            "}\n"
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert not module.launch_agent_running()
+
+
+def test_install_failure_restores_previous_audio_components(
+    monkeypatch, tmp_path
+):
+    old_app = make_app(
+        tmp_path,
+        name="old",
+        driver_payload=b"old-driver",
+        bridge_payload=b"old-bridge",
+    )
+    new_app = make_app(
+        tmp_path,
+        name="new",
+        driver_payload=b"new-driver",
+        bridge_payload=b"new-bridge",
+    )
+    config = make_config(tmp_path)
+    test_root = tmp_path / "root"
+    run_installer(
+        test_root,
+        "install",
+        "--app",
+        str(old_app),
+        "--config",
+        str(config),
+    )
+
+    monkeypatch.setenv("CARDPUTER_MAC_INSTALL_TEST_ROOT", str(test_root))
+    monkeypatch.setenv("CARDPUTER_MAC_INSTALL_SKIP_SIGNATURE_CHECK", "1")
+    module = load_installer()
+    paths = module.InstallerPaths.current()
+    validated = module.read_config(config, require_private=True)
+    monkeypatch.setattr(
+        module,
+        "install_launch_agent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("bootstrap failed")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="bootstrap failed"):
+        module.install(paths, new_app, validated)
+
+    driver = (
+        paths.driver / "Contents/MacOS/CardputerCodexMicrophone"
+    )
+    assert driver.read_bytes() == b"old-driver"
+    assert paths.bridge.read_bytes() == b"old-bridge"
+    assert (
+        paths.app
+        / "Contents/Resources/CardputerCodexMicrophone.driver"
+        / "Contents/MacOS/CardputerCodexMicrophone"
+    ).read_bytes() == b"old-driver"
 
 
 def test_lan_status_uses_protected_profiles_url_and_keeps_pin_off_argv(tmp_path):

@@ -385,11 +385,19 @@ def launch_agent_running() -> bool:
         capture_output=True,
         text=True,
     )
-    return (
-        result.returncode == 0
-        and "state = running" in result.stdout
-        and "pid =" in result.stdout
-    )
+    if result.returncode != 0:
+        return False
+    state = None
+    pid = None
+    for raw_line in result.stdout.splitlines():
+        if not raw_line.startswith("\t") or raw_line.startswith("\t\t"):
+            continue
+        line = raw_line.strip()
+        if line.startswith("state ="):
+            state = line.split("=", 1)[1].strip()
+        elif line.startswith("pid ="):
+            pid = line.split("=", 1)[1].strip()
+    return state == "running" and pid is not None
 
 
 def wait_for_launch_agent() -> None:
@@ -408,6 +416,11 @@ def install(
 ) -> None:
     validate_app(source_app, paths)
     validated = validate_config(config)
+    audio_was_installed = (
+        paths.driver.exists()
+        or paths.bridge.exists()
+        or paths.bridge_daemon.exists()
+    )
     old_config = paths.config.read_bytes() if paths.config.is_file() else None
     old_config_mode = (
         stat.S_IMODE(paths.config.stat().st_mode)
@@ -415,11 +428,13 @@ def install(
         else 0o600
     )
     backup = replace_app(source_app, paths.app)
+    audio_installed = False
     try:
         validate_app(paths.app, paths)
         write_config(validated, paths.config)
         paths.logs.mkdir(parents=True, exist_ok=True)
         run_audio_helper(paths.app, "install", paths)
+        audio_installed = True
         restart_core_audio(paths, expect_present=True)
         executable = app_resources(paths.app)["executable"]
         install_launch_agent(
@@ -432,6 +447,23 @@ def install(
         if paths.test_root is None:
             wait_for_launch_agent()
     except Exception:
+        if audio_installed:
+            try:
+                if (
+                    audio_was_installed
+                    and backup is not None
+                    and backup.is_dir()
+                ):
+                    run_audio_helper(backup, "install", paths)
+                    restart_core_audio(paths, expect_present=True)
+                else:
+                    run_audio_helper(paths.app, "uninstall", paths)
+                    restart_core_audio(paths, expect_present=False)
+            except Exception:
+                print(
+                    "mac installer: audio rollback failed",
+                    file=sys.stderr,
+                )
         if old_config is None:
             paths.config.unlink(missing_ok=True)
         else:
