@@ -207,6 +207,7 @@ class SerialMonitor:
         self._lines: list[str] = []
         self._all_lines: list[str] = []
         self._recent_samples: list[tuple[float, dict[str, Any]]] = []
+        self._last_handshake_at: float | None = None
         self._thread = threading.Thread(target=self._read, daemon=True)
 
     def start(self) -> None:
@@ -308,11 +309,16 @@ class SerialMonitor:
                     if (
                         self._tls_active is not None
                         and self._tls_active.is_set()
+                    ) or (
+                        self._last_handshake_at is not None
+                        and received_at - self._last_handshake_at
+                        <= TLS_HANDSHAKE_LOOKBACK_SECONDS
                     ):
                         value["scenario"] = "tls_burst"
                     self._samples.append(value)
                     self._recent_samples.append((received_at, value))
                 if "performing session handshake" in line:
+                    self._last_handshake_at = received_at
                     for sample_at, sample in self._recent_samples:
                         if (
                             received_at - sample_at

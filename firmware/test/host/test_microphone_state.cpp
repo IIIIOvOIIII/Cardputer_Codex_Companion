@@ -89,12 +89,12 @@ int main() {
   assert(transition.state == MicrophoneState::live16);
   transition =
       state.apply({.kind = MicrophoneEventKind::loss_window_bad});
-  assert(transition.state == MicrophoneState::error);
-  assert(transition.command == MicrophoneCommand::stop_capture);
-
-  transition = state.apply({.kind = MicrophoneEventKind::g0_click});
-  assert(transition.state == MicrophoneState::error);
-  assert(transition.command == MicrophoneCommand::none);
+  assert(transition.state == MicrophoneState::starting);
+  assert(transition.command == MicrophoneCommand::restart_capture_16k);
+  assert(transition.discontinuity);
+  transition =
+      state.apply({.kind = MicrophoneEventKind::capture_started});
+  assert(transition.state == MicrophoneState::live16);
 
   MicrophoneStateMachine unavailable;
   transition = unavailable.apply({.kind = MicrophoneEventKind::g0_click});

@@ -41,6 +41,11 @@ typedef struct CardputerAudioIPCLease {
 bool cardputer_audio_ipc_authorize(
     const CardputerAudioIPCPolicy *policy,
     const CardputerAudioIPCPeer *peer);
+bool cardputer_audio_ipc_authorize_consumer(
+    const CardputerAudioIPCPeer *peer,
+    uid_t coreaudio_uid,
+    bool development,
+    const char *expected_team_id);
 void cardputer_audio_ipc_lease_initialize(
     CardputerAudioIPCLease *lease,
     CardputerAudioRing *ring);

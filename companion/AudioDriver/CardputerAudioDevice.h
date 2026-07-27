@@ -21,6 +21,9 @@ void cardputer_audio_device_initialize(CardputerAudioDevice *device);
 void cardputer_audio_device_set_ring(
     CardputerAudioDevice *device,
     CardputerAudioRing *ring);
+bool cardputer_audio_device_replace_ring_if_idle(
+    CardputerAudioDevice *device,
+    CardputerAudioRing *ring);
 uint32_t cardputer_audio_device_input_stream_count(
     const CardputerAudioDevice *device);
 uint32_t cardputer_audio_device_output_stream_count(

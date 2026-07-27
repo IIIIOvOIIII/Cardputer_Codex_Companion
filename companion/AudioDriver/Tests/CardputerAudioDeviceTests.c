@@ -31,7 +31,16 @@ int main(void) {
 
   CardputerAudioRing ring;
   cardputer_audio_ring_initialize(&ring);
-  cardputer_audio_device_set_ring(&device, &ring);
+  assert(cardputer_audio_device_replace_ring_if_idle(&device, &ring));
+  CardputerAudioRing replacement_ring;
+  cardputer_audio_ring_initialize(&replacement_ring);
+  cardputer_audio_device_start(&device);
+  assert(!cardputer_audio_device_replace_ring_if_idle(
+      &device, &replacement_ring));
+  cardputer_audio_device_stop(&device);
+  assert(cardputer_audio_device_replace_ring_if_idle(
+      &device, &replacement_ring));
+  assert(cardputer_audio_device_replace_ring_if_idle(&device, &ring));
   const float input[] = {0.25f, -0.5f, 0.75f};
   assert(cardputer_audio_ring_write(&ring, input, 3) == 3);
   memset(output, 0x7f, sizeof(output));

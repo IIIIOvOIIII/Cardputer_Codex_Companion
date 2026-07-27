@@ -67,6 +67,7 @@ int main() {
       product_mic_hardware_config(24000);
   assert(mic24.sample_rate_hz == 24000);
   assert(mic24.data_pin == 46);
+  assert(mic24.data_pin_mode == ProductMicDataPinMode::input_no_pull);
   assert(mic24.clock_pin == 43);
   assert(mic24.right_channel);
   assert(mic24.over_sampling == 1);
@@ -80,6 +81,7 @@ int main() {
       product_mic_hardware_config(16000);
   assert(mic16.sample_rate_hz == 16000);
   assert(mic16.data_pin == 46);
+  assert(mic16.data_pin_mode == ProductMicDataPinMode::input_no_pull);
   assert(mic16.clock_pin == 43);
   assert(mic16.right_channel);
   assert(mic16.over_sampling == 1);

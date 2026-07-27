@@ -30,6 +30,7 @@ ProductMicHardwareConfig product_mic_hardware_config(uint32_t rate_hz) {
   return {
       .sample_rate_hz = rate_hz,
       .data_pin = 46,
+      .data_pin_mode = ProductMicDataPinMode::input_no_pull,
       .clock_pin = 43,
       .right_channel = true,
       .over_sampling = 1,
@@ -150,6 +151,7 @@ AudioCaptureResult PdmAudioCapture::stop() {
 #ifdef ESP_PLATFORM
 
 #include "M5Unified.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -157,6 +159,29 @@ AudioCaptureResult PdmAudioCapture::stop() {
 namespace {
 
 constexpr char kAudioCaptureTag[] = "audio-capture";
+
+bool prepare_mic_data_pin(const ProductMicHardwareConfig& hardware) {
+  if (hardware.data_pin < 0 ||
+      hardware.data_pin >= GPIO_NUM_MAX ||
+      hardware.data_pin_mode != ProductMicDataPinMode::input_no_pull) {
+    return false;
+  }
+  const gpio_config_t config = {
+      .pin_bit_mask = 1ULL << hardware.data_pin,
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_DISABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
+  };
+  const esp_err_t result = gpio_config(&config);
+  if (result != ESP_OK) {
+    ESP_LOGE(kAudioCaptureTag,
+             "microphone data GPIO input reset failed: pin=%d error=%s",
+             hardware.data_pin, esp_err_to_name(result));
+    return false;
+  }
+  return true;
+}
 
 class M5UnifiedCaptureBackend final : public AudioCaptureBackend {
  public:
@@ -203,6 +228,9 @@ class M5UnifiedCaptureBackend final : public AudioCaptureBackend {
 
     const ProductMicHardwareConfig hardware =
         product_mic_hardware_config(configured_rate_hz_);
+    if (!prepare_mic_data_pin(hardware)) {
+      return AudioCaptureResult::backend_error;
+    }
     auto config = M5.Mic.config();
     config.pin_data_in = hardware.data_pin;
     config.pin_ws = hardware.clock_pin;

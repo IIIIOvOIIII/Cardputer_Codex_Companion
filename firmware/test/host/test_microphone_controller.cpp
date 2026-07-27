@@ -182,9 +182,11 @@ int main() {
 
   controller.on_loss_window(false);
   controller.on_loss_window(false);
-  assert(controller.snapshot().state == MicrophoneState::error);
-  assert(!capture.running());
+  assert(controller.snapshot().state == MicrophoneState::live16);
+  assert(capture.running());
   assert(capture.stop_calls == 2);
+  assert(capture.start_calls == 3);
+  assert(controller.snapshot().fallback_count == 2);
 
   FakeCapture release_capture;
   FakeTransport release_transport;
@@ -201,8 +203,8 @@ int main() {
   assert((release_frame.header.flags & kAudioFlagDegradedRate) != 0);
   release_default.on_loss_window(false);
   release_default.on_loss_window(false);
-  assert(release_default.snapshot().state == MicrophoneState::error);
-  assert(release_default.snapshot().fallback_count == 0);
+  assert(release_default.snapshot().state == MicrophoneState::live16);
+  assert(release_default.snapshot().fallback_count == 1);
 
   FakeCapture stuck_capture;
   FakeTransport stuck_transport;

@@ -469,3 +469,58 @@
   里程碑判定为板级硬件阻塞，未误报为发布通过。
 - Next step: 提交本地分支；维修或更换麦克风硬件后，重新执行带真实声源的声学
   HIL，必须达到 peak/RMS 大于 16 才能解除发布阻塞。
+
+## 2026-07-27 15:00 HKT
+
+- Current work: 在更换后的 Cardputer 上复现 `MIC ERR`，对 Arduino/ESP-IDF
+  新旧 I2S 路径、原始 PDM 与 `M5.Mic` PCM 逐层交叉验证，并同时修复配对输入
+  阶段的 scanner 栈溢出。
+- Expected result: 找到新硬件在 Arduino 下有声、产品固件无声的最小软件差异；
+  不修改第三方组件即可恢复 16 kHz 输入；配对输入与 stale-link watchdog 不再
+  竞争，scanner 栈满足至少 1024 bytes/20% 的门槛。
+- Result: Achieved for root cause, implementation and short HIL。更换硬件在
+  Arduino ESP32 2.0.x/M5Unified 0.2.17 下可采到动态 PCM，ESP-IDF 5.5.4 的
+  `M5.Mic`、兼容旧 I2S 与原始 PDM 最初分别表现为常量 8、DMA 停滞和全 `-1`。
+  根因是 `M5.begin()` 探测板型时将 GPIO46 临时置为输出高电平，而 IDF 5.5
+  新 I2S 路径未像旧 Arduino 驱动一样恢复数据脚输入方向；在 I2S 初始化前显式
+  配置 GPIO46 为无上下拉输入后，原始 PDM 每块 255 次变化，未经修改的原版
+  `M5.Mic` 也立即输出动态 PCM。正式固件只加入该最小 GPIO 复位，无第三方源码
+  补丁。15 秒实体试跑为 captured 542、received 538、peak 15,940、RMS 76.49、
+  非零样本 99.2%，且 0 source overrun/drop/gap/reconnect/allocation failure；
+  短跑仅因完整门禁要求 1000 个 HID 事件而未判整体 PASS。配对崩溃的串口根因
+  为 scanner task stack overflow；stale-link watchdog 现于 PIN 输入期间让行，
+  scanner 栈由 3,328 提升至 5,120 bytes，短跑实测余量 2,844 bytes。用户已
+  确认重新配对成功。完整 clean release gate 通过 Python 191/191、音频专项
+  17/17、普通与 sanitizer host 各 36/36、ESP-IDF、Swift、HAL、签名和 private
+  packaging；clean-build app 已写入 `0x20000` 且独立 digest matched。
+- Next step: 完成正在运行的 1800 秒音频/BLE/HID/TLS/heap/stack 联合 HIL，
+  随后更新验证文档、恢复常驻 Mac Agent 并提交本地分支。
+
+## 2026-07-27 17:00 HKT
+
+- Current work: 修复 Mac Core Audio 输入全零、长时 NimBLE mbuf 背压后永久
+  `MIC ERR`，完成同源发布、app-only 刷写和最终声学/系统级验证。
+- Expected result: `Cardputer Codex Microphone` 可被 AVFoundation 读取到随声压
+  变化的有效电平；短时 BLE 通知资源不足不会永久停止 16 kHz 采集；30 分钟
+  BLE/HID/TLS/heap/stack 门禁全部通过。
+- Result: Achieved。Core Audio 全零的直接原因有两项：HAL 仅在初始化时映射
+  shared ring，且 AudioBridge 只允许旧 `coreaudiod` identity；macOS 14+ 实际
+  HAL host 为 Apple platform-signed
+  `com.apple.audio.Core-Audio-Driver-Service.helper`、UID `_coreaudiod`。
+  HAL 现于首次 StartIO 安全刷新 ring，Bridge 以精确 bundle/UID/platform
+  组合放行并记录拒绝证据。长测另捕获到 NimBLE mbuf 短时耗尽后 72 个
+  transport drops；16 kHz 状态机原先在第二个坏窗口永久进入 ERROR，现改为
+  自动重启 16 kHz 并标记 discontinuity，真实后端错误仍保持 fail-closed。
+  完整发布门禁通过 Python 192/192、音频专项 17/17、普通和 sanitizer host
+  各 36/36、ESP-IDF clean build、Swift、C ring/device/IPC、签名和 private
+  packaging。app-only 写入 `0x20000` 且独立 `verify_flash` digest matched。
+  最终 1800 秒报告
+  `build/hil/cardputer-audio-self-heal-final-1800s.json` 为 captured 64,711、
+  received 64,698、0 source overrun/transport drop/sequence gap/reconnect/
+  allocation failure、`max_gap_ms=147`；HID 1000/1000、0 failure、p95
+  100 us；steady heap 66,904、largest 45,056、TLS heap 55,448，全部 task
+  stack 通过。AVFoundation 直接读取 120,960/121,140 samples；安静环境
+  peak/RMS 为 -38.53/-53.11 dBFS，本机短语音后提升至 -29.81/-46.41 dBFS。
+- Next step: 提交本地分支。替换硬件的 LAN Companion PIN 尚未写入 Mac 配置，
+  因此设备 Web 状态仍显示 Companion OFFLINE；BLE GATT、MIC READY 与系统音频
+  输入不受影响，后续由用户用设备当前 PIN 更新 Mac Agent 配置。

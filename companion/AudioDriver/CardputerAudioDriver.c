@@ -172,17 +172,17 @@ static _Atomic UInt64 g_timeline_seed = 1;
 static double g_host_ticks_per_frame = 0.0;
 static void *g_ring_mapping = NULL;
 
-static void connect_shared_ring(void) {
+static bool connect_shared_ring(void) {
   CardputerAudioXPCClient *client =
       cardputer_audio_xpc_client_create();
   if (client == NULL) {
-    return;
+    return false;
   }
   const int descriptor =
       cardputer_audio_xpc_client_consumer_claim(client, 1);
   cardputer_audio_xpc_client_destroy(client);
   if (descriptor < 0) {
-    return;
+    return false;
   }
   const size_t size = cardputer_audio_ring_size();
   void *mapping = mmap(
@@ -194,15 +194,23 @@ static void connect_shared_ring(void) {
       0);
   close(descriptor);
   if (mapping == MAP_FAILED) {
-    return;
+    return false;
   }
   CardputerAudioRing *ring = mapping;
   if (!cardputer_audio_ring_is_valid(ring)) {
     munmap(mapping, size);
-    return;
+    return false;
   }
+  if (!cardputer_audio_device_replace_ring_if_idle(&g_device, ring)) {
+    munmap(mapping, size);
+    return false;
+  }
+  void *previous_mapping = g_ring_mapping;
   g_ring_mapping = mapping;
-  cardputer_audio_device_set_ring(&g_device, ring);
+  if (previous_mapping != NULL) {
+    munmap(previous_mapping, size);
+  }
+  return true;
 }
 
 __attribute__((visibility("default"))) void *CardputerAudioDriverFactory(
@@ -871,6 +879,7 @@ static OSStatus driver_start_io(
     return kAudioHardwareBadObjectError;
   }
   if (cardputer_audio_device_client_count(&g_device) == 0) {
+    (void)connect_shared_ring();
     atomic_store_explicit(
         &g_anchor_host_time, mach_absolute_time(), memory_order_release);
     atomic_fetch_add_explicit(

@@ -12,9 +12,15 @@ struct AudioCaptureConfig {
   AudioSampleRate rate = AudioSampleRate::hz24000;
 };
 
+enum class ProductMicDataPinMode : uint8_t {
+  input_no_pull,
+};
+
 struct ProductMicHardwareConfig {
   uint32_t sample_rate_hz = 0;
   int data_pin = -1;
+  ProductMicDataPinMode data_pin_mode =
+      ProductMicDataPinMode::input_no_pull;
   int clock_pin = -1;
   bool right_channel = false;
   uint8_t over_sampling = 0;

@@ -23,3 +23,6 @@ web-probe/node_modules/
 firmware/managed_components/
 firmware/sdkconfig
 firmware/sdkconfig.old
+tools/diagnostics/**/managed_components/
+tools/diagnostics/**/sdkconfig
+tools/diagnostics/**/sdkconfig.old

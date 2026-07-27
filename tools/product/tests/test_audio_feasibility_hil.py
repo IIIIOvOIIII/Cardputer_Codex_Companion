@@ -372,6 +372,28 @@ def test_serial_monitor_reclassifies_sample_preceding_tls_handshake():
         device_side.close()
 
 
+def test_serial_monitor_marks_sample_following_tls_handshake():
+    module = load_script()
+    monitor_side, device_side = socket.socketpair()
+    samples = []
+    monitor = module.SerialMonitor(monitor_side.fileno(), samples)
+    try:
+        monitor.start()
+        device_side.sendall(
+            b"I (1234) esp_https_server: performing session handshake\n"
+        )
+        assert monitor.wait_for("performing session handshake", timeout=1)
+        device_side.sendall(
+            b'{"scenario":"steady","audio":{"captured_frames":0}}\n'
+        )
+        assert monitor.wait_for_resource_sample(timeout=1)
+        assert samples[-1]["scenario"] == "tls_burst"
+    finally:
+        monitor.stop()
+        monitor_side.close()
+        device_side.close()
+
+
 class FakeSerialMonitor:
     def __init__(
         self,

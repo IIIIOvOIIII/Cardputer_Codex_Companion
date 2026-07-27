@@ -240,11 +240,13 @@ uint32_t ble_stale_link_timeout_ms() {
 bool ble_should_reset_stale_link(bool gap_connected,
                                  bool keyboard_ready,
                                  bool audio_sink_ready,
+                                 bool pairing_input_active,
                                  uint64_t now_ms,
                                  uint64_t state_changed_ms) {
   return gap_connected &&
          !audio_sink_ready &&
          !keyboard_ready &&
+         !pairing_input_active &&
          now_ms - state_changed_ms >= ble_stale_link_timeout_ms();
 }
 
@@ -787,7 +789,7 @@ void ble_reconnect_watchdog_task(void*) {
     const uint64_t changed_ms = g_hid_state_changed_ms.load();
     if (ble_should_reset_stale_link(
             connected, g_hid_ready.load(), ble_audio_sink_ready(),
-            current_ms, changed_ms)) {
+            ble_pairing_input_active(), current_ms, changed_ms)) {
       ESP_LOGW(kTag, "terminating stale HID link for reconnect");
       if (g_hid_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gap_terminate(g_hid_conn_handle, BLE_ERR_REM_USER_CONN_TERM);

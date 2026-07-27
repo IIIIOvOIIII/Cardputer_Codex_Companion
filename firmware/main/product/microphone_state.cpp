@@ -101,8 +101,9 @@ MicrophoneTransition MicrophoneStateMachine::apply(MicrophoneEvent event) {
         target_rate_ = AudioSampleRate::hz16000;
         return result(MicrophoneCommand::restart_capture_16k, true);
       }
-      state_ = MicrophoneState::error;
-      return result(MicrophoneCommand::stop_capture);
+      state_ = MicrophoneState::starting;
+      target_rate_ = AudioSampleRate::hz16000;
+      return result(MicrophoneCommand::restart_capture_16k, true);
 
     case MicrophoneEventKind::fatal_error: {
       const bool must_stop = capture_active_or_pending();

@@ -58,30 +58,50 @@ and renders digital silence while there is no valid producer.
 The corrected release was built and tested on 2026-07-27:
 
 - app-only firmware SHA-256:
-  `ff23437a1200b0489e9eac0f0339c2b4d320fd8d1d79c877f83748d0143339d7`;
+  `70c5a5426a4cc6f93abbe08599c0c5e8ec4a509796a7a665dbde144eced45e9a`;
 - private full image SHA-256:
-  `db31b2242f473a8b3e006f907c20da6afdcc4aafbe97d6f71ff38d4025a7f190`;
+  `a5f9ca147212b5772d8ece49ab3ab30e1da90899fa6879885821addeadac3c46`;
 - Companion executable SHA-256:
-  `0de564c02a003d6715713084ae995ffb682f0d86cd86aca3b3cf26be80ef8456`;
+  `166ad3626196b63a01683e5cdc496f30ed3b8b4a606dedd9066e729a28515d13`;
+- AudioBridge SHA-256:
+  `b2effde04edab161ee67f048ad43fbec73b2038180a5c898291d699e8e7ee1eb`;
+- HAL executable SHA-256:
+  `f2027535a5c82a0ad325761983ca2079c582e575be5825e8f56c4de096d28bc2`;
 - app-only flash at `0x20000` and independent `verify_flash`: digest matched;
-- automated release gate: Python 191/191, audio-specific Python 17/17,
+- automated release gate: Python 192/192, audio-specific Python 17/17,
   normal host 36/36, sanitizer host 36/36, clean ESP-IDF build, Swift,
-  C audio ring, HAL, signatures, and private packaging passed;
-- USB-triggered no-signal guard test: firmware stopped after 17 captured
-  frames with raw PCM peak/mean-absolute both equal to 8, zero source
-  overrun, transport drop, sequence gap, allocation failure, or BLE
-  reconnect.
+  C audio ring/device/IPC, HAL, signatures, and private packaging passed;
+- 1800-second HIL report
+  `build/hil/cardputer-audio-self-heal-final-1800s.json`: 64,711 captured,
+  64,698 received, zero source overruns, transport drops, sequence gaps,
+  BLE reconnects, allocation failures, or HID queue failures; maximum gap
+  147 ms; signal peak 32,768 and RMS 309.19; HID 1000/1000 with 100 us p95;
+  steady internal heap 66,904 bytes, largest block 45,056 bytes, TLS-burst
+  heap 55,448 bytes, and every task stack gate passed;
+- AVFoundation directly read the installed `Cardputer Codex Microphone`:
+  quiet peak/RMS were -38.53/-53.11 dBFS across 120,960 samples, and a short
+  local speech stimulus raised them to -29.81/-46.41 dBFS across 121,140
+  samples.
 
-The earlier 1800-second transport run is not valid evidence of acoustic
-capture: its gate accepted constant non-zero PCM. Cold power-cycle diagnostics
-measured a valid approximately 2.085 MHz clock on GPIO43 but no data edges on
-GPIO46. Both current and legacy M5.Mic driver paths failed to obtain acoustic
-data. The corrected firmware detects 16 consecutive constant low-level frames,
-stops capture, and reports `MIC_NO_SIGNAL`; the HIL gate now requires signal
-peak and RMS above 16.
+The replacement hardware diagnostic found that ESP-IDF 5.5 left GPIO46 as an
+output after `M5.begin()` board probing. Explicitly restoring the microphone
+data pin to an unpulled input before the unmodified `M5.Mic.begin()` restored
+dynamic PCM. The firmware retains the constant-low-level no-signal guard.
 
-The final LaunchAgent runs the released bundle and device status reports
-version 1.1.1 with BLE/Wi-Fi/Agent `OK` and microphone `READY` before local
-activation. Acoustic release validation remains blocked until the SPM1423,
-its power/soldering, or the GPIO46 board connection is repaired and the HIL
-passes with real signal.
+The Mac all-zero input defect was independent of microphone capture. The HAL
+now refreshes its shared-ring mapping when the first StartIO arrives, and the
+privileged bridge authenticates the actual macOS 14+ Apple platform-signed
+`com.apple.audio.Core-Audio-Driver-Service.helper` host running as
+`_coreaudiod`. Exact identity checks remain fail-closed.
+
+A failed pre-fix long run also exposed temporary NimBLE mbuf exhaustion. The
+16 kHz state machine previously treated the second bad loss window as a
+permanent error. It now restarts 16 kHz capture and marks a discontinuity so a
+transient BLE backpressure event cannot leave the Mac input permanently silent;
+capture backend and no-signal faults still stop with an error.
+
+The final LaunchAgent runs the released bundle. Device status reports version
+1.1.1, BLE/Wi-Fi `OK`, GATT microphone `READY`, and no microphone error. The
+replacement device's LAN Companion PIN has not been copied into the existing
+Mac configuration, so the independent LAN heartbeat currently reports
+Companion `OFFLINE`; this does not affect BLE audio or the Core Audio device.

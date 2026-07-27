@@ -208,15 +208,17 @@ int main() {
   assert(!ble_should_start_advertising(false, true));
   assert(ble_stale_link_timeout_ms() == 15000);
   assert(ble_should_reset_stale_link(
-      true, false, false, 16000, 0));
+      true, false, false, false, 16000, 0));
   assert(!ble_should_reset_stale_link(
-      true, false, true, 16000, 0));
+      true, false, false, true, 60000, 0));
   assert(!ble_should_reset_stale_link(
-      true, true, false, 60000, 0));
+      true, false, true, false, 16000, 0));
   assert(!ble_should_reset_stale_link(
-      false, false, false, 60000, 0));
+      true, true, false, false, 60000, 0));
   assert(!ble_should_reset_stale_link(
-      true, false, false, 14999, 0));
+      false, false, false, false, 60000, 0));
+  assert(!ble_should_reset_stale_link(
+      true, false, false, false, 14999, 0));
 
   CompanionBindingProof proof{};
   proof.conn_handle = 7;

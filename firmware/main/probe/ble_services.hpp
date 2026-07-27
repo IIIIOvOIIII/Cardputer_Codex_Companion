@@ -132,6 +132,7 @@ uint32_t ble_stale_link_timeout_ms();
 bool ble_should_reset_stale_link(bool gap_connected,
                                  bool keyboard_ready,
                                  bool audio_sink_ready,
+                                 bool pairing_input_active,
                                  uint64_t now_ms,
                                  uint64_t state_changed_ms);
 std::vector<uint8_t> encode_product_text_fragment(

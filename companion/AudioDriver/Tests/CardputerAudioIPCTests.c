@@ -52,6 +52,43 @@ int main(void) {
   peer.apple_platform = true;
   assert(cardputer_audio_ipc_authorize(&consumer, &peer));
 
+  peer.bundle_id = "com.lynx.cardputer-codex-microphone.driver";
+  peer.team_id = "";
+  peer.effective_uid = 202;
+  peer.ad_hoc = true;
+  peer.apple_platform = false;
+  assert(cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, true, ""));
+  peer.effective_uid = 501;
+  assert(!cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, true, ""));
+  peer.effective_uid = 202;
+  peer.bundle_id = "com.example.attacker";
+  assert(!cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, true, ""));
+
+  peer.bundle_id = "com.lynx.cardputer-codex-microphone.driver";
+  peer.team_id = "TEAM123456";
+  peer.ad_hoc = false;
+  assert(cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, false, "TEAM123456"));
+  peer.team_id = "WRONGTEAM";
+  assert(!cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, false, "TEAM123456"));
+
+  peer.bundle_id = "com.apple.audio.coreaudiod";
+  peer.team_id = "";
+  peer.effective_uid = 202;
+  peer.ad_hoc = false;
+  peer.apple_platform = true;
+  assert(cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, false, "TEAM123456"));
+
+  peer.bundle_id = "com.apple.audio.Core-Audio-Driver-Service.helper";
+  peer.ad_hoc = true;
+  assert(cardputer_audio_ipc_authorize_consumer(
+      &peer, 202, false, "TEAM123456"));
+
   CardputerAudioRing ring;
   cardputer_audio_ring_initialize(&ring);
   const float sample = 0.5f;

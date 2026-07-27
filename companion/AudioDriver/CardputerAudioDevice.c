@@ -19,6 +19,18 @@ void cardputer_audio_device_set_ring(
   atomic_store_explicit(&device->ring, ring, memory_order_release);
 }
 
+bool cardputer_audio_device_replace_ring_if_idle(
+    CardputerAudioDevice *device,
+    CardputerAudioRing *ring) {
+  if (device == NULL ||
+      atomic_load_explicit(
+          &device->client_count, memory_order_acquire) != 0) {
+    return false;
+  }
+  cardputer_audio_device_set_ring(device, ring);
+  return true;
+}
+
 uint32_t cardputer_audio_device_input_stream_count(
     const CardputerAudioDevice *device) {
   return device == NULL ? 0 : 1;

@@ -7,6 +7,7 @@
 #include <mach/mach_time.h>
 #include <os/log.h>
 #include <pthread.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,11 @@
 
 #define CARDPUTER_AUDIO_COMPANION_ID "com.lynx.cardputer-companion"
 #define CARDPUTER_AUDIO_COREAUDIOD_ID "com.apple.audio.coreaudiod"
+#define CARDPUTER_AUDIO_DRIVER_HOST_ID "com.apple.audio.DriverHelper"
+#define CARDPUTER_AUDIO_DRIVER_SERVICE_ID \
+  "com.apple.audio.Core-Audio-Driver-Service.helper"
+#define CARDPUTER_AUDIO_DRIVER_ID \
+  "com.lynx.cardputer-codex-microphone.driver"
 #define CARDPUTER_AUDIO_MACH_SERVICE \
   "com.lynx.cardputer-codex-microphone.ipc"
 
@@ -63,6 +69,30 @@ bool cardputer_audio_ipc_authorize(
   return !peer->ad_hoc && policy->expected_team_id != NULL &&
          peer->team_id != NULL &&
          strcmp(policy->expected_team_id, peer->team_id) == 0;
+}
+
+bool cardputer_audio_ipc_authorize_consumer(
+    const CardputerAudioIPCPeer *peer,
+    uid_t coreaudio_uid,
+    bool development,
+    const char *expected_team_id) {
+  if (peer == NULL || peer->bundle_id == NULL ||
+      peer->effective_uid != coreaudio_uid) {
+    return false;
+  }
+  if (strcmp(peer->bundle_id, CARDPUTER_AUDIO_COREAUDIOD_ID) == 0 ||
+      strcmp(peer->bundle_id, CARDPUTER_AUDIO_DRIVER_HOST_ID) == 0 ||
+      strcmp(peer->bundle_id, CARDPUTER_AUDIO_DRIVER_SERVICE_ID) == 0) {
+    return peer->apple_platform;
+  }
+  const CardputerAudioIPCPolicy driver_policy = {
+      .expected_bundle_id = CARDPUTER_AUDIO_DRIVER_ID,
+      .expected_team_id = expected_team_id,
+      .console_uid = coreaudio_uid,
+      .development = development,
+      .require_apple_platform = false,
+  };
+  return cardputer_audio_ipc_authorize(&driver_policy, peer);
 }
 
 void cardputer_audio_ipc_lease_initialize(
@@ -285,16 +315,33 @@ static bool authorize_consumer(xpc_connection_t connection) {
   char team_id[128] = {0};
   CardputerAudioIPCPeer peer = {0};
   if (!peer_identity(connection, bundle_id, team_id, &peer)) {
+    os_log_error(
+        OS_LOG_DEFAULT,
+        "Cardputer audio consumer identity lookup failed: pid=%d uid=%u",
+        xpc_connection_get_pid(connection),
+        (unsigned)xpc_connection_get_euid(connection));
     return false;
   }
-  const CardputerAudioIPCPolicy policy = {
-      .expected_bundle_id = CARDPUTER_AUDIO_COREAUDIOD_ID,
-      .expected_team_id = "",
-      .console_uid = 0,
-      .development = false,
-      .require_apple_platform = true,
-  };
-  return cardputer_audio_ipc_authorize(&policy, &peer);
+  const struct passwd *coreaudio = getpwnam("_coreaudiod");
+  const bool authorized =
+      coreaudio != NULL &&
+      cardputer_audio_ipc_authorize_consumer(
+          &peer,
+          coreaudio->pw_uid,
+          CARDPUTER_AUDIO_DEVELOPMENT != 0,
+          CARDPUTER_AUDIO_TEAM_ID);
+  if (!authorized) {
+    os_log_error(
+        OS_LOG_DEFAULT,
+        "Cardputer audio consumer rejected: bundle=%{public}s "
+        "team=%{public}s uid=%u adhoc=%d platform=%d",
+        bundle_id,
+        team_id,
+        (unsigned)peer.effective_uid,
+        peer.ad_hoc,
+        peer.apple_platform);
+  }
+  return authorized;
 }
 
 static void send_result(
