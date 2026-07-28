@@ -85,7 +85,7 @@
   build-time boundary then passed factory and Launcher runtime tests. Focused
   host tests passed 4/4 and the rebuilt macOS/Windows version and installer
   regressions passed 32/32.
-- Next step: Add failing tests for exact-boundary Launcher image packaging and
+- Next step: Add failing tests for Launcher image packaging and
   the expanded public artifact set.
 
 ## 2026-07-28 15:10 HKT
@@ -96,9 +96,10 @@
   `0x620000`-byte Launcher `1.3.0l` image with the required storage contract.
 - Result: Achieved. Focused packaging tests passed 13/13. Real ESP32-S3 builds
   reported application versions `1.3.0` and `1.3.0l`; the factory artifact
-  passed its erased Wi-Fi-range check, and the 6,422,528-byte Launcher artifact
-  passed application, embedded partition, storage label/size, and erased
-  Wi-Fi-range verification.
+  passed its erased Wi-Fi-range check, and the initial 6,422,528-byte Launcher
+  artifact passed application, embedded partition, storage label/size, and
+  erased Wi-Fi-range verification. This package shape was later superseded by
+  the official Launcher HIL correction recorded below.
 - Next step: Add a pure runtime storage-compatibility model and expose
   incompatible Launcher layouts on the Cardputer UI without blocking BLE,
   Wi-Fi, or Web startup.
@@ -161,8 +162,10 @@
   normal and ASan/UBSan host suites each passed 40/40; Node passed 5/5; final
   packaging/installer checks passed 34/34; Swift product suites, Go and
   Go-race passed. Factory reports runtime 1.3.0 with 135,057 bytes DIRAM
-  headroom, and Launcher reports runtime 1.3.0l with exact size 6,422,528
-  bytes and a compatible storage declaration. Fourteen checksum entries
+  headroom, and the initial Launcher package reported runtime 1.3.0l with size
+  6,422,528 bytes and a compatible storage declaration. This package shape was
+  later superseded by the official Launcher HIL correction recorded below.
+  Fourteen checksum entries
   verified, and the exact public allowlist accepted 15 top-level artifacts.
   The security audit enumerated 10 refs, 244 reflog commits, 20 retained
   unreachable objects, 1,643 Git blobs, and 488 current/artifact files with
@@ -176,3 +179,100 @@
   `b012acf72757371486f914d73a5cf0f836d93b0486e94054c5ae99366ace7359`.
 - Next step: Commit the software-gate evidence, back up the exact attached
   ESP32-S3, then execute Launcher and Factory hardware paths.
+
+## 2026-07-28 16:05 HKT
+
+- Current work: Back up the attached ESP32-S3 and validate the real official
+  M5Launcher dynamic-install partition behavior.
+- Expected result: Preserve recoverable device state and install `1.3.0l`
+  without replacing Launcher.
+- Result: Partial, then corrected. The exact device backup was stored under
+  `~/Library/Application Support/CardputerCodexCompanion/device-backups/`
+  as `30eda0c880a4-pre-1.3.0-20260728T1518HKT`, with directory mode 0700 and
+  file mode 0600. NVS SHA-256 is
+  `477ab041b89d623135261e9da576c6b92d737b3af8483dae95ba5591cf60a1f1`;
+  partition-table SHA-256 is
+  `86b614c316870c2e147c5644b5855a918388182b91260bab1927241d53773adb`;
+  storage SHA-256 is
+  `6b3bdf3946c4761700be5210c4a8df6a8a454f1d9592b9413e3f417b83059ad0`;
+  and Wi-Fi configuration SHA-256 is
+  `1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2`.
+  Official Launcher creates a dynamic partition only when the artifact
+  carries payload in that region, and its resulting label is `assets`.
+- Next step: Add a Launcher-only `assets` partition contract and an erased
+  4 KiB payload sector, then repeat the hardware installation.
+
+## 2026-07-28 16:25 HKT
+
+- Current work: Exercise Web status, Profile list/get/create/update/activate,
+  pet synchronization, BLE, and Agent heartbeat on the Launcher-installed
+  firmware under concurrent TLS activity.
+- Expected result: Keep Launcher, report runtime `1.3.0l`, expose ready
+  1,920 KiB storage, and persist custom text and HID bindings across reset.
+- Result: Achieved after resource fixes. The Launcher artifact is now
+  `0x621000` bytes: application data ends before `0x620000`, followed by one
+  erased 4 KiB partition-creation sector. Runtime reported `1.3.0l`, BLE,
+  Wi-Fi and Agent were OK, storage was READY at 1,966,080 bytes, unauthenticated
+  status returned HTTP 401, and all storage APIs returned HTTP 200. A custom
+  UTF-8 text binding and Alt+V HID chord survived hard reset. Root causes of
+  the observed Profile reboots were a full cJSON tree for 224 bindings,
+  20 KiB Profile temporaries and 4 KiB catalog chunks on the 4.8 KiB HTTPS
+  stack, and throwing heap allocation during TLS fragmentation. Encoding is
+  now a two-pass single-allocation serializer; constrained runtime allocations
+  are nothrow and return HTTP 503; catalog verification reuses the caller
+  Profile and heap chunk.
+- Next step: Validate the clean and configured Factory installation paths.
+
+## 2026-07-28 16:45 HKT
+
+- Current work: Validate Factory first boot after full erase, then temporarily
+  restore the backed-up NVS and Wi-Fi partitions to exercise the configured
+  runtime and Machine Agent.
+- Expected result: Prove the setup Wi-Fi scan no longer reboots and the same
+  source works with the official Factory storage label.
+- Result: Achieved. The clean Factory boot reported version `1.3.0`, completed
+  one Wi-Fi scan, then ran for 45 seconds with one expected serial-open reset,
+  zero panic/assert markers, stable approximately 68 KiB free internal heap,
+  and monotonically increasing uptime. The configured pass reported BLE,
+  Wi-Fi, and Agent OK, `storage` READY at 1,966,080 bytes, HTTP 401 without a
+  PIN, and SAFE Profile revision 1 with 224 bindings.
+- Next step: Run the final clean release gate, publish the branch, then erase
+  and flash its exact Factory artifact so the device is left at first-run
+  setup.
+
+## 2026-07-28 16:46 HKT
+
+- Current work: Apply the user's instruction to skip the remaining Launcher
+  extended observation.
+- Expected result: Preserve the completed eight stable rounds as evidence and
+  continue without waiting for the planned ten-minute soak.
+- Result: Achieved. Eight consecutive status/Profile/pet rounds returned HTTP
+  200, BLE stayed OK, Agent became OK from round two onward, and its PID did
+  not change. The omitted extended soak will not be represented as completed.
+- Next step: Complete automated release gates and public release publication.
+
+## 2026-07-28 16:52 HKT
+
+- Current work: Run the final clean dual-release gate after all Launcher HIL,
+  Profile resource, encoding, and documentation corrections.
+- Expected result: Rebuild every public artifact from source and pass all
+  platform, sanitizer, packaging, checksum, allowlist, and credential-history
+  controls.
+- Result: Achieved. Python passed 259/259 plus 38/38 audio-focused tests;
+  normal and ASan/UBSan firmware host suites each passed 40/40; Node passed
+  5/5; final installer/package checks passed 34/34; Swift product suites and
+  Go plus Go race passed. Factory retained 135,057 bytes DIRAM headroom.
+  Fourteen published checksum entries verified and the 15-entry public
+  allowlist passed. The security audit enumerated 10 refs, 245 reflog commits,
+  20 retained unreachable objects, 1,653 Git blobs, and 488 current/artifact
+  files with zero findings. Final SHA-256 values are Factory
+  `f9ece7fefc9c4f26452547c326a8000908db1bf9776dc55075a60cc5856b1f61`,
+  app-only
+  `eebf8109cec0c6cd46b42326db831e32fd3b1f1176ba6a42379697f7c8eea37b`,
+  Launcher
+  `7365785aa092fad1e88d0c83d1b575c6dc2c78dbcab7baa8587c52063114662b`,
+  and Web installer
+  `b012acf72757371486f914d73a5cf0f836d93b0486e94054c5ae99366ace7359`.
+- Next step: Commit and integrate the verified source, publish v1.3.0 and
+  GitHub Pages, then leave the attached device on the exact clean Factory
+  artifact.

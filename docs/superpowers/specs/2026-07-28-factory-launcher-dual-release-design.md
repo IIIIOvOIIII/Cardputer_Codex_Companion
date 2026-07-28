@@ -90,18 +90,18 @@ The Launcher artifact is:
 
 `Cardputer-Codex-Companion-1.3.0l-launcher.bin`
 
-It is a merged image whose embedded table declares the product `storage`
-partition and whose file extends exactly to the declared `storage` start at
-`0x620000`. It contains no private Wi-Fi NVS and no storage payload. Extending
-the file to the partition boundary makes the empty storage declaration
-unambiguous to Launcher's merged-image parser.
+It is a merged image whose embedded table declares an `assets` SPIFFS
+partition at `0x620000`. The file is `0x621000` bytes and therefore includes
+one erased 4 KiB payload sector at that partition's start. It contains no
+private Wi-Fi NVS or user storage data. The erased payload is required for
+Launcher's dynamic installer to materialize the declared data partition.
 
 The compatibility contract is:
 
 - M5Launcher `2.8.0` or later is required;
 - Launcher retains its protected application and OTA data partitions;
-- Launcher creates or resizes a SPIFFS-subtype partition labelled `storage`;
-- the resulting `storage` partition must be at least `0x1e0000` bytes;
+- Launcher creates or resizes a SPIFFS-subtype partition labelled `assets`;
+- the resulting `assets` partition must be at least `0x1e0000` bytes;
 - the application may run from any Launcher-selected OTA application offset;
 - future updates use Launcher, not the product's fixed-offset app-only image;
 - if Launcher cannot allocate the required app and storage space, installation
@@ -177,9 +177,10 @@ versions, the minimum Launcher version, and the required storage contract.
 Release verification rejects a Launcher artifact that:
 
 - contains a non-erased `wifi_cfg` payload;
-- ends before or after `0x620000`;
-- lacks the `storage` table entry;
+- is not exactly `0x621000` bytes;
+- lacks the `assets` table entry at `0x620000`;
 - declares a storage size below `0x1e0000`;
+- contains a non-erased byte in the final 4 KiB payload sector;
 - embeds a runtime version other than `1.3.0l`.
 
 README files explain which channel to choose, that factory installation removes
@@ -194,8 +195,8 @@ before installation.
   `1.3.0`.
 - Packaging tests parse both images and prove their embedded application
   versions and partition declarations.
-- Launcher-package tests prove the exact `0x620000` file length and erased
-  configuration/storage boundary.
+- Launcher-package tests prove the exact `0x621000` file length, erased
+  configuration range, and erased 4 KiB storage payload.
 - Runtime host tests cover `ready`, `missing`, `wrong_type`, and `too_small`.
 - Web tests exercise HTTP 401, network failure, partition HTTP 503, and generic
   authenticated server failure as distinct visible messages.

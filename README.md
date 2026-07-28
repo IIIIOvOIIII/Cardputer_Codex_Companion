@@ -100,11 +100,13 @@ the whole previous flash layout, including M5Launcher.
 
 Update M5Launcher to **2.8.0 or later**, copy or download
 `Cardputer-Codex-Companion-1.3.0l-launcher.bin`, and install it from
-M5Launcher. The image ends exactly at the required `storage` partition
-boundary and carries no Wi-Fi or storage payload.
+M5Launcher. The image contains the application plus one erased 4 KiB payload
+sector at the start of the declared `assets` SPIFFS partition. This lets
+M5Launcher create the 1,920 KiB storage partition while carrying no Wi-Fi
+configuration or user storage data.
 
 If the Cardputer shows `PARTITION ERROR`, its current Launcher layout has no
-compatible `storage` partition. Update/repartition through M5Launcher 2.8.0+
+compatible `assets` storage partition. Update/repartition through M5Launcher 2.8.0+
 and reinstall the Launcher artifact, or switch to Factory 1.3.0. A valid PIN
 will remain distinguishable in the Web console: partition incompatibility is
 reported as a storage error, not as `PIN incorrect`.

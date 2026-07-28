@@ -82,10 +82,12 @@ Windows 将串口改为 `COM5` 等实际端口，并使用 `py -m esptool`。Fac
 
 把 M5Launcher 更新到 **2.8.0 或更高版本**，复制或下载
 `Cardputer-Codex-Companion-1.3.0l-launcher.bin`，再从 M5Launcher
-安装。该镜像精确结束在所需的 `storage` 分区边界，不携带 Wi-Fi 或存储数据。
+安装。镜像在所声明的 `assets` SPIFFS 分区起点附带一个已擦除的 4 KiB
+payload 扇区，使 M5Launcher 能够创建 1,920 KiB 存储分区；其中不包含 Wi-Fi
+配置或用户存储数据。
 
 如果 Cardputer 显示 `PARTITION ERROR`，说明当前 Launcher 布局没有兼容的
-`storage` 分区。请通过 M5Launcher 2.8.0+ 更新/重新分区并重装 Launcher
+`assets` 存储分区。请通过 M5Launcher 2.8.0+ 更新/重新分区并重装 Launcher
 镜像，或改用 Factory 1.3.0。Web 会把分区不兼容明确显示为存储错误，不会把
 有效 PIN 错报为“PIN 错误”。
 

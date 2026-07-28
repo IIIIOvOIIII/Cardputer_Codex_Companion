@@ -54,10 +54,13 @@ python -m esptool --chip esp32s3 -b 460800 \
 ```
 
 保留 M5Launcher 时，必须先升级到 2.8.0 或更高版本，再从 Launcher 安装
-`Cardputer-Codex-Companion-1.3.0l-launcher.bin`。保留已配置 Factory
-设备状态的升级只写 `0x20000` 应用镜像，不能用于 Launcher 或未知分区布局。
-`PARTITION ERROR` 表示当前 `storage` 分区缺失、类型错误或容量不足，需要通过
-Launcher 重新分区或改刷 Factory 镜像。
+`Cardputer-Codex-Companion-1.3.0l-launcher.bin`。该制品长度为
+`0x621000`，最后一个 4 KiB 扇区保持擦除，用于让 Launcher 创建从
+`0x620000` 开始、大小为 `0x1e0000` 的 `assets` SPIFFS 分区；该扇区不含
+用户数据。保留已配置 Factory 设备状态的升级只写 `0x20000` 应用镜像，不能
+用于 Launcher 或未知分区布局。`PARTITION ERROR` 表示当前运行版本所需的存储
+分区缺失、类型错误或容量不足，需要通过 Launcher 重新分区或改刷 Factory
+镜像。
 
 自动构建不会擅自刷写设备。
 macOS 真机 HIL 与 Windows 真机安装/HIL 是独立运行门禁；没有对应硬件证据时，

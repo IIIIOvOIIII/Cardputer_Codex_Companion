@@ -12,7 +12,8 @@ so two isolated ESP-IDF build directories produce the factory and Launcher
 runtime versions from one source tree. A pure storage-compatibility model is
 shared by startup, the Cardputer UI, and the Web API; the ESP platform adapter
 only translates the discovered `esp_partition_t`. Packaging produces a normal
-factory image and an exact-boundary Launcher image, while the browser request
+factory image and a Launcher image with an erased partition-creation sector,
+while the browser request
 layer preserves HTTP status and structured error codes.
 
 **Tech Stack:** ESP-IDF 5.5.4, C++20, M5Unified, Python 3.11/pytest, POSIX shell,
@@ -26,10 +27,11 @@ esptool, GitHub Pages and GitHub Releases.
 - Both firmware variants are built from the same commit and source tree.
 - No Launcher branch, patch, binary modification, or maintained Launcher fork.
 - M5Launcher `2.8.0` is the minimum supported Launcher version.
-- Compatible storage is data/SPIFFS, labelled `storage`, and at least
-  `0x1e0000` bytes.
-- The Launcher image length is exactly `0x620000` bytes and contains no storage
-  payload or Wi-Fi credentials.
+- Factory storage is data/SPIFFS labelled `storage`; Launcher storage is
+  data/SPIFFS labelled `assets`. Both are at least `0x1e0000` bytes.
+- The Launcher image length is exactly `0x621000` bytes. Its final 4 KiB is
+  erased partition-creation payload, not user data, and the image contains no
+  Wi-Fi credentials.
 - The official factory image is written at offset `0x0` and replaces Launcher.
 - Public artifacts contain no Wi-Fi credentials, PINs, BLE keys, local paths,
   cached pets, or user configuration.
@@ -206,19 +208,19 @@ git commit -m "chore: advance dual release to 1.3.0"
 - Preserves aliases `dist/cardputer_codex_companion-full.bin` and
   `dist/cardputer_codex_companion.bin`.
 - Produces: `pad_launcher_image(source: Path, output: Path,
-  boundary: int = 0x620000) -> None`.
+  boundary: int = 0x620000) -> None`; output size is `boundary + 0x1000`.
 
 - [ ] **Step 1: Write failing Launcher image behavior tests**
 
 Create tests with literal expected bytes:
 
 ```python
-def test_launcher_image_is_padded_with_erased_flash_to_storage_boundary(tmp_path):
+def test_launcher_image_carries_erased_payload_for_dynamic_storage_creation(tmp_path):
     source = tmp_path / "merged.bin"
     source.write_bytes(b"\xe9\x01" + b"\xff" * 30)
     output = tmp_path / "launcher.bin"
     pad_launcher_image(source, output)
-    assert output.stat().st_size == 0x620000
+    assert output.stat().st_size == 0x621000
     assert output.read_bytes()[:32] == source.read_bytes()
     assert output.read_bytes()[-4096:] == b"\xff" * 4096
 
@@ -244,7 +246,7 @@ PYTHONPATH=. uv run pytest -q \
 
 Expected: collection fails because `package_launcher_image.py` does not exist.
 
-- [ ] **Step 3: Implement exact-boundary packaging**
+- [ ] **Step 3: Implement packaging with erased storage payload**
 
 Implement the public function as:
 
@@ -263,7 +265,7 @@ def pad_launcher_image(
     output.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as reader, output.open("wb") as writer:
         shutil.copyfileobj(reader, writer)
-        writer.write(b"\xff" * (boundary - size))
+        writer.write(b"\xff" * (boundary - size + 0x1000))
     output.chmod(0o600)
 ```
 
@@ -277,7 +279,7 @@ Update `package_product_firmware.sh` to:
 1. package and version-copy the factory build;
 2. configure and build `firmware/build-launcher` with
    `-DPROJECT_VER=1.3.0l`;
-3. generate the exact-boundary Launcher artifact;
+3. generate the Launcher artifact with its erased storage payload;
 4. refresh the two compatibility aliases.
 
 The Launcher verifier checks file length, erased `wifi_cfg`, embedded product
