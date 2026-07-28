@@ -192,13 +192,15 @@ constexpr std::string_view product_web_onboarding_step_name(
     case OnboardingStep::wifi_connect_verify: return "wifi_connect";
     case OnboardingStep::ble_pair_guide: return "ble_pair";
     case OnboardingStep::agent_install_guide: return "agent_install";
+    case OnboardingStep::complete_guide: return "complete";
     case OnboardingStep::complete: return "complete";
   }
   return "wifi_scan";
 }
 
 constexpr bool product_web_configuration_available(OnboardingStep step) {
-  return step == OnboardingStep::complete;
+  return step == OnboardingStep::complete_guide ||
+         step == OnboardingStep::complete;
 }
 
 constexpr bool product_web_restart_confirmation_valid(
@@ -215,7 +217,7 @@ inline std::string product_web_setup_json(OnboardingStep step) {
       "{\"product\":\"Cardputer Codex Companion\","
       "\"version\":\"%.*s\",\"complete\":%s,\"step\":\"%.*s\"}",
       static_cast<int>(kProductVersion.size()), kProductVersion.data(),
-      step == OnboardingStep::complete ? "true" : "false",
+      product_web_configuration_available(step) ? "true" : "false",
       static_cast<int>(name.size()), name.data());
   return json;
 }

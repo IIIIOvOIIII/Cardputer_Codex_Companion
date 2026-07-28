@@ -23,6 +23,7 @@ enum class OnboardingStep : uint8_t {
   wifi_connect_verify,
   ble_pair_guide,
   agent_install_guide,
+  complete_guide,
   complete,
 };
 
@@ -80,6 +81,7 @@ class OnboardingStateMachine {
   void on_wifi_failed();
   OnboardingResult on_ble_state(bool bonded, bool hid_connected);
   OnboardingResult on_agent_heartbeat(bool authenticated);
+  OnboardingResult acknowledge_complete();
   OnboardingResult restart_setup();
   OnboardingResult previous_step();
   void request_wifi_scan();

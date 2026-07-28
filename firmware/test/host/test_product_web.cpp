@@ -97,8 +97,16 @@ int main() {
   assert(setup_json.find("profile") == std::string::npos);
   assert(product_web_setup_json(OnboardingStep::complete).find(
              "\"complete\":true") != std::string::npos);
+  assert(product_web_setup_json(OnboardingStep::complete_guide).find(
+             "\"complete\":true") != std::string::npos);
+  assert(
+      product_web_onboarding_step_name(OnboardingStep::complete_guide) ==
+      "complete"
+  );
   assert(!product_web_configuration_available(
       OnboardingStep::agent_install_guide));
+  assert(product_web_configuration_available(
+      OnboardingStep::complete_guide));
   assert(product_web_configuration_available(OnboardingStep::complete));
   assert(product_web_restart_confirmation_valid("RUN_SETUP_AGAIN"));
   assert(!product_web_restart_confirmation_valid("yes"));

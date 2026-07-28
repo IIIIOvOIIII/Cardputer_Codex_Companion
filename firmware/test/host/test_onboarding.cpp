@@ -76,6 +76,13 @@ int main() {
   assert(first_boot.on_wifi_connected() == OnboardingResult::ok);
   assert(first_boot.step() == OnboardingStep::ble_pair_guide);
   assert(blank.commits == 1);
+  OnboardingController ble_guide(first_boot);
+  const OnboardingContent ble_content = ble_guide.content();
+  assert(ble_content.count == 5);
+  assert(content_contains(ble_content, "ON COMPUTER: BLUETOOTH"));
+  assert(content_contains(ble_content, "SEARCH: CARDPUTER CODEX"));
+  assert(content_contains(ble_content, "SELECT PAIR / CONNECT"));
+  assert(content_contains(ble_content, "TYPE COMPUTER CODE HERE"));
 
   OnboardingStateMachine after_wifi_reboot(blank);
   assert(after_wifi_reboot.load(false) == OnboardingLoadResult::loaded);
@@ -97,9 +104,10 @@ int main() {
   const OnboardingContent agent_content =
       agent_guide.content("192.168.1.195", "12345678");
   assert(agent_content.count == 5);
-  assert(content_contains(agent_content, "IP:192.168.1.195"));
-  assert(content_contains(agent_content, "PIN:12345678"));
-  assert(content_contains(agent_content, "RUN ./install.sh"));
+  assert(content_contains(
+      agent_content, "IP:192.168.1.195 PIN:12345678"));
+  assert(content_contains(agent_content, "MAC: ./install.sh install"));
+  assert(content_contains(agent_content, "WIN: RUN 1.3.1 SETUP.EXE"));
   assert(content_contains(agent_content, "WAITING HEARTBEAT..."));
 
   OnboardingStateMachine after_ble_reboot(blank);
@@ -113,6 +121,21 @@ int main() {
   assert(
       after_ble_reboot.on_agent_heartbeat(true) == OnboardingResult::ok
   );
+  assert(after_ble_reboot.step() == OnboardingStep::complete_guide);
+  assert(!after_ble_reboot.completed());
+  OnboardingController complete_guide(after_ble_reboot);
+  const OnboardingContent complete_content =
+      complete_guide.content("192.168.1.195", "12345678");
+  assert(complete_content.count == 5);
+  assert(content_contains(complete_content, "SETUP COMPLETE"));
+  assert(content_contains(complete_content, "SETTINGS: FN+/ X4"));
+  assert(content_contains(
+      complete_content, "WEB: HTTPS://192.168.1.195/"));
+  assert(content_contains(complete_content, "PIN:12345678"));
+  assert(content_contains(complete_content, "PRESS ANY KEY"));
+  assert(complete_guide.on_key(30, true, false).captured);
+  assert(after_ble_reboot.step() == OnboardingStep::complete);
+  assert(complete_guide.on_key(30, false, false).captured);
   assert(after_ble_reboot.completed());
 
   OnboardingStateMachine completed_reboot(blank);
@@ -161,6 +184,20 @@ int main() {
   failed_gate.fail_commit = true;
   assert(gate.on_wifi_connected() == OnboardingResult::storage_error);
   assert(gate.step() == OnboardingStep::wifi_connect_verify);
+
+  MemoryOnboardingBackend failed_agent_backend;
+  OnboardingStateMachine failed_agent(failed_agent_backend);
+  assert(failed_agent.load(false) == OnboardingLoadResult::first_run);
+  assert(failed_agent.on_scan_complete(true) == OnboardingResult::ok);
+  assert(failed_agent.on_network_selected(false) == OnboardingResult::ok);
+  assert(failed_agent.on_wifi_connected() == OnboardingResult::ok);
+  assert(failed_agent.on_ble_state(true, true) == OnboardingResult::ok);
+  failed_agent_backend.fail_commit = true;
+  assert(
+      failed_agent.on_agent_heartbeat(true) ==
+      OnboardingResult::storage_error
+  );
+  assert(failed_agent.step() == OnboardingStep::agent_install_guide);
 
   MemoryOnboardingBackend corrupt;
   corrupt.has_value = true;

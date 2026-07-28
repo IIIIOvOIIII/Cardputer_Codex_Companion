@@ -200,8 +200,16 @@ OnboardingResult OnboardingStateMachine::on_agent_heartbeat(
   }
   return persist(
       OnboardingCheckpoint::complete,
-      OnboardingStep::complete
+      OnboardingStep::complete_guide
   );
+}
+
+OnboardingResult OnboardingStateMachine::acknowledge_complete() {
+  if (step_ != OnboardingStep::complete_guide) {
+    return OnboardingResult::ignored;
+  }
+  step_ = OnboardingStep::complete;
+  return OnboardingResult::ok;
 }
 
 OnboardingResult OnboardingStateMachine::restart_setup() {
@@ -309,6 +317,10 @@ OnboardingInputResult OnboardingController::on_key(
 OnboardingInputResult OnboardingController::browse_key(
     uint8_t physical_key
 ) {
+  if (state_.step() == OnboardingStep::complete_guide) {
+    state_.acknowledge_complete();
+    return {.captured = true};
+  }
   if (physical_key == kKeyBacktick &&
       state_.step() == OnboardingStep::ble_pair_guide) {
     const OnboardingResult result = state_.previous_step();
@@ -552,15 +564,25 @@ OnboardingContent OnboardingController::content(
       break;
     case OnboardingStep::ble_pair_guide:
       add("SETUP 2/3 BLUETOOTH");
-      add("PAIR FROM THIS COMPUTER");
-      add("CONFIRM CODE ON DEVICE");
+      add("ON COMPUTER: BLUETOOTH");
+      add("SEARCH: CARDPUTER CODEX");
+      add("SELECT PAIR / CONNECT");
+      add("TYPE COMPUTER CODE HERE");
       break;
     case OnboardingStep::agent_install_guide:
       add("SETUP 3/3 AGENT");
-      add(std::string("IP:") + std::string(ipv4));
-      add(std::string("PIN:") + std::string(pairing_code));
-      add("RUN ./install.sh");
+      add(std::string("IP:") + std::string(ipv4) + " PIN:" +
+          std::string(pairing_code));
+      add("MAC: ./install.sh install");
+      add("WIN: RUN 1.3.1 SETUP.EXE");
       add("WAITING HEARTBEAT...");
+      break;
+    case OnboardingStep::complete_guide:
+      add("SETUP COMPLETE");
+      add("SETTINGS: FN+/ X4");
+      add(std::string("WEB: HTTPS://") + std::string(ipv4) + "/");
+      add(std::string("PIN:") + std::string(pairing_code));
+      add("PRESS ANY KEY");
       break;
     case OnboardingStep::complete:
       add("SETUP COMPLETE");
