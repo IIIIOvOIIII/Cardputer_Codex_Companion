@@ -48,6 +48,9 @@ std::atomic<uint32_t> g_microphone_sample_rate_hz{0};
 std::atomic<uint8_t> g_microphone_drop_percent{0};
 std::atomic<ProductWebMicrophoneError> g_microphone_last_error{
     ProductWebMicrophoneError::none};
+std::atomic<StorageCompatibilityState> g_storage_state{
+    StorageCompatibilityState::missing};
+std::atomic<uint32_t> g_storage_size_bytes{0};
 std::atomic<CodexAction> g_pending_codex_action{CodexAction::none};
 std::atomic<uint32_t> g_action_sequence{0};
 std::atomic<std::size_t> g_active_tls_sessions{0};
@@ -139,6 +142,26 @@ esp_err_t reject_pairing(httpd_req_t* request) {
 esp_err_t reject_setup_incomplete(httpd_req_t* request) {
   return json_response(
       request, "{\"error\":\"setup_incomplete\"}", "409 Conflict");
+}
+
+StorageCompatibility current_storage_compatibility() {
+  const StorageCompatibilityState state =
+      g_storage_state.load(std::memory_order_acquire);
+  return {
+      .state = state,
+      .size_bytes =
+          g_storage_size_bytes.load(std::memory_order_relaxed),
+  };
+}
+
+bool compatible_storage_available(httpd_req_t* request) {
+  const StorageCompatibility status =
+      current_storage_compatibility();
+  if (status.ready()) return true;
+  const std::string json =
+      product_web_partition_error_json(status);
+  json_response(request, json.c_str(), "503 Service Unavailable");
+  return false;
 }
 
 bool normal_configuration_available(httpd_req_t* request) {
@@ -452,7 +475,7 @@ esp_err_t setup_handler(httpd_req_t* request) {
 
 esp_err_t status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
-  char json[384]{};
+  char json[512]{};
   const ServiceState ble = g_ble.load();
   const ServiceState wifi = g_wifi.load();
   const ServiceState companion = g_companion.load();
@@ -464,24 +487,27 @@ esp_err_t status_handler(httpd_req_t* request) {
   };
   const std::string microphone_json =
       product_web_microphone_json(microphone);
+  const std::string storage_json =
+      product_web_storage_json(current_storage_compatibility());
   std::snprintf(json, sizeof(json),
                 "{\"product\":\"Cardputer Codex Companion\","
                 "\"version\":\"%.*s\",\"ble\":\"%.*s\","
                 "\"wifi\":\"%.*s\",\"companion\":\"%.*s\","
-                "\"ip\":\"%s\",\"microphone\":%s}",
+                "\"ip\":\"%s\",\"microphone\":%s,\"storage\":%s}",
                 static_cast<int>(kProductVersion.size()),
                 kProductVersion.data(),
                 static_cast<int>(to_string(ble).size()), to_string(ble).data(),
                 static_cast<int>(to_string(wifi).size()), to_string(wifi).data(),
                 static_cast<int>(to_string(companion).size()),
                 to_string(companion).data(), product_wifi_ipv4(),
-                microphone_json.c_str());
+                microphone_json.c_str(), storage_json.c_str());
   return json_response(request, json);
 }
 
 esp_err_t get_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   std::string json;
   ProfileCatalogResult catalog_result = ProfileCatalogResult::ok;
   {
@@ -508,6 +534,7 @@ esp_err_t get_profile_handler(httpd_req_t* request) {
 esp_err_t put_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   const std::string body = read_body(request);
   auto candidate = std::make_unique<Profile>();
   if (decode_profile(body, *candidate) != ProfileCodecResult::ok) {
@@ -560,6 +587,7 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
 esp_err_t list_profiles_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -599,6 +627,7 @@ esp_err_t list_profiles_handler(httpd_req_t* request) {
 esp_err_t create_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -644,6 +673,7 @@ esp_err_t create_profile_handler(httpd_req_t* request) {
 esp_err_t activate_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -684,6 +714,7 @@ esp_err_t activate_profile_handler(httpd_req_t* request) {
 esp_err_t delete_profile_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   if (!normal_configuration_available(request)) return ESP_OK;
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_profile_catalog == nullptr) {
     return json_response(request, "{\"error\":\"profile_catalog_failed\"}",
                          "503 Service Unavailable");
@@ -855,12 +886,14 @@ esp_err_t pet_status_response(httpd_req_t* request) {
 esp_err_t pet_status_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   note_companion_activity();
+  if (!compatible_storage_available(request)) return ESP_OK;
   return pet_status_response(request);
 }
 
 esp_err_t pet_begin_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   note_companion_activity();
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -914,6 +947,7 @@ esp_err_t pet_begin_handler(httpd_req_t* request) {
 esp_err_t pet_chunk_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   note_companion_activity();
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -973,6 +1007,7 @@ esp_err_t pet_chunk_handler(httpd_req_t* request) {
 esp_err_t pet_commit_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   note_companion_activity();
+  if (!compatible_storage_available(request)) return ESP_OK;
   if (g_pet_store == nullptr) {
     return json_response(request, "{\"error\":\"pet_store_unavailable\"}",
                          "503 Service Unavailable");
@@ -1100,6 +1135,14 @@ void product_web_set_microphone(ProductWebMicrophoneStatus status) {
   g_microphone_drop_percent.store(
       static_cast<uint8_t>(std::min<unsigned>(status.drop_percent, 100)));
   g_microphone_last_error.store(status.last_error);
+}
+
+void product_web_set_storage_compatibility(
+    StorageCompatibility compatibility) {
+  g_storage_size_bytes.store(
+      compatibility.size_bytes, std::memory_order_relaxed);
+  g_storage_state.store(
+      compatibility.state, std::memory_order_release);
 }
 
 void product_web_set_companion_snapshot_handler(

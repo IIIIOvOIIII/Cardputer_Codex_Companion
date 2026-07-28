@@ -53,6 +53,38 @@ int main() {
   assert(product_web_microphone_error_name(
              ProductWebMicrophoneError::mic_no_signal) ==
          "MIC_NO_SIGNAL");
+  const StorageCompatibility missing{
+      .state = StorageCompatibilityState::missing,
+      .size_bytes = 0,
+  };
+  assert(product_web_storage_json(missing) ==
+         "{\"state\":\"MISSING\",\"size_bytes\":0}");
+  assert(product_web_partition_error_json(missing) ==
+         "{\"error\":\"partition_incompatible\",\"reason\":\"missing\"}");
+  const StorageCompatibility wrong_type{
+      .state = StorageCompatibilityState::wrong_type,
+      .size_bytes = 0x1e0000,
+  };
+  assert(product_web_storage_json(wrong_type) ==
+         "{\"state\":\"WRONG_TYPE\",\"size_bytes\":1966080}");
+  assert(product_web_partition_error_json(wrong_type) ==
+         "{\"error\":\"partition_incompatible\","
+         "\"reason\":\"wrong_type\"}");
+  const StorageCompatibility too_small{
+      .state = StorageCompatibilityState::too_small,
+      .size_bytes = 0x1dffff,
+  };
+  assert(product_web_storage_json(too_small) ==
+         "{\"state\":\"TOO_SMALL\",\"size_bytes\":1966079}");
+  assert(product_web_partition_error_json(too_small) ==
+         "{\"error\":\"partition_incompatible\","
+         "\"reason\":\"too_small\"}");
+  const StorageCompatibility ready{
+      .state = StorageCompatibilityState::ready,
+      .size_bytes = 0x1e0000,
+  };
+  assert(product_web_storage_json(ready) ==
+         "{\"state\":\"READY\",\"size_bytes\":1966080}");
   const std::string setup_json =
       product_web_setup_json(OnboardingStep::agent_install_guide);
   assert(setup_json ==

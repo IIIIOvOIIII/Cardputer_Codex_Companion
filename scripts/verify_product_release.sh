@@ -27,6 +27,7 @@ cmake --build build/product-host-sanitize -j
 ctest --test-dir build/product-host-sanitize --output-on-failure
 
 python3 scripts/build_web_assets.py --check
+node --test web/tests/device_api.test.js
 
 rm -f firmware/sdkconfig firmware/sdkconfig.old
 (

@@ -15,7 +15,12 @@ OUTPUT = ROOT / "firmware/main/product/web_assets.hpp"
 def render(release_base_url: str = "") -> str:
     document_html = (ROOT / "web/src/index.html").read_text()
     css = (ROOT / "web/src/style.css").read_text()
-    js = (ROOT / "web/src/app.js").read_text()
+    js = "\n".join(
+        (
+            (ROOT / "web/src/device_api.js").read_text(),
+            (ROOT / "web/src/app.js").read_text(),
+        )
+    )
     document_html = document_html.replace(
         "__PUBLIC_RELEASE_BASE_URL__",
         html.escape(release_base_url.rstrip("/"), quote=True),

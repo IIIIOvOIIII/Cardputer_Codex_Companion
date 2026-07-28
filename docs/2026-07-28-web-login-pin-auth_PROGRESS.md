@@ -119,3 +119,19 @@
 - Next step: Publish the storage state through `/api/v1/status`, return
   structured HTTP 503 errors for storage-dependent APIs, and preserve those
   distinctions in the Web login client.
+
+## 2026-07-28 15:30 HKT
+
+- Current work: Separate Web authentication, reachability, service, and
+  partition failures across firmware APIs and the embedded browser client.
+- Expected result: Keep authenticated status readable on incompatible layouts,
+  return a structured partition HTTP 503 for storage APIs, and never report
+  that response as a bad PIN.
+- Result: Achieved. Firmware Web JSON tests passed 1/1, browser request/error
+  tests passed 5/5, Web asset tests passed 11/11, and the regenerated embedded
+  page passed deterministic asset checks. All profile and pet handlers now use
+  the shared storage guard, `/api/v1/status` includes storage state and size,
+  and a complete ESP32-S3 build succeeded with 48% application-partition
+  headroom.
+- Next step: Build the project-owned Web Serial Factory installer and
+  deterministic GitHub Pages payload.

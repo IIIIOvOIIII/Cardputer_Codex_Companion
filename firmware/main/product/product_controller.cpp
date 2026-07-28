@@ -1536,6 +1536,7 @@ class EspProductStartup final : public ProductStartupBackend {
       g_settings.set_device_settings(settings);
       g_settings.set_input_mode(g_input_router.mode());
       g_storage_compatibility = inspect_storage_compatibility();
+      product_web_set_storage_compatibility(g_storage_compatibility);
       {
         SemaphoreLock lock(g_ui_mutex);
         if (lock.locked()) {

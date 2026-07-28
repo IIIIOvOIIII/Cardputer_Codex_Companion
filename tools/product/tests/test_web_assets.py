@@ -33,6 +33,23 @@ def test_web_ui_starts_with_masked_pin_authentication() -> None:
     assert "showApp" in script
 
 
+def test_web_login_preserves_device_error_semantics() -> None:
+    script = Path("web/src/app.js").read_text()
+    device_api = Path("web/src/device_api.js").read_text()
+    builder = Path("scripts/build_web_assets.py").read_text()
+
+    assert "requestDevice(fetch,path,options,token())" in script
+    assert "loginErrorMessage(error)" in script
+    assert "PIN 错误或设备不可达" not in script
+    assert 'class DeviceApiError extends Error' in device_api
+    assert '"partition_incompatible"' in device_api
+    assert "设备不可达，请检查 IP、Wi-Fi 和证书访问" in device_api
+    assert "PIN 错误" in device_api
+    assert "设备分区不兼容" in device_api
+    assert "设备服务暂不可用，请稍后重试" in device_api
+    assert builder.index("device_api.js") < builder.index("app.js")
+
+
 def test_login_spacing_and_result_dialog_structure() -> None:
     html = Path("web/src/index.html").read_text()
     css = Path("web/src/style.css").read_text()

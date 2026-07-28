@@ -11,6 +11,7 @@
 #include "product/onboarding.hpp"
 #include "product/pet_store.hpp"
 #include "product/product_types.hpp"
+#include "product/storage_compatibility.hpp"
 
 enum class ProductHttpMethod : uint8_t { get, post, put, delete_ };
 inline constexpr bool kProductWebUsesTls = true;
@@ -145,6 +146,42 @@ inline std::string product_web_microphone_json(
   return json;
 }
 
+constexpr std::string_view product_web_storage_state_name(
+    StorageCompatibilityState state) {
+  switch (state) {
+    case StorageCompatibilityState::ready: return "READY";
+    case StorageCompatibilityState::missing: return "MISSING";
+    case StorageCompatibilityState::wrong_type: return "WRONG_TYPE";
+    case StorageCompatibilityState::too_small: return "TOO_SMALL";
+  }
+  return "MISSING";
+}
+
+inline std::string product_web_storage_json(
+    const StorageCompatibility& status) {
+  char json[96]{};
+  const std::string_view state =
+      product_web_storage_state_name(status.state);
+  std::snprintf(
+      json, sizeof(json),
+      "{\"state\":\"%.*s\",\"size_bytes\":%lu}",
+      static_cast<int>(state.size()), state.data(),
+      static_cast<unsigned long>(status.size_bytes));
+  return json;
+}
+
+inline std::string product_web_partition_error_json(
+    const StorageCompatibility& status) {
+  char json[96]{};
+  const std::string_view reason =
+      storage_compatibility_name(status.state);
+  std::snprintf(
+      json, sizeof(json),
+      "{\"error\":\"partition_incompatible\",\"reason\":\"%.*s\"}",
+      static_cast<int>(reason.size()), reason.data());
+  return json;
+}
+
 constexpr std::string_view product_web_onboarding_step_name(
     OnboardingStep step
 ) {
@@ -224,6 +261,8 @@ void product_web_set_status(ServiceState ble, ServiceState wifi,
                             ServiceState companion);
 void product_web_set_onboarding(OnboardingStep step);
 void product_web_set_microphone(ProductWebMicrophoneStatus status);
+void product_web_set_storage_compatibility(
+    StorageCompatibility compatibility);
 void product_web_set_companion_snapshot_handler(
     ProductCompanionSnapshotHandler handler);
 void product_web_set_companion_heartbeat_handler(
