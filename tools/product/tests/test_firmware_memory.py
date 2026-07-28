@@ -177,7 +177,8 @@ def test_status_pages_restore_body_cursor_after_header_microphone():
     )
     body_cursor = display.index("M5.Display.setCursor(0, 20);", microphone)
     content = display.index(
-        "const UiPageContent content = model.page_content();"
+        "const UiPageContent content = model.page_content();",
+        body_cursor,
     )
     assert microphone < body_cursor < content
 

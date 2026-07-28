@@ -149,3 +149,30 @@
   0644 and the requested epoch, and both JSON documents parsed successfully.
 - Next step: Update the bilingual documentation and full release gate for the
   two installation channels and complete artifact production.
+
+## 2026-07-28 15:50 HKT
+
+- Current work: Complete the bilingual dual-channel operator documentation
+  and run the clean non-hardware release gate for 1.3.0/1.3.0l.
+- Expected result: Pass Python, C++ host/sanitizer, Node, Swift, Go/race,
+  ESP32-S3, signing, deterministic packaging, checksum, allowlist, and
+  all-history credential gates; produce every approved release artifact.
+- Result: Achieved. Python passed 257/257 plus 38/38 focused product tests;
+  normal and ASan/UBSan host suites each passed 40/40; Node passed 5/5; final
+  packaging/installer checks passed 34/34; Swift product suites, Go and
+  Go-race passed. Factory reports runtime 1.3.0 with 135,057 bytes DIRAM
+  headroom, and Launcher reports runtime 1.3.0l with exact size 6,422,528
+  bytes and a compatible storage declaration. Fourteen checksum entries
+  verified, and the exact public allowlist accepted 15 top-level artifacts.
+  The security audit enumerated 10 refs, 244 reflog commits, 20 retained
+  unreachable objects, 1,643 Git blobs, and 488 current/artifact files with
+  zero findings. Key SHA-256 values are Factory
+  `2477fdfb9e29ac31e804d5d32de8994afcda42a355bc322d837571f9d805b692`,
+  app-only
+  `d536f2298b08cb930e503dcfae7a62dd96ac72e8628aa1e987679983bfd670ae`,
+  Launcher
+  `bd74b976fada8824bc0ca33b05195c9dedfe3c9fd39c2bc6d3ae4ee41fe44269`,
+  and Web installer
+  `b012acf72757371486f914d73a5cf0f836d93b0486e94054c5ae99366ace7359`.
+- Next step: Commit the software-gate evidence, back up the exact attached
+  ESP32-S3, then execute Launcher and Factory hardware paths.

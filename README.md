@@ -4,7 +4,7 @@
 
 Cardputer Codex Companion turns an [M5Stack Cardputer](https://docs.m5stack.com/en/core/Cardputer) into a LAN-only Codex remote display, a programmable Bluetooth keyboard, and an optional wireless microphone for macOS.
 
-Current release: **1.2.3**
+Current release: **1.3.0** (Factory) / **1.3.0l** (M5Launcher)
 
 ## Overview
 
@@ -41,27 +41,39 @@ The public firmware contains no Wi-Fi credentials, device PIN, pairing data, pri
 | Machine Agent | macOS 14 or later | Full feature set |
 | Machine Agent | Windows 10 22H2 / Windows 11 | Codex state/actions and pet sync |
 | Bluetooth microphone | macOS only | Installs a HAL driver and AudioBridge |
-| Unicode GATT injection | macOS only | Windows support is not included in 1.2.3 |
+| Unicode GATT injection | macOS only | Windows support is not included in 1.3.0 |
 
 The firmware does not provide Internet or out-of-LAN Codex control.
 
 ## Firmware Installation
 
-### Requirements
+### Choose an installation channel
 
 - M5Stack Cardputer and a data-capable USB-C cable.
-- Python 3 with [esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32s3/installation.html).
-- The `1.2.3` release artifacts and `1.2.3-SHA256SUMS`.
+- **Factory 1.3.0 (recommended):** installs the official product partition
+  layout at offset `0x0`. It removes M5Launcher and resets Wi-Fi, PIN, keyboard
+  profiles, pets, onboarding state, and BLE pairing.
+- **Launcher 1.3.0l:** preserves M5Launcher and its flash layout. Update
+  M5Launcher to **2.8.0 or later**, then install
+  `Cardputer-Codex-Companion-1.3.0l-launcher.bin` through M5Launcher. Use
+  M5Launcher for later updates.
 
 Verify the downloaded files before flashing:
 
 ```bash
-shasum -a 256 -c 1.2.3-SHA256SUMS
+shasum -a 256 -c 1.3.0-SHA256SUMS
 ```
 
-### New or factory-reset device
+### Factory 1.3.0 (recommended)
 
-Use the generic full image. Replace the port with the one shown on your computer.
+The simplest route is the
+[project Web Serial installer](https://iiiioovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)
+in desktop Chrome or Edge over HTTPS. Connect the Cardputer by USB and select
+**Install Factory Firmware 1.3.0**.
+
+To flash from a terminal, install Python 3 and
+[esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32s3/installation.html),
+then replace the port with the one shown on your computer.
 
 macOS example:
 
@@ -69,7 +81,7 @@ macOS example:
 python3 -m esptool --chip esp32s3 \
   --port /dev/cu.usbmodemXXXX -b 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 cardputer_codex_companion-full.bin
+  write_flash 0x0 Cardputer-Codex-Companion-1.3.0-factory.bin
 ```
 
 Windows example:
@@ -78,26 +90,40 @@ Windows example:
 py -m esptool --chip esp32s3 `
   --port COM5 -b 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 cardputer_codex_companion-full.bin
+  write_flash 0x0 Cardputer-Codex-Companion-1.3.0-factory.bin
 ```
 
-The full public image deliberately leaves the Wi-Fi configuration partition erased.
-Factory firmware, M5Launcher, and other third-party firmware may use a
-different partition table. Always perform this full-image installation once
-before using the application-only upgrade command below.
+The Factory image deliberately leaves Wi-Fi configuration erased and replaces
+the whole previous flash layout, including M5Launcher.
 
-### State-preserving upgrade
+### Launcher 1.3.0l
 
-To preserve the existing PIN, Wi-Fi, profiles, pets, onboarding record, and BLE bonds, flash only the application image at `0x20000`:
+Update M5Launcher to **2.8.0 or later**, copy or download
+`Cardputer-Codex-Companion-1.3.0l-launcher.bin`, and install it from
+M5Launcher. The image ends exactly at the required `storage` partition
+boundary and carries no Wi-Fi or storage payload.
+
+If the Cardputer shows `PARTITION ERROR`, its current Launcher layout has no
+compatible `storage` partition. Update/repartition through M5Launcher 2.8.0+
+and reinstall the Launcher artifact, or switch to Factory 1.3.0. A valid PIN
+will remain distinguishable in the Web console: partition incompatibility is
+reported as a storage error, not as `PIN incorrect`.
+
+### State-preserving Factory upgrade
+
+Only a device already using the official Factory layout may preserve PIN,
+Wi-Fi, profiles, pets, onboarding state, and BLE bonds by flashing the
+versioned application image at the fixed offset `0x20000`:
 
 ```bash
 python3 -m esptool --chip esp32s3 \
   --port /dev/cu.usbmodemXXXX -b 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x20000 cardputer_codex_companion.bin
+  write_flash 0x20000 Cardputer-Codex-Companion-1.3.0-app.bin
 ```
 
-Never write the application-only image at `0x0`.
+Never write the application-only image at `0x0`, and never use this
+fixed-offset command on an M5Launcher or unknown partition layout.
 
 ## First-Run Setup
 
@@ -181,12 +207,12 @@ Perform a clean uninstall, including pairing configuration and logs:
 On Windows x64, run:
 
 ```text
-CardputerCompanion-1.2.3-windows-x64-setup.exe
+CardputerCompanion-1.3.0-windows-x64-setup.exe
 ```
 
 The per-user installer writes to `%LOCALAPPDATA%\CardputerCodexCompanion`, creates a least-privilege logon Scheduled Task, and adds Pair Device, Status, Doctor, and Uninstall shortcuts to the Start Menu. It does not install a driver or Windows service and does not require administrator rights.
 
-For Windows ARM64, extract `CardputerCompanion-1.2.3-windows-arm64.zip` and run:
+For Windows ARM64, extract `CardputerCompanion-1.3.0-windows-arm64.zip` and run:
 
 ```text
 cardputer-agent.exe pair
@@ -196,7 +222,7 @@ cardputer-agent.exe doctor
 
 The PIN is masked and protected with Windows DPAPI for the current user. Uninstall from **Installed apps** or the Start Menu. Windows uninstall removes the Agent, task, configuration, logs, shortcuts, and uninstall registration.
 
-Windows 1.2.3 does not include Unicode GATT injection or the Bluetooth microphone.
+Windows 1.3.0 does not include Unicode GATT injection or the Bluetooth microphone.
 
 ## Web Console and Device Controls
 
@@ -243,11 +269,15 @@ scripts/build_web_assets.py --check
 
 The complete gate builds:
 
+- `dist/Cardputer-Codex-Companion-1.3.0-factory.bin`;
+- `dist/Cardputer-Codex-Companion-1.3.0-app.bin`;
+- `dist/Cardputer-Codex-Companion-1.3.0l-launcher.bin`;
 - `dist/cardputer_codex_companion-full.bin`;
 - `dist/cardputer_codex_companion.bin`;
 - `dist/CardputerCompanion-mac-installer/`;
 - Windows x64 installer and amd64/ARM64 portable archives;
-- `dist/1.2.3-SHA256SUMS`.
+- `dist/CardputerCompanion-1.3.0-web-installer.zip`;
+- `dist/1.3.0-SHA256SUMS`.
 
 See [PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md) for the security and artifact boundary and [WINDOWS_AGENT.md](docs/WINDOWS_AGENT.md) for Windows-specific details.
 

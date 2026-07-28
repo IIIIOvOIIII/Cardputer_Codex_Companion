@@ -1,4 +1,4 @@
-# Cardputer Codex Companion 1.2.3 用户指南
+# Cardputer Codex Companion 1.3.0 用户指南
 
 ## 首次初始化
 
@@ -54,13 +54,17 @@ PIN 与 Wi‑Fi 密码输入均使用掩码。亮度、自动返回、FPS、PIN�
 
 Profile Catalog 使用 storage 分区末尾两个 64 KiB bank 做 CRC 和序列号保护。SAFE 固定存在且不可修改或删除；首次从旧固件升级时，旧配置会导入自定义 Profile。
 
-若设备已有配置，升级时只能把 `firmware/build/cardputer_codex_companion.bin` 写到 `0x20000`。从 `0x0` 写 full image 会替换更多分区，只适合首次安装或明确恢复。
+若设备已使用官方 Factory 分区并需要保留配置，升级时把
+`Cardputer-Codex-Companion-1.3.0-app.bin` 写到 `0x20000`。不要把固定偏移
+应用镜像用于 M5Launcher 或未知分区布局。Factory 完整镜像从 `0x0` 写入并会
+移除 Launcher 与设备配置；需要保留 Launcher 时，先升级到 M5Launcher 2.8.0+
+再通过 Launcher 安装 `Cardputer-Codex-Companion-1.3.0l-launcher.bin`。
 
 ## Machine Agent
 
-- macOS 1.2.3：Codex 状态/动作、宠物同步、Unicode GATT、BLE 麦克风和
+- macOS 1.3.0：Codex 状态/动作、宠物同步、Unicode GATT、BLE 麦克风和
   `Cardputer Codex Microphone`。
-- Windows 1.2.3：Codex 状态/动作和宠物同步。BLE HID 由系统原生处理；
+- Windows 1.3.0：Codex 状态/动作和宠物同步。BLE HID 由系统原生处理；
   Unicode GATT 与蓝牙麦克风不在此版本范围。
 
 macOS 使用 `CardputerCompanion-mac-installer/install.sh`；彻底清理时执行

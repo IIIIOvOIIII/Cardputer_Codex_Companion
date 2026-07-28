@@ -16,6 +16,7 @@ def test_dual_firmware_artifacts_are_public() -> None:
         "Cardputer-Codex-Companion-1.3.0-factory.bin",
         "Cardputer-Codex-Companion-1.3.0-app.bin",
         "Cardputer-Codex-Companion-1.3.0l-launcher.bin",
+        "CardputerCompanion-1.3.0-web-installer.zip",
     } <= ALLOWED
 
 
@@ -96,8 +97,13 @@ def test_public_readme_is_english_first_and_bilingual():
         assert section in readme
     chinese = (ROOT / "README.zh-CN.md").read_text()
     assert chinese.splitlines()[0] == "[English](README.md)"
-    assert "1.2.3" in readme
-    assert "1.2.3" in chinese
+    for document in (readme, chinese):
+        assert "1.2.3" not in document
+        assert "1.3.0" in document
+        assert "1.3.0l" in document
+        assert "2.8.0" in document
+        assert "Cardputer-Codex-Companion-1.3.0-factory.bin" in document
+        assert "Cardputer-Codex-Companion-1.3.0l-launcher.bin" in document
     assert (
         "Created and maintained by **Lynx** "
         "([hi@iam.lc](mailto:hi@iam.lc))."

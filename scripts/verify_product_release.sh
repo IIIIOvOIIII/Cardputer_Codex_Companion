@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+version="1.3.0"
+launcher_version="${version}l"
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1577836800}"
 
 python3 tools/product/verify_public_artifacts.py --dist dist
 scripts/build_audio_driver.sh
@@ -30,10 +33,16 @@ python3 scripts/build_web_assets.py --check
 node --test web/tests/device_api.test.js
 
 rm -f firmware/sdkconfig firmware/sdkconfig.old
+if [[ -f firmware/build/CMakeCache.txt ]]; then
+  (
+    cd firmware
+    ../scripts/phase0/idf.sh -B build fullclean
+  )
+fi
 (
   cd firmware
-  ../scripts/phase0/idf.sh set-target esp32s3
-  ../scripts/phase0/idf.sh build
+  ../scripts/phase0/idf.sh -B build set-target esp32s3
+  ../scripts/phase0/idf.sh -B build build
 )
 python3 tools/product/verify_partition_layout.py
 idf_python="$(
@@ -58,10 +67,19 @@ scripts/build_audio_driver.sh --test
 companion/.build/release/cardputer-companion --version
 companion/.build/release/cardputer-companion doctor
 
+if [[ -f firmware/build-launcher/CMakeCache.txt ]]; then
+  (
+    cd firmware
+    ../scripts/phase0/idf.sh -B build-launcher fullclean
+  )
+fi
 scripts/package_product_firmware.sh
 scripts/build_companion.sh
 scripts/package_mac_installer.sh
 scripts/package_windows_agent.sh
+python3 tools/product/package_web_installer.py \
+  --source web-installer \
+  --output "dist/CardputerCompanion-${version}-web-installer.zip"
 
 (
   cd windows-agent
@@ -86,12 +104,25 @@ test -x \
   dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge
 test -f \
   dist/CardputerCompanion.app/Contents/Resources/com.lynx.cardputer-audio-bridge.plist
-test -f dist/CardputerCompanion-1.2.3-windows-amd64.zip
-test -f dist/CardputerCompanion-1.2.3-windows-arm64.zip
-test -f dist/CardputerCompanion-1.2.3-windows-x64-setup.exe
+test -f "dist/Cardputer-Codex-Companion-${version}-factory.bin"
+test -f "dist/Cardputer-Codex-Companion-${version}-app.bin"
+test -f "dist/Cardputer-Codex-Companion-${launcher_version}-launcher.bin"
+test -f "dist/CardputerCompanion-${version}-windows-amd64.zip"
+test -f "dist/CardputerCompanion-${version}-windows-arm64.zip"
+test -f "dist/CardputerCompanion-${version}-windows-x64-setup.exe"
+test -f "dist/CardputerCompanion-${version}-web-installer.zip"
 python3 tools/product/verify_public_firmware.py \
   --image dist/cardputer_codex_companion-full.bin \
   --layout firmware/partitions_product.csv
+"${idf_python}" -m esptool image_info --version 2 \
+  firmware/build/cardputer_codex_companion.bin |
+  tee build/product-factory-image-info.txt |
+  grep -F "App version: ${version}"
+python3 tools/product/verify_launcher_firmware.py \
+  --image "dist/Cardputer-Codex-Companion-${launcher_version}-launcher.bin" \
+  --app-image firmware/build-launcher/cardputer_codex_companion.bin \
+  --idf-python "${idf_python}" \
+  --expected-version "${launcher_version}"
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_audio_driver_bundle.py \
   tools/product/tests/test_audio_driver_installer.py \
@@ -126,20 +157,28 @@ if git grep -n -I -E 'PHASE 0 / NOT FOR RELEASE|NSPasteboard|Command-V' \
 fi
 
 git diff --check
-shasum -a 256 \
-  release/product-release.json \
-  dist/cardputer_codex_companion.bin \
-  dist/cardputer_codex_companion-full.bin \
-  dist/CardputerCompanion.app/Contents/MacOS/cardputer-companion \
-  dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge \
-  dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/MacOS/CardputerCodexMicrophone \
-  dist/CardputerCompanion-mac-installer/install.sh \
-  dist/CardputerCompanion-mac-installer/installer/mac_installer.py \
-  dist/CardputerCompanion-1.2.3-windows-amd64.zip \
-  dist/CardputerCompanion-1.2.3-windows-arm64.zip \
-  dist/CardputerCompanion-1.2.3-windows-x64-setup.exe \
-  > dist/1.2.3-SHA256SUMS
-shasum -a 256 -c dist/1.2.3-SHA256SUMS
+(
+  cd dist
+  shasum -a 256 \
+    "Cardputer-Codex-Companion-${version}-factory.bin" \
+    "Cardputer-Codex-Companion-${version}-app.bin" \
+    "Cardputer-Codex-Companion-${launcher_version}-launcher.bin" \
+    cardputer_codex_companion.bin \
+    cardputer_codex_companion-full.bin \
+    CardputerCompanion.app/Contents/MacOS/cardputer-companion \
+    CardputerCompanion.app/Contents/Resources/CardputerAudioBridge \
+    CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/MacOS/CardputerCodexMicrophone \
+    CardputerCompanion-mac-installer/install.sh \
+    CardputerCompanion-mac-installer/installer/mac_installer.py \
+    "CardputerCompanion-${version}-windows-amd64.zip" \
+    "CardputerCompanion-${version}-windows-arm64.zip" \
+    "CardputerCompanion-${version}-windows-x64-setup.exe" \
+    "CardputerCompanion-${version}-web-installer.zip"
+) > "dist/${version}-SHA256SUMS"
+(
+  cd dist
+  shasum -a 256 -c "${version}-SHA256SUMS"
+)
 python3 tools/product/verify_public_artifacts.py \
   --dist dist \
   --require-complete

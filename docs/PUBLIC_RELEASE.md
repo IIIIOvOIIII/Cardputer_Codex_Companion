@@ -1,15 +1,20 @@
 # Cardputer Codex Companion 公共发布
 
-## 1.2.3 制品
+## 1.3.0 制品
 
 `release/product-release.json` 是机器可读清单。公共发布包含：
 
-- `cardputer_codex_companion-full.bin`：从 `0x0` 刷写的通用完整镜像；
-- `cardputer_codex_companion.bin`：仅升级应用分区，地址 `0x20000`；
+- `Cardputer-Codex-Companion-1.3.0-factory.bin`：从 `0x0` 刷写的
+  Factory 完整镜像；
+- `Cardputer-Codex-Companion-1.3.0-app.bin`：仅升级 Factory 应用分区，
+  地址 `0x20000`；
+- `Cardputer-Codex-Companion-1.3.0l-launcher.bin`：M5Launcher 2.8.0+
+  使用的同源兼容镜像；
 - `CardputerCompanion-mac-installer/`：macOS App、Agent、HAL 和 AudioBridge；
-- `CardputerCompanion-1.2.3-windows-x64-setup.exe`；
+- `CardputerCompanion-1.3.0-windows-x64-setup.exe`；
 - Windows amd64/ARM64 可移植 ZIP；
-- `1.2.3-SHA256SUMS`。
+- `CardputerCompanion-1.3.0-web-installer.zip`；
+- `1.3.0-SHA256SUMS`。
 
 ## 安全边界
 
@@ -31,7 +36,7 @@
 
 ```bash
 scripts/verify_product_release.sh
-shasum -a 256 -c dist/1.2.3-SHA256SUMS
+cd dist && shasum -a 256 -c 1.3.0-SHA256SUMS
 ```
 
 门禁覆盖 Python、正常与 sanitizer host、ESP-IDF clean build、内存门槛、Web
@@ -40,14 +45,20 @@ shasum -a 256 -c dist/1.2.3-SHA256SUMS
 
 ## 刷写与验证
 
-首次安装：
+Factory 安装会替换 M5Launcher 及设备配置：
 
 ```bash
 python -m esptool --chip esp32s3 -b 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 dist/cardputer_codex_companion-full.bin
+  write_flash 0x0 dist/Cardputer-Codex-Companion-1.3.0-factory.bin
 ```
 
-保留已配置设备状态的升级只写 `0x20000` 应用镜像。自动构建不会擅自刷写设备。
+保留 M5Launcher 时，必须先升级到 2.8.0 或更高版本，再从 Launcher 安装
+`Cardputer-Codex-Companion-1.3.0l-launcher.bin`。保留已配置 Factory
+设备状态的升级只写 `0x20000` 应用镜像，不能用于 Launcher 或未知分区布局。
+`PARTITION ERROR` 表示当前 `storage` 分区缺失、类型错误或容量不足，需要通过
+Launcher 重新分区或改刷 Factory 镜像。
+
+自动构建不会擅自刷写设备。
 macOS 真机 HIL 与 Windows 真机安装/HIL 是独立运行门禁；没有对应硬件证据时，
 发布报告必须明确标记 pending，不得由交叉编译或静态测试替代。
