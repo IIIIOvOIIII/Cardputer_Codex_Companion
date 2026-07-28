@@ -90,10 +90,11 @@ def test_public_readme_is_english_first_and_bilingual():
     assert chinese.splitlines()[0] == "[English](README.md)"
     assert "1.2.1" in readme
     assert "1.2.1" in chinese
-    assert "Lynx" in readme
-    assert "hi@iam.lc" in readme
-    assert "Lynx" in chinese
-    assert "hi@iam.lc" in chinese
+    assert (
+        "Created and maintained by **Lynx** "
+        "([hi@iam.lc](mailto:hi@iam.lc))."
+    ) in readme
+    assert "**Lynx**（[hi@iam.lc](mailto:hi@iam.lc)）" in chinese
 
 
 def test_public_license_is_apache_2():

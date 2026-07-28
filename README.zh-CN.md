@@ -61,6 +61,8 @@ python3 -m esptool --chip esp32s3 \
 ```
 
 Windows 将串口改为 `COM5` 等实际端口，并使用 `py -m esptool`。
+原厂固件、M5Launcher 及其它第三方固件可能采用不同分区表；在使用下方
+app-only 升级命令前，必须至少完成一次从 `0x0` 写入完整镜像。
 
 如需保留 PIN、Wi-Fi、Profile、宠物、初始化进度及 BLE bond，只刷应用分区：
 

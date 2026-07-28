@@ -82,6 +82,9 @@ py -m esptool --chip esp32s3 `
 ```
 
 The full public image deliberately leaves the Wi-Fi configuration partition erased.
+Factory firmware, M5Launcher, and other third-party firmware may use a
+different partition table. Always perform this full-image installation once
+before using the application-only upgrade command below.
 
 ### State-preserving upgrade
 
