@@ -58,7 +58,7 @@ func (agent *Agent) SetPairingMigrationHandler(
 }
 
 func (agent *Agent) Step(ctx context.Context) error {
-	agent.synchronizePetIfDue(ctx)
+	petAttemptedThisStep := agent.synchronizePetIfDue(ctx)
 	action, err := agent.device.Heartbeat(ctx)
 	if err != nil {
 		return err
@@ -75,6 +75,9 @@ func (agent *Agent) Step(ctx context.Context) error {
 	}
 	if action.NeedsSnapshot {
 		agent.lastSnapshot = nil
+		if !petAttemptedThisStep {
+			agent.synchronizePet(ctx)
+		}
 	}
 	if err := agent.codex.Perform(ctx, action.Action); err != nil {
 		return err
@@ -99,12 +102,20 @@ func (agent *Agent) Step(ctx context.Context) error {
 	return nil
 }
 
-func (agent *Agent) synchronizePetIfDue(ctx context.Context) {
+func (agent *Agent) synchronizePetIfDue(ctx context.Context) bool {
 	if agent.petSynchronizer == nil {
-		return
+		return false
 	}
 	now := agent.now()
 	if !agent.nextPetSync.IsZero() && now.Before(agent.nextPetSync) {
+		return false
+	}
+	agent.synchronizePet(ctx)
+	return true
+}
+
+func (agent *Agent) synchronizePet(ctx context.Context) {
+	if agent.petSynchronizer == nil {
 		return
 	}
 	agent.petResult = agent.petSynchronizer.Synchronize(ctx)
@@ -112,5 +123,5 @@ func (agent *Agent) synchronizePetIfDue(ctx context.Context) {
 	if agent.petResult.ErrorCode != "" {
 		delay = 5 * time.Second
 	}
-	agent.nextPetSync = now.Add(delay)
+	agent.nextPetSync = agent.now().Add(delay)
 }

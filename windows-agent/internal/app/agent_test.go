@@ -116,6 +116,70 @@ func TestAgentSynchronizesPetOnThirtySecondCadence(t *testing.T) {
 	}
 }
 
+func TestAgentSynchronizesPetImmediatelyWhenDeviceRequestsSnapshot(t *testing.T) {
+	machine := &fakeCodex{
+		snapshot: codex.Snapshot{
+			Type: "snapshot", Title: "NO ACTIVE CODEX", CWD: "-",
+			State: "offline", PetState: "waiting",
+		},
+	}
+	deviceClient := &fakeDevice{
+		actions: []device.ActionEnvelope{
+			{Action: "none"},
+			{Action: "none", NeedsSnapshot: true},
+		},
+	}
+	synchronizer := &fakePetSynchronizer{
+		result: pet.Result{PetID: "rocky", Digest: "digest"},
+	}
+	agent := NewAgent(deviceClient, machine)
+	agent.SetPetSynchronizer(synchronizer)
+	now := time.Unix(1_000, 0)
+	agent.now = func() time.Time { return now }
+
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if synchronizer.calls != 2 {
+		t.Fatalf("snapshot request did not force pet sync: %d", synchronizer.calls)
+	}
+}
+
+func TestAgentDoesNotDuplicatePetSyncWhenCadenceAndSnapshotRequestCoincide(
+	t *testing.T,
+) {
+	machine := &fakeCodex{
+		snapshot: codex.Snapshot{
+			Type: "snapshot", Title: "NO ACTIVE CODEX", CWD: "-",
+			State: "offline", PetState: "waiting",
+		},
+	}
+	deviceClient := &fakeDevice{
+		actions: []device.ActionEnvelope{
+			{Action: "none", NeedsSnapshot: true},
+		},
+	}
+	synchronizer := &fakePetSynchronizer{
+		result: pet.Result{PetID: "rocky", Digest: "digest"},
+	}
+	agent := NewAgent(deviceClient, machine)
+	agent.SetPetSynchronizer(synchronizer)
+	agent.now = func() time.Time { return time.Unix(1_000, 0) }
+
+	if err := agent.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if synchronizer.calls != 1 {
+		t.Fatalf("pet sync was duplicated: %d", synchronizer.calls)
+	}
+}
+
 type fakeDevice struct {
 	actions   []device.ActionEnvelope
 	snapshots []codex.Snapshot
