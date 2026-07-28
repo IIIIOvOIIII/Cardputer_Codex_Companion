@@ -96,3 +96,20 @@
 - Next step: Publish this closeout commit, tag `v1.3.0`, attach the verified
   artifacts to the public GitHub release, verify GitHub Pages, and remove the
   completed feature worktree.
+
+## 2026-07-28 17:32 HKT
+
+- Current work: Completed the public GitHub publication and verified every
+  externally referenced installation surface.
+- Expected result: `main`, `v1.3.0`, the GitHub Release, and the Web Serial
+  installer all expose the approved 1.3.0/1.3.0l artifacts.
+- Result: Achieved. The annotated `v1.3.0` tag resolves to release source
+  commit `c17d1af01efc40a9a54c4f7ce3abe68465845cd4`. The public Release contains
+  nine assets whose GitHub-reported SHA-256 digests match the local verified
+  artifacts. The first Pages attempt failed because the new public repository
+  had no Pages site; enabling the GitHub Actions source and rerunning the same
+  job succeeded. The public installer returns HTTP 200, reports version 1.3.0,
+  and references the published Factory asset.
+- Next step: Remove the merged feature worktree, confirm the final clean Git
+  state and unloaded local Agent, and hand off the public URLs and artifact
+  paths.
