@@ -10,6 +10,14 @@ public struct PetSyncCadence: Sendable {
         return now >= nextAttempt
     }
 
+    public func shouldAttempt(
+        at now: ContinuousClock.Instant,
+        forced: Bool,
+        attemptedThisLoop: Bool
+    ) -> Bool {
+        !attemptedThisLoop && (forced || isDue(at: now))
+    }
+
     public mutating func record(
         result: PetSyncResult,
         at now: ContinuousClock.Instant

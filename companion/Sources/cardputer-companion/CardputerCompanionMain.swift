@@ -121,28 +121,16 @@ struct CardputerCompanionMain {
                 _ = audioBridge.reconnectIfNeeded()
             }
             let now = clock.now
-            if petSyncCadence.isDue(at: now) {
+            var petAttemptedThisLoop = false
+            if petSyncCadence.shouldAttempt(
+                at: now,
+                forced: false,
+                attemptedThisLoop: petAttemptedThisLoop
+            ) {
                 synchronizedPet = await petSync.synchronize(client: bridge)
                 petSyncCadence.record(result: synchronizedPet, at: now)
-                if let errorCode = synchronizedPet.errorCode {
-                    FileHandle.standardError.write(
-                        Data(
-                            (
-                                "pet sync warning: \(errorCode); " +
-                                    "retry in 5 seconds\n"
-                            ).utf8
-                        )
-                    )
-                } else {
-                    FileHandle.standardOutput.write(
-                        Data(
-                            (
-                                "pet sync: \(synchronizedPet.petID); " +
-                                    "next check in 30 seconds\n"
-                            ).utf8
-                        )
-                    )
-                }
+                petAttemptedThisLoop = true
+                reportPetSync(synchronizedPet)
             }
             do {
                 let action = try await bridge.pollAction()
@@ -172,6 +160,16 @@ struct CardputerCompanionMain {
                 if action.needsSnapshot {
                     lastPostedSnapshot = nil
                 }
+                if petSyncCadence.shouldAttempt(
+                    at: now,
+                    forced: action.needsSnapshot,
+                    attemptedThisLoop: petAttemptedThisLoop
+                ) {
+                    synchronizedPet = await petSync.synchronize(client: bridge)
+                    petSyncCadence.record(result: synchronizedPet, at: now)
+                    petAttemptedThisLoop = true
+                    reportPetSync(synchronizedPet)
+                }
                 try adapter.perform(action.action)
                 let currentSnapshot = try adapter.snapshot().withPet(
                     id: synchronizedPet.petID,
@@ -191,6 +189,28 @@ struct CardputerCompanionMain {
             try await Task.sleep(for: .seconds(2))
         }
         withExtendedLifetime(receiver) {}
+    }
+
+    private static func reportPetSync(_ result: PetSyncResult) {
+        if let errorCode = result.errorCode {
+            FileHandle.standardError.write(
+                Data(
+                    (
+                        "pet sync warning: \(errorCode); " +
+                            "retry in 5 seconds\n"
+                    ).utf8
+                )
+            )
+        } else {
+            FileHandle.standardOutput.write(
+                Data(
+                    (
+                        "pet sync: \(result.petID); " +
+                            "next check in 30 seconds\n"
+                    ).utf8
+                )
+            )
+        }
     }
 
     private static func postSnapshotIfChanged(

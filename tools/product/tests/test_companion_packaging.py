@@ -183,7 +183,7 @@ def test_companion_pet_sync_has_independent_serial_error_boundary():
     main = (
         ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
     ).read_text()
-    due = main.index("if petSyncCadence.isDue(at: now)")
+    due = main.index("if petSyncCadence.shouldAttempt(")
     synchronize = main.index(
         "await petSync.synchronize(client: bridge)",
         due,
@@ -192,10 +192,30 @@ def test_companion_pet_sync_has_independent_serial_error_boundary():
     action = main.index("let action = try await bridge.pollAction()", action_boundary)
 
     assert due < synchronize < action_boundary < action
+    assert "forced: false" in main[due:synchronize]
     assert "petSyncCadence.record(" in main[due:action_boundary]
     assert "nextPetSynchronization" not in main
     assert "retry in 5 seconds" in main
     assert "next check in 30 seconds" in main
+
+
+def test_companion_snapshot_request_forces_one_pet_attempt_before_snapshot():
+    main = (
+        ROOT / "companion/Sources/cardputer-companion/CardputerCompanionMain.swift"
+    ).read_text()
+    action = main.index("let action = try await bridge.pollAction()")
+    snapshot_request = main.index("if action.needsSnapshot", action)
+    forced_decision = main.index(
+        "petSyncCadence.shouldAttempt(",
+        snapshot_request,
+    )
+    snapshot = main.index("let currentSnapshot", forced_decision)
+
+    assert action < snapshot_request < forced_decision < snapshot
+    assert "petAttemptedThisLoop" in main
+    assert "attemptedThisLoop: petAttemptedThisLoop" in main[
+        forced_decision:snapshot
+    ]
 
 
 def test_cardputer_display_uses_larger_body_text():
@@ -377,7 +397,7 @@ def test_pet_sync_keeps_companion_online_and_closes_curl_pipes():
 
     assert "postSnapshotIfChanged" in main
     assert main.count("try await postSnapshotIfChanged") == 1
-    assert "petSyncCadence.isDue" in main
+    assert "petSyncCadence.shouldAttempt" in main
     assert "note_companion_activity();" in web
     assert "try? output.fileHandleForReading.close()" in bridge
     assert "try? error.fileHandleForReading.close()" in bridge

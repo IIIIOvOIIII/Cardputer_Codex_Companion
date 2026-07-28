@@ -729,6 +729,22 @@ func testPetSyncCadence() throws {
         cadence.isDue(at: started.advanced(by: .seconds(30))),
         "successful pet sync is due at 30 seconds"
     )
+    try expect(
+        cadence.shouldAttempt(
+            at: started.advanced(by: .seconds(1)),
+            forced: true,
+            attemptedThisLoop: false
+        ),
+        "snapshot request forces pet sync inside cadence"
+    )
+    try expect(
+        !cadence.shouldAttempt(
+            at: started.advanced(by: .seconds(1)),
+            forced: true,
+            attemptedThisLoop: true
+        ),
+        "snapshot request does not duplicate loop attempt"
+    )
 
     let failedAt = started.advanced(by: .seconds(30))
     cadence.record(
