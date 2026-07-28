@@ -67,6 +67,7 @@ void ProductController::start() {
 #include "product/profile_catalog.hpp"
 #include "product/product_web.hpp"
 #include "product/settings_menu.hpp"
+#include "product/storage_compatibility.hpp"
 #include "product/ui_model.hpp"
 #include "product/ui_navigation.hpp"
 #include "product/wifi_manager.hpp"
@@ -147,6 +148,7 @@ InputRouter g_input_router;
 UiNavigation g_ui_navigation;
 CompanionProtocol g_companion_protocol;
 PetStore g_pet_store;
+StorageCompatibility g_storage_compatibility;
 EspProfileCatalogBackend g_profile_catalog_backend;
 ProfileCatalogStore g_profile_catalog(g_profile_catalog_backend);
 NvsDeviceSettingsBackend g_device_settings_backend;
@@ -1454,7 +1456,7 @@ void ui_task(void*) {
       }
     }
     const PetFrameRenderMode frame_mode =
-        current_page == UiPage::pet
+        current_page == UiPage::pet && g_storage_compatibility.ready()
             ? pet_frame_render_mode(
                   microphone_state, pet_chrome_changed,
                   now_ms >= next_frame_ms)
@@ -1533,40 +1535,58 @@ class EspProductStartup final : public ProductStartupBackend {
       const DeviceSettings settings = g_device_settings_store.current();
       g_settings.set_device_settings(settings);
       g_settings.set_input_mode(g_input_router.mode());
-      const esp_err_t pet_result = g_pet_store.start();
-      if (pet_result == ESP_OK) {
-        product_web_set_pet_store(&g_pet_store);
-      } else {
-        ESP_LOGW(kTag, "pet store unavailable: %s",
-                 esp_err_to_name(pet_result));
-      }
-      g_profile_catalog_initialization_done = xSemaphoreCreateBinaryStatic(
-          &g_profile_catalog_initialization_done_storage);
-      if (g_profile_catalog_initialization_done == nullptr ||
-          !g_profile_catalog_backend.start() ||
-          !g_profile_catalog.reserve_scratch()) {
-        result = ESP_ERR_NO_MEM;
-        g_profile_catalog_initialization_complete.store(true);
-        ESP_LOGE(kTag, "profile catalog storage initialization failed");
-      } else {
-        const BaseType_t catalog_created =
-            xTaskCreate(profile_catalog_task, "profile-catalog-init", 32768,
-                        nullptr, tskIDLE_PRIORITY,
-                        &g_profile_catalog_task_handle);
-        if (catalog_created != pdPASS ||
-            g_profile_catalog_task_handle == nullptr) {
-          g_profile_catalog.release_scratch();
-          g_profile_catalog_initialization_complete.store(true);
-          result = ESP_ERR_NO_MEM;
-          ESP_LOGE(kTag, "profile catalog task initialization failed");
-        } else if (xSemaphoreTake(
-                       g_profile_catalog_initialization_done,
-                       portMAX_DELAY) != pdTRUE) {
-          result = ESP_ERR_TIMEOUT;
-          ESP_LOGE(kTag, "profile catalog initialization wait failed");
-        } else {
-          vTaskDelay(1);
+      g_storage_compatibility = inspect_storage_compatibility();
+      {
+        SemaphoreLock lock(g_ui_mutex);
+        if (lock.locked()) {
+          g_ui.set_storage_compatibility(g_storage_compatibility);
         }
+      }
+      if (g_storage_compatibility.ready()) {
+        const esp_err_t pet_result = g_pet_store.start();
+        if (pet_result == ESP_OK) {
+          product_web_set_pet_store(&g_pet_store);
+        } else {
+          ESP_LOGW(kTag, "pet store unavailable: %s",
+                   esp_err_to_name(pet_result));
+        }
+        g_profile_catalog_initialization_done =
+            xSemaphoreCreateBinaryStatic(
+                &g_profile_catalog_initialization_done_storage);
+        if (g_profile_catalog_initialization_done == nullptr ||
+            !g_profile_catalog_backend.start() ||
+            !g_profile_catalog.reserve_scratch()) {
+          result = ESP_ERR_NO_MEM;
+          g_profile_catalog_initialization_complete.store(true);
+          ESP_LOGE(
+              kTag, "profile catalog storage initialization failed");
+        } else {
+          const BaseType_t catalog_created =
+              xTaskCreate(profile_catalog_task, "profile-catalog-init", 32768,
+                          nullptr, tskIDLE_PRIORITY,
+                          &g_profile_catalog_task_handle);
+          if (catalog_created != pdPASS ||
+              g_profile_catalog_task_handle == nullptr) {
+            g_profile_catalog.release_scratch();
+            g_profile_catalog_initialization_complete.store(true);
+            result = ESP_ERR_NO_MEM;
+            ESP_LOGE(kTag, "profile catalog task initialization failed");
+          } else if (xSemaphoreTake(
+                         g_profile_catalog_initialization_done,
+                         portMAX_DELAY) != pdTRUE) {
+            result = ESP_ERR_TIMEOUT;
+            ESP_LOGE(kTag, "profile catalog initialization wait failed");
+          } else {
+            vTaskDelay(1);
+          }
+        }
+      } else {
+        g_profile_catalog_initialization_complete.store(true);
+        const std::string_view state =
+            storage_compatibility_name(g_storage_compatibility.state);
+        ESP_LOGW(kTag, "storage incompatible: state=%.*s size=%" PRIu32,
+                 static_cast<int>(state.size()), state.data(),
+                 g_storage_compatibility.size_bytes);
       }
     }
     if (result == ESP_OK) {

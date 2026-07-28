@@ -45,6 +45,17 @@ std::string_view microphone_state_name(UiMicrophoneState state) {
   return "ERROR";
 }
 
+std::string_view storage_compatibility_label(
+    StorageCompatibilityState state) {
+  switch (state) {
+    case StorageCompatibilityState::ready: return "READY";
+    case StorageCompatibilityState::missing: return "MISSING";
+    case StorageCompatibilityState::wrong_type: return "WRONG TYPE";
+    case StorageCompatibilityState::too_small: return "TOO SMALL";
+  }
+  return "MISSING";
+}
+
 void add_line(UiPageContent& content, std::string line) {
   if (content.count < content.lines.size()) {
     content.lines[content.count++] = std::move(line);
@@ -249,6 +260,17 @@ void UiModel::set_pet_storage(uint32_t used_bytes, uint16_t format_version) {
   ++revision_;
 }
 
+void UiModel::set_storage_compatibility(
+    StorageCompatibility compatibility) {
+  if (storage_compatibility_.state == compatibility.state &&
+      storage_compatibility_.size_bytes == compatibility.size_bytes) {
+    return;
+  }
+  storage_compatibility_ = compatibility;
+  ++revision_;
+  ++pet_revision_;
+}
+
 void UiModel::set_heartbeat_age(uint32_t seconds) {
   if (heartbeat_age_seconds_ == seconds) return;
   heartbeat_age_seconds_ = seconds;
@@ -362,11 +384,27 @@ UiPageContent UiModel::page_content() const {
   char value[96]{};
   switch (page_) {
     case UiPage::pet:
-      add_line(content, std::string(pet_state_name(pet_state_)));
+      if (!storage_compatibility_.ready()) {
+        add_line(content, "PARTITION ERROR");
+        add_line(
+            content,
+            std::string(
+                storage_compatibility_label(storage_compatibility_.state)));
+        add_line(content, "USE FACTORY 1.3.0");
+        add_line(content, "OR LAUNCHER 2.8+");
+      } else {
+        add_line(content, std::string(pet_state_name(pet_state_)));
+      }
       break;
     case UiPage::device_status:
       add_line(content, "VERSION:" + std::string(kProductVersion));
       add_line(content, "PIN:" + pairing_code_);
+      add_line(
+          content,
+          "STORAGE:" +
+              std::string(
+                  storage_compatibility_label(
+                      storage_compatibility_.state)));
       add_line(content, "BLE:" + std::string(compact_state(ble_)));
       add_line(content, "WIFI:" + std::string(compact_state(wifi_)));
       add_line(content, "AGENT:" + std::string(compact_state(companion_)));

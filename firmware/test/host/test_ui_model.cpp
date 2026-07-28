@@ -6,6 +6,19 @@
 #include "product/ui_model.hpp"
 
 int main() {
+  UiModel incompatible;
+  incompatible.set_storage_compatibility(
+      evaluate_storage_compatibility(false, false, false, 0));
+  UiPageContent partition_error = incompatible.page_content();
+  assert(partition_error.count == 4);
+  assert(partition_error.lines[0] == "PARTITION ERROR");
+  assert(partition_error.lines[1] == "MISSING");
+  assert(partition_error.lines[2] == "USE FACTORY 1.3.0");
+  assert(partition_error.lines[3] == "OR LAUNCHER 2.8+");
+  incompatible.navigate(UiNavAction::next_page);
+  UiPageContent incompatible_device = incompatible.page_content();
+  assert(incompatible_device.lines[2] == "STORAGE:MISSING");
+
   UiModel model;
   assert(model.page() == UiPage::pet);
   UiModel onboarding_model;
@@ -37,6 +50,8 @@ int main() {
   model.set_stage_error(BootStage::wifi, 17);
   assert(model.revision() == error_revision);
   assert(model.boot_line(BootStage::wifi) == "WIFI E017");
+  model.set_storage_compatibility(
+      evaluate_storage_compatibility(true, true, true, 0x1e0000));
 
   model.set_mode(InputMode::codex_remote);
   model.set_ble(ServiceState::ok);
@@ -141,19 +156,21 @@ int main() {
   model.navigate(UiNavAction::next_page);
   model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
-  assert(device.count == 6);
+  assert(device.count == 7);
   assert(device.lines[0] == "VERSION:1.3.0");
   assert(device.lines[1] == "PIN:12345678");
-  assert(device.lines[2] == "BLE:OK");
-  assert(device.lines[3] == "WIFI:OFF");
-  assert(device.lines[4] == "AGENT:OK");
-  assert(device.lines[5] == "MIC:READY");
+  assert(device.lines[2] == "STORAGE:READY");
+  assert(device.lines[3] == "BLE:OK");
+  assert(device.lines[4] == "WIFI:OFF");
+  assert(device.lines[5] == "AGENT:OK");
+  assert(device.lines[6] == "MIC:READY");
   std::string joined;
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
   assert(joined.find("VERSION:1.3.0") != std::string::npos);
   assert(joined.find("PIN:12345678") != std::string::npos);
+  assert(joined.find("STORAGE:READY") != std::string::npos);
   assert(joined.find("********") == std::string::npos);
   assert(joined.find("BLE:OK") != std::string::npos);
   assert(joined.find("WIFI:OFF") != std::string::npos);

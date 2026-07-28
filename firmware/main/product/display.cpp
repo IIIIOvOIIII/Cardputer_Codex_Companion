@@ -153,6 +153,22 @@ void display_render_page(const UiModel& model) {
     if (model.microphone_live()) {
       M5.Display.fillCircle(174, 8, 3, kMicrophoneLive);
     }
+    if (!model.storage_compatibility().ready()) {
+      const UiPageContent content = model.page_content();
+      M5.Display.setTextColor(kForeground, kBackground);
+      M5.Display.setTextSize(1);
+      for (uint8_t index = 0; index < content.count; ++index) {
+        const int32_t line_width =
+            M5.Display.textWidth(content.lines[index].c_str());
+        M5.Display.setCursor(
+            std::max<int32_t>(0, (M5.Display.width() - line_width) / 2),
+            38 + index * 16);
+        M5.Display.print(content.lines[index].c_str());
+      }
+      draw_page_dots(model.page());
+      M5.Display.endWrite();
+      return;
+    }
     draw_microphone_error(model);
     draw_page_dots(model.page());
     M5.Display.endWrite();

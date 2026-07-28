@@ -323,6 +323,26 @@ def test_pet_storage_worker_uses_declared_static_stack_depth():
     assert "case kCommandInitialize:" in store
 
 
+def test_incompatible_storage_is_diagnosed_without_starting_workers():
+    controller = (
+        ROOT / "firmware/main/product/product_controller.cpp"
+    ).read_text()
+    display = (ROOT / "firmware/main/product/display.cpp").read_text()
+    ui_model = (ROOT / "firmware/main/product/ui_model.cpp").read_text()
+
+    assert (
+        "g_storage_compatibility = inspect_storage_compatibility();"
+        in controller
+    )
+    assert "if (g_storage_compatibility.ready()) {" in controller
+    assert (
+        'ESP_LOGW(kTag, "storage incompatible: state=%.*s size=%"'
+        in controller
+    )
+    assert "PARTITION ERROR" in ui_model
+    assert "model.storage_compatibility().ready()" in display
+
+
 def test_pet_storage_uses_raw_transactional_slots():
     store = (ROOT / "firmware/main/product/pet_store.cpp").read_text()
 

@@ -10,6 +10,7 @@
 #include "product/companion_protocol.hpp"
 #include "product/product_types.hpp"
 #include "product/pet_bundle.hpp"
+#include "product/storage_compatibility.hpp"
 #include "product/ui_navigation.hpp"
 
 enum class UiPage : uint8_t {
@@ -67,6 +68,7 @@ class UiModel {
   void set_pet(std::string_view id, std::string_view digest,
                PetState state, std::string_view sync_result);
   void set_pet_storage(uint32_t used_bytes, uint16_t format_version);
+  void set_storage_compatibility(StorageCompatibility compatibility);
   void set_heartbeat_age(uint32_t seconds);
   void set_pet_sync_age(uint32_t seconds);
   void set_settings_content(std::span<const std::string_view> rows,
@@ -85,6 +87,9 @@ class UiModel {
   [[nodiscard]] uint8_t scroll_offset() const { return scroll_offset_; }
   [[nodiscard]] UiPageContent page_content() const;
   [[nodiscard]] PetState pet_state() const { return pet_state_; }
+  [[nodiscard]] StorageCompatibility storage_compatibility() const {
+    return storage_compatibility_;
+  }
   [[nodiscard]] ServiceState ble() const { return ble_; }
   [[nodiscard]] ServiceState wifi() const { return wifi_; }
   [[nodiscard]] ServiceState companion() const { return companion_; }
@@ -137,6 +142,7 @@ class UiModel {
   std::string pet_sync_result_ = "none";
   uint32_t pet_storage_used_ = 0;
   uint16_t pet_format_version_ = 0;
+  StorageCompatibility storage_compatibility_{};
   uint32_t heartbeat_age_seconds_ = 0;
   uint32_t pet_sync_age_seconds_ = 0;
   std::array<std::string, 12> settings_rows_{};

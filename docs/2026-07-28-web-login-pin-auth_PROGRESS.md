@@ -102,3 +102,20 @@
 - Next step: Add a pure runtime storage-compatibility model and expose
   incompatible Launcher layouts on the Cardputer UI without blocking BLE,
   Wi-Fi, or Web startup.
+
+## 2026-07-28 15:20 HKT
+
+- Current work: Add runtime storage validation before profile and pet storage
+  workers start, and expose failures on the Cardputer.
+- Expected result: Classify ready, missing, wrong-type, and undersized storage;
+  keep non-storage services running; never animate or retry storage workers on
+  an incompatible layout.
+- Result: Achieved. The new pure storage contract and UI/controller tests passed
+  3/3, structural firmware regressions passed 25/25, and a complete ESP32-S3
+  Factory build succeeded with 48% of the smallest application partition free.
+  Incompatible storage now skips pet/profile workers, completes the startup
+  gate, shows the concrete state on DEVICE, and displays reinstall guidance on
+  the pet page.
+- Next step: Publish the storage state through `/api/v1/status`, return
+  structured HTTP 503 errors for storage-dependent APIs, and preserve those
+  distinctions in the Web login client.

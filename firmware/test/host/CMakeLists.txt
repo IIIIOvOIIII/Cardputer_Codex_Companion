@@ -216,6 +216,13 @@ add_executable(test_ui_model
 target_include_directories(test_ui_model PRIVATE ../../main)
 add_test(NAME ui_model COMMAND test_ui_model)
 
+add_executable(test_storage_compatibility
+  test_storage_compatibility.cpp
+  ../../main/product/storage_compatibility.cpp
+)
+target_include_directories(test_storage_compatibility PRIVATE ../../main)
+add_test(NAME storage_compatibility COMMAND test_storage_compatibility)
+
 add_executable(test_keyboard_matrix
   test_keyboard_matrix.cpp
   ../../main/product/keyboard_matrix.cpp

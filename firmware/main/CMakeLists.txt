@@ -53,6 +53,7 @@ idf_component_register(
         "probe/web_handlers.cpp"
         "product/ui_model.cpp"
         "product/ui_navigation.cpp"
+        "product/storage_compatibility.cpp"
         "product/device_settings.cpp"
         "product/onboarding.cpp"
         "product/settings_menu.cpp"
