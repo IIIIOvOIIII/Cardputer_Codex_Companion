@@ -16,3 +16,17 @@
   when a device requests a snapshot.
 - Next step: Review and commit the design, obtain written-spec approval, then
   create the TDD implementation plan.
+
+## 2026-07-28 19:32 HKT
+
+- Current work: Converted the approved written design into a task-by-task TDD
+  implementation and deployment plan.
+- Expected result: Every firmware, macOS, Windows, versioning, hardware, and
+  public-release change has an explicit RED/GREEN command, interface boundary,
+  commit point, and acceptance check.
+- Result: Achieved. The plan contains five independently reviewable tasks and
+  preserves the transient completion decision, same-loop Pet de-duplication,
+  stored schema compatibility, 1.3.1/1.3.1l version boundary, and complete
+  release/HIL gate.
+- Next step: Execute the plan inline, beginning with failing firmware
+  onboarding tests.
