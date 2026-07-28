@@ -34,13 +34,17 @@ ProfileError validate_leaf(ActionKind kind, uint8_t usage_count,
 }
 }  // namespace
 
-Profile safe_profile() {
-  Profile profile;
+void reset_to_safe_profile(Profile& profile) {
   profile.name = "SAFE";
   profile.revision = 1;
   for (auto& binding : profile.bindings) {
-    binding.action.kind = ActionKind::passthrough;
+    binding.action = KeyAction{};
   }
+}
+
+Profile safe_profile() {
+  Profile profile;
+  reset_to_safe_profile(profile);
   return profile;
 }
 

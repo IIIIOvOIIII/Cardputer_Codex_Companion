@@ -14,6 +14,9 @@ WIFI_CONFIG_OFFSET = 0x12000
 WIFI_CONFIG_SIZE = 0x6000
 STORAGE_BOUNDARY = 0x620000
 STORAGE_MINIMUM_SIZE = 0x1E0000
+STORAGE_PAYLOAD_BYTES = 0x1000
+LAUNCHER_IMAGE_SIZE = STORAGE_BOUNDARY + STORAGE_PAYLOAD_BYTES
+LAUNCHER_STORAGE_LABEL = "assets"
 
 
 @dataclass(frozen=True)
@@ -56,9 +59,9 @@ def parse_partition_table(image: bytes) -> list[PartitionEntry]:
 
 
 def validate_launcher_image(image: bytes) -> list[PartitionEntry]:
-    if len(image) != STORAGE_BOUNDARY:
+    if len(image) != LAUNCHER_IMAGE_SIZE:
         raise ValueError(
-            "Launcher image must end exactly at storage boundary"
+            "Launcher image must contain one erased storage payload sector"
         )
     wifi = image[
         WIFI_CONFIG_OFFSET : WIFI_CONFIG_OFFSET + WIFI_CONFIG_SIZE
@@ -67,7 +70,11 @@ def validate_launcher_image(image: bytes) -> list[PartitionEntry]:
         raise ValueError("Wi-Fi configuration range is not erased")
     entries = parse_partition_table(image)
     storage = next(
-        (entry for entry in entries if entry.label == "storage"),
+        (
+            entry
+            for entry in entries
+            if entry.label == LAUNCHER_STORAGE_LABEL
+        ),
         None,
     )
     if (
@@ -78,6 +85,14 @@ def validate_launcher_image(image: bytes) -> list[PartitionEntry]:
         or storage.size < STORAGE_MINIMUM_SIZE
     ):
         raise ValueError("storage partition declaration is incompatible")
+    payload = image[
+        STORAGE_BOUNDARY : STORAGE_BOUNDARY + STORAGE_PAYLOAD_BYTES
+    ]
+    if (
+        len(payload) != STORAGE_PAYLOAD_BYTES
+        or any(value != 0xFF for value in payload)
+    ):
+        raise ValueError("Launcher storage payload sector is not erased")
     application = next(
         (
             entry

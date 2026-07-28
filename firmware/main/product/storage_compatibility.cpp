@@ -1,4 +1,5 @@
 #include "product/storage_compatibility.hpp"
+#include "product/storage_partition_label.hpp"
 
 #ifdef ESP_PLATFORM
 
@@ -6,7 +7,8 @@
 
 StorageCompatibility inspect_storage_compatibility() {
   const esp_partition_t* partition = esp_partition_find_first(
-      ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, "storage");
+      ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY,
+      kProductStoragePartitionLabel);
   return evaluate_storage_compatibility(
       partition != nullptr,
       partition != nullptr && partition->type == ESP_PARTITION_TYPE_DATA,

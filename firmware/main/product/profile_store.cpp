@@ -11,7 +11,7 @@ ProfileLoadResult ProfileStore::load(Profile& output) {
   const bool first_valid = backend_.read(0, first) && valid(first);
   const bool second_valid = backend_.read(1, second) && valid(second);
   if (!first_valid && !second_valid) {
-    output = safe_profile();
+    reset_to_safe_profile(output);
     active_slot_ = 0;
     active_revision_ = output.revision;
     return ProfileLoadResult::safe_fallback;

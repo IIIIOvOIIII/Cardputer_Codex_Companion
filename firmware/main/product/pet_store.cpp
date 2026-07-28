@@ -1,4 +1,5 @@
 #include "product/pet_store.hpp"
+#include "product/storage_partition_label.hpp"
 
 #ifdef ESP_PLATFORM
 
@@ -17,7 +18,6 @@
 #include "nvs.h"
 
 namespace {
-constexpr char kPartition[] = "storage";
 constexpr char kNamespace[] = "product";
 constexpr char kSlotKey[] = "pet_slot";
 constexpr char kDigestKey[] = "pet_digest";
@@ -178,7 +178,8 @@ esp_err_t PetStore::start() {
     return ESP_ERR_NO_MEM;
   }
   impl->partition = esp_partition_find_first(
-      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, kPartition);
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
+      kProductStoragePartitionLabel);
   if (impl->partition == nullptr ||
       impl->partition->size < 2 * kSlotCapacity) {
     return ESP_ERR_NOT_FOUND;

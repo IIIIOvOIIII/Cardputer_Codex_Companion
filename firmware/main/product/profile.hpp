@@ -87,5 +87,6 @@ enum class ProfileError : uint8_t {
 };
 
 Profile safe_profile();
+void reset_to_safe_profile(Profile& profile);
 ProfileError validate_profile(const Profile& profile);
 uint32_t profile_crc32(const Profile& profile);

@@ -1,4 +1,5 @@
 #include "product/profile_catalog.hpp"
+#include "product/storage_partition_label.hpp"
 
 #include <algorithm>
 #include <array>
@@ -28,12 +29,18 @@ constexpr std::size_t kCrcOffset = 20;
 constexpr std::size_t kEntryOffset = 24;
 constexpr std::size_t kEntryBytes = 48;
 constexpr std::size_t kChunkBytes = 4096;
+using CatalogChunk = std::array<uint8_t, kChunkBytes>;
 #ifdef ESP_PLATFORM
 constexpr uint8_t kCommandRead = 1;
 constexpr uint8_t kCommandErase = 2;
 constexpr uint8_t kCommandWrite = 3;
 constexpr std::size_t kFlashEraseSectorBytes = 4096;
 #endif
+
+std::unique_ptr<CatalogChunk> allocate_catalog_chunk() {
+  return std::unique_ptr<CatalogChunk>(
+      new (std::nothrow) CatalogChunk());
+}
 
 uint16_t get_u16(const uint8_t* value) {
   return static_cast<uint16_t>(value[0]) |
@@ -172,16 +179,17 @@ LoadedBank inspect_bank(ProfileCatalogBackend& backend,
   const uint32_t expected_crc = get_u32(header.data() + kCrcOffset);
   put_u32(header.data() + kCrcOffset, 0);
   uint32_t crc = crc32_update(0xffffffffu, header);
-  std::array<uint8_t, kChunkBytes> chunk{};
+  auto chunk = allocate_catalog_chunk();
+  if (chunk == nullptr) return result;
   std::size_t position = 0;
   while (position < payload_length) {
     const std::size_t size =
-        std::min<std::size_t>(chunk.size(), payload_length - position);
+        std::min<std::size_t>(chunk->size(), payload_length - position);
     if (!backend.read(bank_offset + kProfileCatalogHeaderBytes + position,
-                      std::span(chunk).first(size))) {
+                      std::span(*chunk).first(size))) {
       return result;
     }
-    crc = crc32_update(crc, std::span(chunk).first(size));
+    crc = crc32_update(crc, std::span(*chunk).first(size));
     position += size;
   }
   if ((crc ^ 0xffffffffu) != expected_crc) return result;
@@ -242,7 +250,8 @@ bool EspProfileCatalogBackend::start() {
   if (impl_ != nullptr) return true;
   auto impl = std::make_unique<Impl>();
   impl->partition = esp_partition_find_first(
-      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "storage");
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+      kProductStoragePartitionLabel);
   impl->command_mutex =
       xSemaphoreCreateMutexStatic(&impl->command_mutex_storage);
   impl->completion =
@@ -519,7 +528,7 @@ ProfileCatalogResult ProfileCatalogStore::read(
     Profile& output
 ) const {
   if (id == "SAFE") {
-    output = safe_profile();
+    reset_to_safe_profile(output);
     return ProfileCatalogResult::ok;
   }
   const auto index = find(id);
@@ -598,7 +607,7 @@ ProfileCatalogResult ProfileCatalogStore::create(
 
 ProfileCatalogResult ProfileCatalogStore::publish(
     std::string_view id,
-    const Profile& profile,
+    Profile& profile,
     uint32_t expected_revision
 ) {
   if (id == "SAFE") return ProfileCatalogResult::builtin_profile;
@@ -608,19 +617,17 @@ ProfileCatalogResult ProfileCatalogStore::publish(
       profile.revision != expected_revision) {
     return ProfileCatalogResult::revision_conflict;
   }
-  if (!reserve_scratch()) return ProfileCatalogResult::storage_error;
-  Profile& scratch = *scratch_;
-  scratch = profile;
-  scratch.revision = expected_revision + 1;
+  profile.revision = expected_revision + 1;
   std::string json;
-  if (encode_profile(scratch, json) != ProfileCodecResult::ok) {
-    return finish_transaction(ProfileCatalogResult::invalid);
+  if (encode_profile(profile, json) != ProfileCodecResult::ok) {
+    profile.revision = expected_revision;
+    return ProfileCatalogResult::invalid;
   }
   std::array<Entry, kProfileCatalogMaximumCustomProfiles> next = entries_;
-  assign_string(next[*index].summary.name, scratch.name);
-  next[*index].summary.revision = scratch.revision;
+  assign_string(next[*index].summary.name, profile.name);
+  next[*index].summary.revision = profile.revision;
   next[*index].length = static_cast<uint32_t>(json.size());
-  return commit(std::span(next).first(entry_count_), id, json);
+  return commit(std::span(next).first(entry_count_), id, json, &profile);
 }
 
 ProfileCatalogResult ProfileCatalogStore::remove(std::string_view id) {
@@ -647,9 +654,14 @@ ProfileCatalogResult ProfileCatalogStore::activate(std::string_view id) {
 ProfileCatalogResult ProfileCatalogStore::commit(
     std::span<const Entry> requested,
     std::optional<std::string_view> replacement_id,
-    std::optional<std::string_view> replacement_json
+    std::optional<std::string_view> replacement_json,
+    Profile* verification_profile
 ) {
-  if (!reserve_scratch()) return ProfileCatalogResult::storage_error;
+  if (verification_profile == nullptr && !reserve_scratch()) {
+    return ProfileCatalogResult::storage_error;
+  }
+  Profile& verification =
+      verification_profile == nullptr ? *scratch_ : *verification_profile;
   std::array<Entry, kProfileCatalogMaximumCustomProfiles> next{};
   uint32_t payload_length = 0;
   for (std::size_t index = 0; index < requested.size(); ++index) {
@@ -676,7 +688,7 @@ ProfileCatalogResult ProfileCatalogStore::commit(
     return finish_transaction(ProfileCatalogResult::storage_error);
   }
   uint32_t crc = crc32_update(0xffffffffu, header);
-  std::array<uint8_t, kChunkBytes> chunk{};
+  std::unique_ptr<CatalogChunk> chunk;
   for (const Entry& destination : std::span(next).first(requested.size())) {
     const std::string_view id(destination.summary.id.data());
     if (replacement_id.has_value() && replacement_json.has_value() &&
@@ -705,12 +717,18 @@ ProfileCatalogResult ProfileCatalogStore::commit(
     if (!source_index.has_value()) {
       return finish_transaction(ProfileCatalogResult::invalid);
     }
+    if (chunk == nullptr) {
+      chunk = allocate_catalog_chunk();
+      if (chunk == nullptr) {
+        return finish_transaction(ProfileCatalogResult::storage_error);
+      }
+    }
     const Entry& source = entries_[*source_index];
     std::size_t position = 0;
     while (position < source.length) {
       const std::size_t size =
-          std::min<std::size_t>(chunk.size(), source.length - position);
-      auto bytes = std::span(chunk).first(size);
+          std::min<std::size_t>(chunk->size(), source.length - position);
+      auto bytes = std::span(*chunk).first(size);
       if (!backend_.read(active_bank_offset_ + kProfileCatalogHeaderBytes +
                              source.offset + position,
                          bytes) ||
@@ -728,7 +746,7 @@ ProfileCatalogResult ProfileCatalogStore::commit(
   if (!backend_.write(target, header)) {
     return finish_transaction(ProfileCatalogResult::storage_error);
   }
-  const LoadedBank verified = inspect_bank(backend_, target, *scratch_);
+  const LoadedBank verified = inspect_bank(backend_, target, verification);
   if (!verified.valid || verified.sequence != next_sequence) {
     return finish_transaction(ProfileCatalogResult::storage_error);
   }

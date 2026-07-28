@@ -18,6 +18,9 @@ test -x "${idf_python}"
   cd "${repo_root}/firmware"
   ../scripts/phase0/idf.sh \
     -B build-launcher \
+    -D CARDPUTER_LAUNCHER_BUILD=ON \
+    -D SDKCONFIG="${repo_root}/firmware/build-launcher/sdkconfig" \
+    -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.launcher.defaults" \
     -D PROJECT_VER=1.3.0l \
     build
 )

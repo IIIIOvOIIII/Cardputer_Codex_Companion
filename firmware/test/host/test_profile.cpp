@@ -1,9 +1,24 @@
 #include <cassert>
+#include <cstdlib>
 #include <string>
 
+#include "cJSON.h"
 #include "product/profile.hpp"
 #include "product/profile_codec.hpp"
 #include "product/profile_store.hpp"
+
+namespace {
+std::size_t cjson_allocation_count = 0;
+
+void* constrained_cjson_malloc(std::size_t size) {
+  if (++cjson_allocation_count > 32) return nullptr;
+  return std::malloc(size);
+}
+
+void constrained_cjson_free(void* pointer) {
+  std::free(pointer);
+}
+}  // namespace
 
 struct MemoryProfileBackend final : ProfileStoreBackend {
   bool read(uint8_t slot, ProfileBlob& output) override {
@@ -91,7 +106,17 @@ int main() {
   actions.bindings[3].action.codex = CodexAction::interrupt;
   actions.bindings[4].action.kind = ActionKind::disabled;
   actions.bindings[5] = sequence_a.bindings[0];
+
+  cjson_allocation_count = 0;
+  cJSON_Hooks constrained_hooks{
+      .malloc_fn = constrained_cjson_malloc,
+      .free_fn = constrained_cjson_free,
+  };
+  cJSON_InitHooks(&constrained_hooks);
   assert(encode_profile(actions, encoded) == ProfileCodecResult::ok);
+  cJSON_InitHooks(nullptr);
+  assert(encoded.starts_with(R"({"name":"ACTIONS")"));
+
   Profile decoded;
   assert(decode_profile(encoded, decoded) == ProfileCodecResult::ok);
   assert(decoded.name == "ACTIONS");
@@ -102,6 +127,17 @@ int main() {
   assert(decoded.bindings[3].action.codex == CodexAction::interrupt);
   assert(decoded.bindings[4].action.kind == ActionKind::disabled);
   assert(decoded.bindings[5].action.sequence.size() == 1);
+
+  Profile escaped = safe;
+  escaped.name = "A\"B\\C";
+  escaped.bindings[0].action.kind = ActionKind::text_utf8;
+  escaped.bindings[0].action.text = "line 1\nline 2\t中文";
+  assert(encode_profile(escaped, encoded) == ProfileCodecResult::ok);
+  assert(encoded.starts_with(R"({"name":"A\"B\\C")"));
+  assert(decode_profile(encoded, decoded) == ProfileCodecResult::ok);
+  assert(decoded.name == escaped.name);
+  assert(decoded.bindings[0].action.text ==
+         escaped.bindings[0].action.text);
 
   assert(decode_profile(
              R"({"name":"BAD","revision":1,"bindings":[]})", decoded) ==

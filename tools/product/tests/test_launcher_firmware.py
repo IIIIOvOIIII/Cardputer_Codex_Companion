@@ -5,7 +5,10 @@ import pytest
 
 from tools.product.package_launcher_image import pad_launcher_image
 from tools.product.verify_launcher_firmware import (
+    LAUNCHER_IMAGE_SIZE,
+    LAUNCHER_STORAGE_LABEL,
     STORAGE_BOUNDARY,
+    STORAGE_PAYLOAD_BYTES,
     validate_launcher_image,
 )
 
@@ -31,11 +34,17 @@ def partition_entry(
 
 
 def compatible_launcher_image() -> bytearray:
-    image = bytearray(b"\xff" * STORAGE_BOUNDARY)
+    image = bytearray(b"\xff" * LAUNCHER_IMAGE_SIZE)
     table = b"".join(
         (
             partition_entry(0, 0x10, 0x20000, 0x300000, "ota_0"),
-            partition_entry(1, 0x82, 0x620000, 0x1E0000, "storage"),
+            partition_entry(
+                1,
+                0x82,
+                STORAGE_BOUNDARY,
+                0x1E0000,
+                LAUNCHER_STORAGE_LABEL,
+            ),
         )
     )
     image[0x8000 : 0x8000 + len(table)] = table
@@ -43,7 +52,7 @@ def compatible_launcher_image() -> bytearray:
     return image
 
 
-def test_launcher_image_is_padded_with_erased_flash_to_storage_boundary(
+def test_launcher_image_carries_erased_payload_for_dynamic_storage_creation(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "merged.bin"
@@ -52,9 +61,11 @@ def test_launcher_image_is_padded_with_erased_flash_to_storage_boundary(
 
     pad_launcher_image(source, output)
 
-    assert output.stat().st_size == 0x620000
+    assert output.stat().st_size == LAUNCHER_IMAGE_SIZE
     assert output.read_bytes()[:32] == source.read_bytes()
-    assert output.read_bytes()[-4096:] == b"\xff" * 4096
+    assert output.read_bytes()[-STORAGE_PAYLOAD_BYTES:] == (
+        b"\xff" * STORAGE_PAYLOAD_BYTES
+    )
 
 
 def test_launcher_image_rejects_content_that_reaches_storage(
@@ -67,7 +78,7 @@ def test_launcher_image_rejects_content_that_reaches_storage(
         pad_launcher_image(source, tmp_path / "launcher.bin")
 
 
-def test_launcher_contract_accepts_declared_empty_storage() -> None:
+def test_launcher_contract_accepts_declared_assets_storage_with_payload() -> None:
     validate_launcher_image(bytes(compatible_launcher_image()))
 
 
@@ -81,7 +92,7 @@ def test_launcher_contract_rejects_non_erased_wifi_configuration() -> None:
 
 def test_launcher_contract_rejects_missing_storage_label() -> None:
     image = compatible_launcher_image()
-    image[0x8000 + 32 + 12 : 0x8000 + 32 + 19] = b"spiffs\0"
+    image[0x8000 + 32 + 12 : 0x8000 + 32 + 19] = b"storage"
 
     with pytest.raises(ValueError, match="storage partition"):
         validate_launcher_image(bytes(image))
@@ -95,3 +106,31 @@ def test_launcher_contract_rejects_small_storage_declaration() -> None:
 
     with pytest.raises(ValueError, match="storage partition"):
         validate_launcher_image(bytes(image))
+
+
+def test_launcher_build_uses_launcher_assets_partition_contract() -> None:
+    root = Path(__file__).resolve().parents[3]
+    partition_csv = (root / "firmware/partitions_launcher.csv").read_text()
+    package_script = (root / "scripts/package_product_firmware.sh").read_text()
+    component_cmake = (root / "firmware/main/CMakeLists.txt").read_text()
+    label_header = (
+        root / "firmware/main/product/storage_partition_label.hpp"
+    ).read_text()
+    storage_sources = [
+        (root / "firmware/main/product/storage_compatibility.cpp").read_text(),
+        (root / "firmware/main/product/pet_store.cpp").read_text(),
+        (root / "firmware/main/product/profile_catalog.cpp").read_text(),
+    ]
+
+    assert "assets" in partition_csv
+    assert "0x620000" in partition_csv
+    assert "0x1e0000" in partition_csv
+    assert "CARDPUTER_LAUNCHER_BUILD=ON" in package_script
+    assert "sdkconfig.launcher.defaults" in package_script
+    assert "CARDPUTER_STORAGE_PARTITION_LABEL" in component_cmake
+    assert '"assets"' in component_cmake
+    assert '"storage"' in label_header
+    assert all(
+        "kProductStoragePartitionLabel" in source
+        for source in storage_sources
+    )

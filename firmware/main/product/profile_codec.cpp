@@ -1,10 +1,12 @@
 #include "product/profile_codec.hpp"
 
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <memory>
+#include <new>
+#include <string_view>
 #include <vector>
 
 #include "cJSON.h"
@@ -109,57 +111,104 @@ CodexAction parse_codex_action_local(const char* value) {
   return CodexAction::none;
 }
 
-cJSON* action_json(ActionKind kind, uint8_t modifiers,
+class JsonEncoder {
+ public:
+  explicit JsonEncoder(std::string* output) : output_(output) {}
+
+  void literal(std::string_view value) {
+    size_ += value.size();
+    if (output_ != nullptr) output_->append(value);
+  }
+
+  void number(uint32_t value) {
+    std::array<char, 10> buffer{};
+    const auto result =
+        std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    literal(std::string_view(buffer.data(), result.ptr - buffer.data()));
+  }
+
+  void string(std::string_view value) {
+    literal("\"");
+    for (const unsigned char byte : value) {
+      switch (byte) {
+        case '"': literal("\\\""); break;
+        case '\\': literal("\\\\"); break;
+        case '\b': literal("\\b"); break;
+        case '\f': literal("\\f"); break;
+        case '\n': literal("\\n"); break;
+        case '\r': literal("\\r"); break;
+        case '\t': literal("\\t"); break;
+        default:
+          if (byte < 0x20) {
+            constexpr char digits[] = "0123456789abcdef";
+            std::array<char, 6> escaped{
+                '\\', 'u', '0', '0', digits[byte >> 4], digits[byte & 0x0f]};
+            literal(std::string_view(escaped.data(), escaped.size()));
+          } else {
+            const char value_byte = static_cast<char>(byte);
+            literal(std::string_view(&value_byte, 1));
+          }
+      }
+    }
+    literal("\"");
+  }
+
+  std::size_t size() const { return size_; }
+
+ private:
+  std::string* output_;
+  std::size_t size_ = 0;
+};
+
+void encode_action(JsonEncoder& encoder, ActionKind kind, uint8_t modifiers,
                    const std::array<uint8_t, 6>& usage_values,
                    uint8_t usage_count, std::string_view text,
                    const std::vector<SequenceStep>* sequence,
-                   DeviceAction device, CodexAction codex) {
-  cJSON* item = cJSON_CreateObject();
-  if (item == nullptr) return nullptr;
-  cJSON_AddStringToObject(item, "kind", action_name(kind));
+                   DeviceAction device, CodexAction codex,
+                   uint32_t delay_ms = 0) {
+  encoder.literal("{\"kind\":");
+  encoder.string(action_name(kind));
   if (modifiers != 0) {
-    cJSON_AddNumberToObject(item, "modifiers", modifiers);
+    encoder.literal(",\"modifiers\":");
+    encoder.number(modifiers);
   }
   if (usage_count != 0) {
-    cJSON* usages = cJSON_AddArrayToObject(item, "usages");
-    if (usages == nullptr) {
-      cJSON_Delete(item);
-      return nullptr;
-    }
+    encoder.literal(",\"usages\":[");
     for (uint8_t index = 0; index < usage_count; ++index) {
-      cJSON_AddItemToArray(usages, cJSON_CreateNumber(usage_values[index]));
+      if (index != 0) encoder.literal(",");
+      encoder.number(usage_values[index]);
     }
+    encoder.literal("]");
   }
   if (!text.empty()) {
-    cJSON_AddStringToObject(item, "text", std::string(text).c_str());
+    encoder.literal(",\"text\":");
+    encoder.string(text);
   }
   if (kind == ActionKind::device_action) {
-    cJSON_AddStringToObject(item, "device", device_action_name(device));
+    encoder.literal(",\"device\":");
+    encoder.string(device_action_name(device));
   }
   if (kind == ActionKind::codex_action) {
-    cJSON_AddStringToObject(item, "codex", codex_action_name_local(codex));
+    encoder.literal(",\"codex\":");
+    encoder.string(codex_action_name_local(codex));
   }
   if (kind == ActionKind::input_sequence && sequence != nullptr) {
-    cJSON* steps = cJSON_AddArrayToObject(item, "sequence");
-    if (steps == nullptr) {
-      cJSON_Delete(item);
-      return nullptr;
-    }
-    for (const SequenceStep& step : *sequence) {
-      cJSON* encoded = action_json(
+    encoder.literal(",\"sequence\":[");
+    for (std::size_t index = 0; index < sequence->size(); ++index) {
+      if (index != 0) encoder.literal(",");
+      const SequenceStep& step = (*sequence)[index];
+      encode_action(
+          encoder,
           step.kind, step.modifiers, step.usages, step.usage_count, step.text,
-          nullptr, DeviceAction::none, CodexAction::none);
-      if (encoded == nullptr) {
-        cJSON_Delete(item);
-        return nullptr;
-      }
-      if (step.delay_ms != 0) {
-        cJSON_AddNumberToObject(encoded, "delay_ms", step.delay_ms);
-      }
-      cJSON_AddItemToArray(steps, encoded);
+          nullptr, DeviceAction::none, CodexAction::none, step.delay_ms);
     }
+    encoder.literal("]");
   }
-  return item;
+  if (delay_ms != 0) {
+    encoder.literal(",\"delay_ms\":");
+    encoder.number(delay_ms);
+  }
+  encoder.literal("}");
 }
 
 bool parse_leaf(const cJSON* item, ActionKind& kind, uint8_t& modifiers,
@@ -226,40 +275,43 @@ ProfileCodecResult encode_profile(const Profile& profile,
   if (validate_profile(profile) != ProfileError::none) {
     return ProfileCodecResult::invalid;
   }
-  cJSON* root = cJSON_CreateObject();
-  if (root == nullptr) return ProfileCodecResult::allocation_error;
-  cJSON_AddStringToObject(root, "name", profile.name.c_str());
-  cJSON_AddNumberToObject(root, "revision", profile.revision);
-  cJSON* bindings = cJSON_AddArrayToObject(root, "bindings");
-  if (bindings == nullptr) {
-    cJSON_Delete(root);
-    return ProfileCodecResult::allocation_error;
-  }
-  for (const KeyBinding& binding : profile.bindings) {
-    const KeyAction& action = binding.action;
-    if (action.kind == ActionKind::passthrough) {
-      cJSON_AddItemToArray(bindings, cJSON_CreateNull());
-      continue;
+
+  const auto encode = [&profile](JsonEncoder& encoder) {
+    encoder.literal("{\"name\":");
+    encoder.string(profile.name);
+    encoder.literal(",\"revision\":");
+    encoder.number(profile.revision);
+    encoder.literal(",\"bindings\":[");
+    for (std::size_t index = 0; index < profile.bindings.size(); ++index) {
+      if (index != 0) encoder.literal(",");
+      const KeyAction& action = profile.bindings[index].action;
+      if (action.kind == ActionKind::passthrough) {
+        encoder.literal("null");
+        continue;
+      }
+      encode_action(
+          encoder, action.kind, action.modifiers, action.usages,
+          action.usage_count, action.text, &action.sequence, action.device,
+          action.codex);
     }
-    cJSON* encoded = action_json(
-        action.kind, action.modifiers, action.usages, action.usage_count,
-        action.text, &action.sequence, action.device, action.codex);
-    if (encoded == nullptr) {
-      cJSON_Delete(root);
-      return ProfileCodecResult::allocation_error;
-    }
-    cJSON_AddItemToArray(bindings, encoded);
-  }
-  char* json = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  if (json == nullptr) return ProfileCodecResult::allocation_error;
-  const std::size_t length = std::strlen(json);
-  if (length > kProfileJsonMaximumBytes) {
-    cJSON_free(json);
+    encoder.literal("]}");
+  };
+
+  JsonEncoder counter(nullptr);
+  encode(counter);
+  if (counter.size() > kProfileJsonMaximumBytes) {
     return ProfileCodecResult::too_large;
   }
-  output.assign(json, length);
-  cJSON_free(json);
+
+  try {
+    output.clear();
+    output.reserve(counter.size());
+    JsonEncoder writer(&output);
+    encode(writer);
+  } catch (const std::bad_alloc&) {
+    output.clear();
+    return ProfileCodecResult::allocation_error;
+  }
   return ProfileCodecResult::ok;
 }
 

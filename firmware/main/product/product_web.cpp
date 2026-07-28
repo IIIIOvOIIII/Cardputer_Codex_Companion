@@ -104,6 +104,10 @@ class ProfileLock {
   bool locked_ = false;
 };
 
+std::unique_ptr<Profile> allocate_profile() {
+  return std::unique_ptr<Profile>(new (std::nothrow) Profile());
+}
+
 PinAuthorization authorize_request(
     httpd_req_t* request,
     bool companion_action = false
@@ -132,6 +136,12 @@ esp_err_t json_response(httpd_req_t* request, const char* json,
   httpd_resp_set_type(request, "application/json");
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
   return httpd_resp_sendstr(request, json);
+}
+
+esp_err_t profile_memory_unavailable(httpd_req_t* request) {
+  return json_response(
+      request, "{\"error\":\"profile_memory_unavailable\"}",
+      "503 Service Unavailable");
 }
 
 esp_err_t reject_pairing(httpd_req_t* request) {
@@ -513,17 +523,20 @@ esp_err_t get_profile_handler(httpd_req_t* request) {
   {
     ProfileLock lock;
     if (!lock.locked()) return ESP_ERR_TIMEOUT;
-    auto selected = std::make_unique<Profile>();
-    if (g_profile_catalog == nullptr) {
-      *selected = g_profile;
+    const std::string id = requested_or_active_profile_id(request);
+    if (g_profile_catalog == nullptr ||
+        id == g_profile_catalog->active_id()) {
+      if (encode_profile(g_profile, json) != ProfileCodecResult::ok) {
+        return profile_memory_unavailable(request);
+      }
     } else {
-      catalog_result =
-          g_profile_catalog->read(requested_or_active_profile_id(request),
-                                  *selected);
-    }
-    if (catalog_result == ProfileCatalogResult::ok &&
-        encode_profile(*selected, json) != ProfileCodecResult::ok) {
-      return ESP_ERR_NO_MEM;
+      auto selected = allocate_profile();
+      if (selected == nullptr) return profile_memory_unavailable(request);
+      catalog_result = g_profile_catalog->read(id, *selected);
+      if (catalog_result == ProfileCatalogResult::ok &&
+          encode_profile(*selected, json) != ProfileCodecResult::ok) {
+        return profile_memory_unavailable(request);
+      }
     }
   }
   return catalog_result == ProfileCatalogResult::ok
@@ -536,7 +549,8 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
   if (!normal_configuration_available(request)) return ESP_OK;
   if (!compatible_storage_available(request)) return ESP_OK;
   const std::string body = read_body(request);
-  auto candidate = std::make_unique<Profile>();
+  auto candidate = allocate_profile();
+  if (candidate == nullptr) return profile_memory_unavailable(request);
   if (decode_profile(body, *candidate) != ProfileCodecResult::ok) {
     return json_response(request, "{\"error\":\"invalid_profile\"}",
                          "400 Bad Request");
@@ -551,12 +565,13 @@ esp_err_t put_profile_handler(httpd_req_t* request) {
       catalog_result = g_profile_catalog->publish(
           id, *candidate, candidate->revision);
       if (catalog_result == ProfileCatalogResult::ok) {
-        auto saved = std::make_unique<Profile>();
-        catalog_result = g_profile_catalog->read(id, *saved);
+        catalog_result = g_profile_catalog->read(id, *candidate);
         if (catalog_result == ProfileCatalogResult::ok) {
-          if (id == g_profile_catalog->active_id()) g_profile = *saved;
-          if (encode_profile(*saved, json) != ProfileCodecResult::ok) {
-            return ESP_ERR_NO_MEM;
+          if (encode_profile(*candidate, json) != ProfileCodecResult::ok) {
+            return profile_memory_unavailable(request);
+          }
+          if (id == g_profile_catalog->active_id()) {
+            g_profile = std::move(*candidate);
           }
         }
       }
@@ -695,7 +710,8 @@ esp_err_t activate_profile_handler(httpd_req_t* request) {
     if (!lock.locked()) return ESP_ERR_TIMEOUT;
     const std::string previous(g_profile_catalog->active_id());
     result = g_profile_catalog->activate(requested);
-    auto selected = std::make_unique<Profile>();
+    auto selected = allocate_profile();
+    if (selected == nullptr) return profile_memory_unavailable(request);
     if (result == ProfileCatalogResult::ok) {
       result = g_profile_catalog->read(requested, *selected);
     }
@@ -1196,7 +1212,7 @@ esp_err_t product_web_prepare_profile_catalog(ProfileCatalogStore* catalog) {
   }
   if (!activate_catalog_profile(active) &&
       !activate_catalog_profile("SAFE")) {
-    g_profile = safe_profile();
+    reset_to_safe_profile(g_profile);
     return ESP_FAIL;
   }
   return ESP_OK;

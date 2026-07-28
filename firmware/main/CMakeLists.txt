@@ -111,6 +111,11 @@ idf_component_register(
 target_compile_definitions(
     ${COMPONENT_LIB}
     PRIVATE CARDPUTER_PRODUCT_VERSION="${PROJECT_VER}")
+if(CARDPUTER_LAUNCHER_BUILD)
+    target_compile_definitions(
+        ${COMPONENT_LIB}
+        PRIVATE CARDPUTER_STORAGE_PARTITION_LABEL="assets")
+endif()
 
 set(HID_EXAMPLE_DIR
     "$ENV{IDF_PATH}/examples/bluetooth/esp_hid_device/main")

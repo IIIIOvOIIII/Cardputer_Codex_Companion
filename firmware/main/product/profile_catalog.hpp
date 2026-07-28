@@ -106,7 +106,7 @@ class ProfileCatalogStore {
   );
   ProfileCatalogResult publish(
       std::string_view id,
-      const Profile& profile,
+      Profile& profile,
       uint32_t expected_revision
   );
   ProfileCatalogResult remove(std::string_view id);
@@ -134,6 +134,7 @@ class ProfileCatalogStore {
   ProfileCatalogResult commit(
       std::span<const Entry> next,
       std::optional<std::string_view> replacement_id,
-      std::optional<std::string_view> replacement_json
+      std::optional<std::string_view> replacement_json,
+      Profile* verification_profile = nullptr
   );
 };

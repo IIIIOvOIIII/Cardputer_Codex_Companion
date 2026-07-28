@@ -9,6 +9,7 @@ try:
     from tools.product.merge_product_image import ProductPaths, merge
     from tools.product.verify_launcher_firmware import (
         STORAGE_BOUNDARY,
+        STORAGE_PAYLOAD_BYTES,
         validate_launcher_image,
         verify_application,
     )
@@ -18,6 +19,7 @@ except ModuleNotFoundError as error:
     from merge_product_image import ProductPaths, merge
     from verify_launcher_firmware import (
         STORAGE_BOUNDARY,
+        STORAGE_PAYLOAD_BYTES,
         validate_launcher_image,
         verify_application,
     )
@@ -34,7 +36,10 @@ def pad_launcher_image(
     output.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as reader, output.open("wb") as writer:
         shutil.copyfileobj(reader, writer)
-        writer.write(b"\xff" * (boundary - size))
+        writer.write(
+            b"\xff"
+            * (boundary - size + STORAGE_PAYLOAD_BYTES)
+        )
     output.chmod(0o600)
 
 

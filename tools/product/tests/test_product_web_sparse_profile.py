@@ -28,12 +28,21 @@ def test_sparse_default_profile_fits_nvs_string_limit() -> None:
 def test_product_web_uses_sparse_null_and_atomic_persistence() -> None:
     source = SOURCE.read_text()
     codec = CODEC_SOURCE.read_text()
-    assert "cJSON_CreateNull()" in codec
+    encoder = codec[
+        codec.index("ProfileCodecResult encode_profile")
+        : codec.index("ProfileCodecResult decode_profile")
+    ]
+    assert 'encoder.literal("null")' in encoder
+    assert "cJSON_CreateObject()" not in encoder
+    assert "cJSON_PrintUnformatted" not in encoder
+    assert "JsonEncoder counter(nullptr);" in encoder
+    assert "output.clear();" in encoder
+    assert "catch (const std::bad_alloc&)" in encoder
     assert "cJSON_IsNull(item)" in codec
     assert "esp_err_t persist_profile(" in source
     assert '"{\\"error\\":\\"profile_persist_failed\\"}"' in source
     persist = source.index("persist_profile(json.c_str())")
-    activate = source.index("g_profile = std::move(*candidate)")
+    activate = source.rindex("g_profile = std::move(*candidate)")
     assert persist < activate
 
 
@@ -62,12 +71,31 @@ def test_profile_put_does_not_place_full_profile_on_https_task_stack() -> None:
     source = SOURCE.read_text()
     handler = source[
         source.index("esp_err_t put_profile_handler")
-        : source.index("esp_err_t wifi_handler")
+        : source.index("esp_err_t list_profiles_handler")
     ]
-    assert "std::make_unique<Profile>()" in handler
+    assert "std::make_unique<Profile>()" not in handler
+    assert "allocate_profile()" in handler
+    assert handler.count("allocate_profile()") == 1
+    assert "auto saved =" not in handler
+    assert '"{\\"error\\":\\"profile_memory_unavailable\\"}"' in source
     assert "Profile candidate;" not in handler
     assert "output = safe_profile();" not in source
     assert "Profile loaded;" not in source
+
+
+def test_active_profile_get_uses_resident_profile_under_tls_pressure() -> None:
+    source = SOURCE.read_text()
+    handler = source[
+        source.index("esp_err_t get_profile_handler")
+        : source.index("esp_err_t put_profile_handler")
+    ]
+    assert "const std::string id = requested_or_active_profile_id(request);" in handler
+    assert "id == g_profile_catalog->active_id()" in handler
+    assert "encode_profile(g_profile, json)" in handler
+    assert handler.index("encode_profile(g_profile, json)") < handler.index(
+        "allocate_profile()"
+    )
+    assert "std::make_unique<Profile>()" not in handler
 
 
 def test_runtime_profile_temporaries_are_heap_allocated() -> None:
@@ -91,6 +119,9 @@ def test_runtime_profile_temporaries_are_heap_allocated() -> None:
     assert "output = {};" not in sources["profile_codec.cpp"]
     assert "reset_profile(output);" in sources["profile_codec.cpp"]
     assert "std::make_unique<Profile>()" not in sources["profile_catalog.cpp"]
+    assert "output = safe_profile();" not in sources["profile_catalog.cpp"]
+    assert "reset_to_safe_profile(output);" in sources["profile_catalog.cpp"]
+    assert sources["product_web.cpp"].count("g_profile = safe_profile();") == 1
     assert "std::unique_ptr<Profile> scratch_;" in Path(
         "firmware/main/product/profile_catalog.hpp"
     ).read_text()
@@ -118,6 +149,12 @@ def test_profile_catalog_flash_mutations_run_on_worker() -> None:
     assert "submit_storage_command(kCommandErase)" in erase
     assert "esp_partition_erase_range(" not in erase
     assert "vTaskDelay(pdMS_TO_TICKS(10))" in source
+    assert "std::array<uint8_t, kChunkBytes> chunk{};" not in source
+    assert "allocate_catalog_chunk()" in source
+    assert "new (std::nothrow) CatalogChunk()" in source
+    assert "ProfileCatalogStore::publish(" in source
+    assert "Profile& profile," in source
+    assert "&profile);" in source
 
 
 def test_flash_ipc_uses_esp_idf_caller_priority() -> None:
