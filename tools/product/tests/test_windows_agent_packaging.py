@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 WINDOWS = ROOT / "windows-agent"
 INSTALLER = WINDOWS / "installer/CardputerCompanion.nsi"
 TASK_XML = WINDOWS / "installer/install_task.xml.in"

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 
 
 def test_release_version_is_consistent():
@@ -35,7 +35,11 @@ def test_release_version_is_consistent():
         ROOT / "windows-agent/installer/CardputerCompanion.nsi"
     ).read_text()
     assert f'set(PROJECT_VER "{VERSION}")' in firmware_cmake
-    assert f'kProductVersion = "{VERSION}"' in product_types
+    assert (
+        f'#define CARDPUTER_PRODUCT_VERSION "{VERSION}"'
+        in product_types
+    )
+    assert "kProductVersion =\n    CARDPUTER_PRODUCT_VERSION" in product_types
     assert f"cardputer-companion {VERSION}" in companion_main
     assert f'"version": "{VERSION}"' in codex_rpc
     assert companion_info["CFBundleShortVersionString"] == VERSION
@@ -45,6 +49,13 @@ def test_release_version_is_consistent():
     assert release_manifest["product"] == "Cardputer Codex Companion"
     assert release_manifest["version"] == VERSION
     assert release_manifest["protocol"] == "product-v1"
+    assert release_manifest["firmware"] == {
+        "factory_version": VERSION,
+        "launcher_version": f"{VERSION}l",
+        "minimum_launcher_version": "2.8.0",
+        "storage_label": "storage",
+        "storage_minimum_bytes": 0x1E0000,
+    }
     assert release_manifest["artifacts"]["windows_amd64"].endswith(
         f"{VERSION}-windows-amd64.zip"
     )

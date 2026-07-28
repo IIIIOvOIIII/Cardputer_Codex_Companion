@@ -73,3 +73,17 @@
   verification.
 - Next step: Select the plan execution mode and create or verify an isolated
   worktree before changing production code.
+
+## 2026-07-28 15:00 HKT
+
+- Current work: Implement Task 1 same-source versioning for the factory
+  firmware, Launcher firmware, macOS components, and Windows Agent.
+- Expected result: Default firmware and all Agents report `1.3.0`, while a
+  build-time definition produces Launcher runtime `1.3.0l` without a source
+  fork.
+- Result: Achieved. The RED host assertion failed against `1.2.3`; the new
+  build-time boundary then passed factory and Launcher runtime tests. Focused
+  host tests passed 4/4 and the rebuilt macOS/Windows version and installer
+  regressions passed 32/32.
+- Next step: Add failing tests for exact-boundary Launcher image packaging and
+  the expanded public artifact set.

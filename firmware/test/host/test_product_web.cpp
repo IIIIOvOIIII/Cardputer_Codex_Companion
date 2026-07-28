@@ -57,7 +57,7 @@ int main() {
       product_web_setup_json(OnboardingStep::agent_install_guide);
   assert(setup_json ==
          "{\"product\":\"Cardputer Codex Companion\","
-         "\"version\":\"1.2.3\",\"complete\":false,"
+         "\"version\":\"1.3.0\",\"complete\":false,"
          "\"step\":\"agent_install\"}");
   assert(setup_json.size() < 192);
   assert(setup_json.find("pin") == std::string::npos);

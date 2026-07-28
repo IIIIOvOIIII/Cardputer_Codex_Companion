@@ -187,6 +187,14 @@ add_executable(test_product_types test_product_types.cpp)
 target_include_directories(test_product_types PRIVATE ../../main)
 add_test(NAME product_types COMMAND test_product_types)
 
+add_executable(test_product_types_launcher test_product_types_launcher.cpp)
+target_include_directories(test_product_types_launcher PRIVATE ../../main)
+target_compile_definitions(
+  test_product_types_launcher
+  PRIVATE CARDPUTER_PRODUCT_VERSION="1.3.0l"
+)
+add_test(NAME product_types_launcher COMMAND test_product_types_launcher)
+
 add_executable(test_hil_serial_control
   test_hil_serial_control.cpp
   ../../main/product/hil_serial_control.cpp

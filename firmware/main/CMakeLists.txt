@@ -107,6 +107,10 @@ idf_component_register(
     WHOLE_ARCHIVE
 )
 
+target_compile_definitions(
+    ${COMPONENT_LIB}
+    PRIVATE CARDPUTER_PRODUCT_VERSION="${PROJECT_VER}")
+
 set(HID_EXAMPLE_DIR
     "$ENV{IDF_PATH}/examples/bluetooth/esp_hid_device/main")
 execute_process(

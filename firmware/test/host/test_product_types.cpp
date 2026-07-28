@@ -4,8 +4,9 @@
 #include "product/product_types.hpp"
 
 int main() {
+  static_assert(kProductVersion == "1.3.0");
   static_assert(kPhysicalKeyCount == 56);
-  static_assert(kProductVersion == std::string_view{"1.2.3"});
+  static_assert(kProductVersion == std::string_view{"1.3.0"});
   static_assert(
       kProductBootTitle ==
       std::string_view{"CARDPUTER CODEX COMPANION"});
