@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "web-installer/**"
+      - "release/product-release.json"
+      - "tools/product/stage_web_installer.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -26,10 +28,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - name: Stage installer at repository subpath
+      - name: Fetch and stage verified Factory firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p _site/web-installer
-          cp web-installer/index.html web-installer/manifest.json _site/web-installer/
+          version="$(jq -er '.version' release/product-release.json)"
+          factory="$(jq -er '.artifacts.firmware_factory' release/product-release.json)"
+          expected_sha256="$(jq -er '.sha256.firmware_factory' release/product-release.json)"
+          release_json="$(
+            curl --fail --silent --show-error --location \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/v${version}"
+          )"
+          asset_url="$(
+            jq -er --arg factory "${factory}" \
+              '.assets[] | select(.name == $factory) | .browser_download_url' \
+              <<<"${release_json}"
+          )"
+          release_digest="$(
+            jq -er --arg factory "${factory}" \
+              '.assets[] | select(.name == $factory) | .digest' \
+              <<<"${release_json}"
+          )"
+          test "${release_digest}" = "sha256:${expected_sha256}"
+          download_dir="$(mktemp -d)"
+          curl --fail --silent --show-error --location \
+            --retry 3 --output "${download_dir}/${factory}" "${asset_url}"
+          mkdir -p _site
+          python3 tools/product/stage_web_installer.py \
+            --source web-installer \
+            --firmware "${download_dir}/${factory}" \
+            --expected-sha256 "${expected_sha256}" \
+            --output _site/web-installer
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -79,6 +79,7 @@ scripts/package_mac_installer.sh
 scripts/package_windows_agent.sh
 python3 tools/product/package_web_installer.py \
   --source web-installer \
+  --firmware "dist/Cardputer-Codex-Companion-${version}-factory.bin" \
   --output "dist/CardputerCompanion-${version}-web-installer.zip"
 
 (

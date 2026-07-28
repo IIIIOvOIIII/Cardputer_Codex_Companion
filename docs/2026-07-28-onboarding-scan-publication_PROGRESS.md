@@ -125,3 +125,24 @@
   release asset.
 - Next step: Publish the documentation correction and complete the final
   repository/status verification.
+
+## 2026-07-28 18:38 HKT
+
+- Current work: Diagnosed the public Web Serial `Failed to fetch` error and
+  rebuilt the installer publication path around a verified same-origin
+  Factory image.
+- Expected result: The Pages site serves the 1.3.0 Factory binary beside its
+  manifest, refuses a mismatched release digest, and keeps the downloadable
+  web-installer ZIP self-contained.
+- Result: Achieved locally. The GitHub Release redirect omitted CORS response
+  headers, so browser firmware fetches failed even though the release asset
+  itself returned HTTP 200. The manifest now uses a relative Factory path;
+  Pages staging pins SHA-256
+  `173d8331576739210c724407ecd5b8e957866efd9e7779e02ba6106dc304bb22`;
+  the focused suite passed 17/17; and the complete release gate passed 262
+  Python tests, 38 audio tests, 40 normal and 40 sanitizer host tests, all
+  platform builds and 14 checksums, plus a zero-finding credential audit.
+  Factory and Launcher hashes remained unchanged.
+- Next step: Commit and push the fix, wait for the Pages deployment, verify the
+  public same-origin firmware hash, and replace the affected GitHub Release
+  installer/checksum assets.
