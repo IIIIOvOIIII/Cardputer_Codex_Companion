@@ -135,3 +135,17 @@
   headroom.
 - Next step: Build the project-owned Web Serial Factory installer and
   deterministic GitHub Pages payload.
+
+## 2026-07-28 15:40 HKT
+
+- Current work: Add the project-owned Factory Web Serial installer, its
+  deterministic release archive, and the GitHub Pages publication boundary.
+- Expected result: Install Factory 1.3.0 at offset zero from a pinned Web
+  Serial component, warn about all reset effects, retain a visible
+  Launcher-compatible path, and publish no unrelated repository files.
+- Result: Achieved. The manifest, installer page, deterministic two-file ZIP
+  packager, Pages workflow, release metadata, and public allowlist passed 10/10
+  focused tests. Repeated packages were byte-identical, both entries had mode
+  0644 and the requested epoch, and both JSON documents parsed successfully.
+- Next step: Update the bilingual documentation and full release gate for the
+  two installation channels and complete artifact production.

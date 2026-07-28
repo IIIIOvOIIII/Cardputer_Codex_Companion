@@ -16,6 +16,7 @@ ALLOWED = {
     f"CardputerCompanion-{VERSION}-windows-amd64.zip",
     f"CardputerCompanion-{VERSION}-windows-arm64.zip",
     f"CardputerCompanion-{VERSION}-windows-x64-setup.exe",
+    f"CardputerCompanion-{VERSION}-web-installer.zip",
     f"Cardputer-Codex-Companion-{VERSION}-app.bin",
     f"Cardputer-Codex-Companion-{VERSION}-factory.bin",
     f"Cardputer-Codex-Companion-{VERSION}l-launcher.bin",

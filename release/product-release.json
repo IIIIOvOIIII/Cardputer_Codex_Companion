@@ -20,6 +20,7 @@
     "windows_amd64": "CardputerCompanion-1.3.0-windows-amd64.zip",
     "windows_arm64": "CardputerCompanion-1.3.0-windows-arm64.zip",
     "windows_x64_installer": "CardputerCompanion-1.3.0-windows-x64-setup.exe",
+    "web_installer": "CardputerCompanion-1.3.0-web-installer.zip",
     "checksums": "1.3.0-SHA256SUMS"
   },
   "capabilities": {
