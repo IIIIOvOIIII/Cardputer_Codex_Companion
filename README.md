@@ -115,7 +115,19 @@ The Agent runs Codex locally through `codex app-server --listen stdio://`, syncs
 
 ### macOS
 
-Build or extract `CardputerCompanion-mac-installer`, then run:
+From a source checkout, use the installer at the project root:
+
+```bash
+./install.sh install
+./install.sh status
+```
+
+If `dist/CardputerCompanion.app` is absent, `install` builds it before
+dispatching to the protected Python installer. `status` and `uninstall` never
+trigger a build.
+
+The prebuilt `CardputerCompanion-mac-installer` release directory exposes the
+same commands:
 
 ```bash
 cd CardputerCompanion-mac-installer

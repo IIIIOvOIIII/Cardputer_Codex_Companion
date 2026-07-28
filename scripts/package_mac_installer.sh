@@ -33,7 +33,7 @@ trap cleanup EXIT
 /usr/bin/ditto \
   "${repo_root}/dist/CardputerCompanion.app" \
   "${staged}/CardputerCompanion.app"
-/bin/cp "${repo_root}/scripts/mac_installer.sh" "${staged}/install.sh"
+/bin/cp "${repo_root}/install.sh" "${staged}/install.sh"
 /bin/cp \
   "${repo_root}/scripts/mac_installer.py" \
   "${staged}/installer/mac_installer.py"

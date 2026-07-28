@@ -75,6 +75,7 @@ def test_mac_installer_package_is_self_contained_and_reversible(tmp_path):
     )
     app = MAC_INSTALLER_PACKAGE / "CardputerCompanion.app"
     assert entry.is_file() and os.access(entry, os.X_OK)
+    assert entry.read_bytes() == (ROOT / "install.sh").read_bytes()
     assert installer.is_file()
     assert launch_agent.is_file()
     assert app.is_dir()

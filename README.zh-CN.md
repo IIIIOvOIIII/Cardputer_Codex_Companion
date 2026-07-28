@@ -91,7 +91,17 @@ Agent 在本机运行 `codex app-server --listen stdio://`，同步 Codex 状态
 
 ### macOS
 
-构建或解压 `CardputerCompanion-mac-installer` 后运行：
+从源码仓库安装时，直接使用项目根目录的安装器：
+
+```bash
+./install.sh install
+./install.sh status
+```
+
+如果 `dist/CardputerCompanion.app` 不存在，`install` 会先完成构建，再进入受保护的
+Python 安装器；`status` 和 `uninstall` 不会触发构建。
+
+预构建的 `CardputerCompanion-mac-installer` 发布目录提供相同命令：
 
 ```bash
 cd CardputerCompanion-mac-installer
