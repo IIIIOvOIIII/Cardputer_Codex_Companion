@@ -146,3 +146,24 @@
 - Next step: Commit and push the fix, wait for the Pages deployment, verify the
   public same-origin firmware hash, and replace the affected GitHub Release
   installer/checksum assets.
+
+## 2026-07-28 18:49 HKT
+
+- Current work: Published and externally verified the Web Serial delivery
+  repair, then replaced the two affected v1.3.0 Release attachments.
+- Expected result: A browser can fetch the full Factory image from the Pages
+  origin, and GitHub Release exposes the matching self-contained offline
+  installer and checksum list.
+- Result: Achieved. Commit `5066c1d` reached public `main`; Pages workflow run
+  `30351615333` completed successfully. The live manifest uses the relative
+  Factory path, the Pages binary returns HTTP 200 with
+  `Access-Control-Allow-Origin: *`, and its 1,760,560 bytes hash to
+  `173d8331576739210c724407ecd5b8e957866efd9e7779e02ba6106dc304bb22`.
+  The live page presents the 1.3.0 install control with no initial console
+  warnings or errors. GitHub now reports the replacement web-installer ZIP at
+  SHA-256
+  `35a47e8b07bc701f45a71fd8cae7b82d09e1396e3cad72d2c4fa0c647c26b844`
+  and the checksum list at
+  `552f61181369e52c94059a1fb4191f0eec920f81037658080e9e6c2cd0cff209`.
+- Next step: Commit this closeout evidence, verify the final remote/source and
+  release state once more, and hand off the repaired installer URL.
