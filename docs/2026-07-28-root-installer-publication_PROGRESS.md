@@ -30,3 +30,16 @@
 - Next step: Commit the installer checksum and evidence, integrate the feature
   branch into `main`, copy the verified ignored package entry into the main
   release directory, then push and prove remote commit identity.
+
+## 2026-07-28 11:06 HKT
+
+- Current work: Integrated the verified root installer into `main` and
+  published it to the requested GitHub repository.
+- Expected result: The main checkout, ignored public package directory, and
+  remote `refs/heads/main` all represent the same verified installer source.
+- Result: Achieved. The merged checkout passed 17 fresh root/installer tests,
+  the root and packaged entries compared byte-for-byte, all 11 published
+  checksums passed, and GitHub matched local commit
+  `73c48bc74dff1499eb6539b5241ab5684732b1e3`.
+- Next step: Publish this final closeout record, recheck the final remote commit
+  and clean repository state, then remove the completed feature worktree.
