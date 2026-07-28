@@ -6,6 +6,7 @@
 #include <span>
 
 #include "M5Unified.h"
+#include "product/display_policy.hpp"
 
 namespace {
 constexpr uint32_t kBackground = 0x05080d;
@@ -162,7 +163,7 @@ void display_render_page(const UiModel& model) {
     draw_microphone_status(model, kBackground);
   }
   M5.Display.setTextColor(kForeground, kBackground);
-  M5.Display.setTextSize(kDisplayBodyTextSize);
+  M5.Display.setTextSize(display_body_text_size(model.page()));
   M5.Display.setCursor(0, 20);
   const UiPageContent content = model.page_content();
   const uint8_t visible =
