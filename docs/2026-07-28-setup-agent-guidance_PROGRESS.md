@@ -60,3 +60,22 @@
 - Next step: Integrate the review branch into `main`, rerun the full release
   gate from the actual project root, rebuild the firmware artifacts, and push
   the integrated result.
+
+## 2026-07-28 11:59 HKT
+
+- Current work: Integrated the 1.2.2 review branch into `main`, rebuilt the
+  macOS application and firmware, and ran the complete release gate from an
+  isolated clean worktree.
+- Expected result: The project-root `./install.sh install` accepts a bare
+  RFC1918 IP, all 1.2.2 artifacts are internally consistent, and the public
+  release gate passes without relying on stale 1.2.1 outputs.
+- Result: Achieved. An isolated real install accepted `192.168.1.195` and
+  reported `Installed Cardputer Companion 1.2.2.` The full gate passed 238
+  primary Python tests, 31 installer/audio tests, 38 normal and 38 sanitizer
+  firmware host tests, Windows Go and race tests, ESP-IDF firmware compilation,
+  all 11 release hashes, and a zero-finding credential audit. The stale tracked
+  `1.2.1-SHA256SUMS` release record was replaced by the generated 1.2.2 record.
+  After rebuilding the main-worktree Windows binaries, the final integrated
+  Python suite passed 243/243.
+- Next step: Run the final integrated regression suite, commit and push
+  `main`, and report the corrected install command and artifact paths.
