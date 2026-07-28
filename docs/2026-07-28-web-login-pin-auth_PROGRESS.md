@@ -59,3 +59,17 @@
   errors in the Web UI.
 - Next step: Complete written-spec review, then create the test-driven
   implementation plan.
+
+## 2026-07-28 14:50 HKT
+
+- Current work: Convert the approved dual-release specification into a
+  test-driven, file-by-file implementation and hardware-verification plan.
+- Expected result: Cover same-source versioning, Launcher packaging, runtime
+  partition diagnosis, Web error semantics, public installation, full release
+  gates, and both hardware installation paths with no open design decisions.
+- Result: Achieved. The implementation plan defines seven independently
+  testable tasks, exact artifacts and interfaces, red/green commands, commit
+  boundaries, attached-device backup and validation, and public release
+  verification.
+- Next step: Select the plan execution mode and create or verify an isolated
+  worktree before changing production code.
