@@ -6,7 +6,7 @@
 
 inline constexpr std::size_t kPhysicalKeyCount = 56;
 inline constexpr std::string_view kProductName = "Cardputer Codex Companion";
-inline constexpr std::string_view kProductVersion = "1.2.1";
+inline constexpr std::string_view kProductVersion = "1.2.2";
 inline constexpr std::string_view kProductBootTitle =
     "CARDPUTER CODEX COMPANION";
 

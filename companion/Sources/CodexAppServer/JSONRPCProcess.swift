@@ -46,7 +46,7 @@ public final class JSONRPCProcess: CodexRPCClient, @unchecked Sendable {
                 "clientInfo": [
                     "name": "cardputer-companion",
                     "title": "Cardputer Codex Companion",
-                    "version": "1.2.1"
+                    "version": "1.2.2"
                 ],
                 "capabilities": ["experimentalApi": false]
             ]

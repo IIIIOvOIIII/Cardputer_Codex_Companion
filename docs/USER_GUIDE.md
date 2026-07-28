@@ -1,4 +1,4 @@
-# Cardputer Codex Companion 1.2.1 用户指南
+# Cardputer Codex Companion 1.2.2 用户指南
 
 ## 首次初始化
 
@@ -58,9 +58,9 @@ Profile Catalog 使用 storage 分区末尾两个 64 KiB bank 做 CRC 和序列�
 
 ## Machine Agent
 
-- macOS 1.2.1：Codex 状态/动作、宠物同步、Unicode GATT、BLE 麦克风和
+- macOS 1.2.2：Codex 状态/动作、宠物同步、Unicode GATT、BLE 麦克风和
   `Cardputer Codex Microphone`。
-- Windows 1.2.1：Codex 状态/动作和宠物同步。BLE HID 由系统原生处理；
+- Windows 1.2.2：Codex 状态/动作和宠物同步。BLE HID 由系统原生处理；
   Unicode GATT 与蓝牙麦克风不在此版本范围。
 
 macOS 使用 `CardputerCompanion-mac-installer/install.sh`；彻底清理时执行

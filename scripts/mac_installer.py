@@ -30,7 +30,7 @@ APP_ID = "com.lynx.cardputer-companion"
 DRIVER_NAME = "CardputerCodexMicrophone.driver"
 BRIDGE_NAME = "com.lynx.cardputer-audio-bridge"
 CONFIG_DIRECTORY = "CardputerCodexCompanion"
-EXPECTED_VERSION = "1.2.1"
+EXPECTED_VERSION = "1.2.2"
 PRIVATE_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
