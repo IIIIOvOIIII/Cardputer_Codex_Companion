@@ -61,3 +61,14 @@
 - Next step: Commit the final README/evidence/checksum state, fast-forward
   `main`, configure the requested GitHub remote, push through
   `id_co_openclaw`, and verify the remote commit ID.
+
+## 2026-07-28 10:37 HKT
+
+- Current work: Published the verified 1.2.1 release source and artifacts to
+  the requested GitHub repository.
+- Expected result: Push `main` with the requested SSH identity and prove the
+  remote branch matches the locally verified commit.
+- Result: Achieved. GitHub accepted `main`, and `refs/heads/main` matched local
+  commit `5a95044f216e40560c8e4d2f4ed68a910cef4765`.
+- Next step: Commit and publish this closeout record, recheck the final remote
+  commit and release checksums, then remove the completed feature worktree.
