@@ -13,3 +13,16 @@
   design and selected full Companion data deletion.
 - Next step: Complete written-spec review, create the implementation plan and
   isolated worktree, then write failing tests before production code.
+
+## 2026-07-28 21:52 HKT
+
+- Current work: Converted the approved written specification into a
+  test-first implementation and hardware verification plan.
+- Expected result: Provide an ordered execution path that fixes the root cause,
+  builds both release variants, and prevents destructive recovery testing
+  without explicit approval.
+- Result: Achieved. The plan includes the event-callback contract, deferred scan
+  tests, Backspace Y/N recovery tests, version alignment, dual builds, and
+  attached-device serial gates.
+- Next step: Create the isolated `fix/launcher-wifi-recovery-1.3.2` worktree and
+  establish the test baseline.
