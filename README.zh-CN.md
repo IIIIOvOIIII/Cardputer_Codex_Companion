@@ -6,6 +6,10 @@ Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN
 
 当前版本：**1.3.2**（Factory）/ **1.3.2l**（M5Launcher）
 
+**使用 M5Launcher 时必须安装 Beta Release。**
+
+**建议与 [Type4Me](https://github.com/joewongjc/type4me) 联动使用。**
+
 ## 项目介绍
 
 固件同时提供：

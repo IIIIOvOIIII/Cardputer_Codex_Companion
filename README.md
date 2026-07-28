@@ -6,6 +6,10 @@ Cardputer Codex Companion turns an [M5Stack Cardputer](https://docs.m5stack.com/
 
 Current release: **1.3.2** (Factory) / **1.3.2l** (M5Launcher)
 
+**M5Launcher users must install the Beta Release.**
+
+**Recommended companion: [Type4Me](https://github.com/joewongjc/type4me).**
+
 ## Overview
 
 The firmware combines four roles:
