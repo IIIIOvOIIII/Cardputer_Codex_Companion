@@ -330,7 +330,7 @@ void emit_runtime_metrics(uint64_t now_us) {
       1920U,
       static_cast<unsigned>(
           task_stack_free_bytes(xTaskGetHandle("ble-watchdog"))),
-      2304U,
+      static_cast<unsigned>(kWifiStateTaskStackBytes),
       static_cast<unsigned>(
           task_stack_free_bytes(xTaskGetHandle("wifi-state"))));
   std::fflush(stdout);

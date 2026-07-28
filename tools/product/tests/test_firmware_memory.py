@@ -208,9 +208,16 @@ def test_product_runtime_uses_measured_static_stack_budgets():
     assert "std::array<StackType_t, 1920> g_ble_watchdog_stack{};" in (
         REPO_ROOT / "firmware/main/probe/ble_services.cpp"
     ).read_text(encoding="utf-8")
-    assert "std::array<StackType_t, 2304> g_wifi_task_stack{};" in (
+    assert "constexpr uint32_t kWifiStateTaskStackBytes = 4608;" in (
+        REPO_ROOT / "firmware/main/product/wifi_manager.hpp"
+    ).read_text(encoding="utf-8")
+    assert (
+        "std::array<StackType_t, kWifiStateTaskStackBytes> "
+        "g_wifi_task_stack{};"
+    ) in (
         REPO_ROOT / "firmware/main/product/wifi_manager.cpp"
     ).read_text(encoding="utf-8")
+    assert "static_cast<unsigned>(kWifiStateTaskStackBytes)," in controller
     assert "std::array<StackType_t, 7552> upload_task_stack{};" in (
         REPO_ROOT / "firmware/main/product/pet_store.cpp"
     ).read_text(encoding="utf-8")

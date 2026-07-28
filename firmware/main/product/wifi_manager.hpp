@@ -64,6 +64,8 @@ struct WifiScanEntry {
   bool secured = false;
 };
 
+constexpr uint32_t kWifiStateTaskStackBytes = 4608;
+
 std::size_t select_wifi_scan_entries(
     std::span<const WifiScanEntry> candidates,
     std::span<WifiScanEntry> output
