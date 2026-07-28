@@ -13,3 +13,21 @@
   unchanged.
 - Next step: Write the TDD implementation plan, implement the focused changes,
   compile the firmware, and run release verification.
+
+## 2026-07-28 11:29 HKT
+
+- Current work: Completed TDD implementation, active version synchronization,
+  ESP32-S3 build, and firmware packaging.
+- Expected result: SETUP alone renders at `1x`; Agent onboarding shows IP and
+  PIN while awaiting heartbeat; the macOS installer prompts for an RFC1918 IP;
+  app-only and full `1.2.2` firmware images pass repository gates.
+- Result: Achieved. Python focused gates passed with 40 tests, all 38 C++ host
+  tests passed, Go Agent tests passed, and all 5 Windows packaging tests passed.
+  ESP-IDF built app version `1.2.2` at `0x18c580` bytes with 48 percent of the
+  smallest app partition free. DIRAM headroom is 135089 bytes. Public firmware
+  verification confirmed that `wifi_cfg` is erased in the full image. SHA-256:
+  app-only `e096bbf81cb877077b2151ad70ca182a6f39e29c03a7181ee981928d6343b47a`;
+  full `883dde9aca6a182c7751fbc29b10b9e54383603e37a891b2ab69a51f4278461c`.
+- Next step: Run the final verification suite, integrate the isolated branch
+  into `main`, push it, and copy the verified firmware images to the stable
+  project `dist/` paths.
