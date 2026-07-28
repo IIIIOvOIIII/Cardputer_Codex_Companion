@@ -501,7 +501,10 @@ char OnboardingController::key_character(
   }
 }
 
-OnboardingContent OnboardingController::content() const {
+OnboardingContent OnboardingController::content(
+    std::string_view ipv4,
+    std::string_view pairing_code
+) const {
   OnboardingContent output;
   auto add = [&](std::string value) {
     if (output.count < output.lines.size()) {
@@ -554,8 +557,10 @@ OnboardingContent OnboardingController::content() const {
       break;
     case OnboardingStep::agent_install_guide:
       add("SETUP 3/3 AGENT");
-      add("INSTALL MACHINE AGENT");
-      add("WAITING FOR HEARTBEAT");
+      add(std::string("IP:") + std::string(ipv4));
+      add(std::string("PIN:") + std::string(pairing_code));
+      add("RUN ./install.sh");
+      add("WAITING HEARTBEAT...");
       break;
     case OnboardingStep::complete:
       add("SETUP COMPLETE");

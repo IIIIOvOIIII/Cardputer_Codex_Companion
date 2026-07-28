@@ -93,6 +93,14 @@ int main() {
       after_wifi_reboot.on_ble_state(true, true) == OnboardingResult::ok
   );
   assert(after_wifi_reboot.step() == OnboardingStep::agent_install_guide);
+  OnboardingController agent_guide(after_wifi_reboot);
+  const OnboardingContent agent_content =
+      agent_guide.content("192.168.1.195", "12345678");
+  assert(agent_content.count == 5);
+  assert(content_contains(agent_content, "IP:192.168.1.195"));
+  assert(content_contains(agent_content, "PIN:12345678"));
+  assert(content_contains(agent_content, "RUN ./install.sh"));
+  assert(content_contains(agent_content, "WAITING HEARTBEAT..."));
 
   OnboardingStateMachine after_ble_reboot(blank);
   assert(after_ble_reboot.load(false) == OnboardingLoadResult::loaded);
