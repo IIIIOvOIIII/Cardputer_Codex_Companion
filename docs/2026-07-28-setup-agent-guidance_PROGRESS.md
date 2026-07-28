@@ -44,3 +44,19 @@
   project `dist/` directory and their SHA-256 values matched the build outputs.
 - Next step: Review and merge PR #1, then flash the full image for first-run
   hardware validation.
+
+## 2026-07-28 11:48 HKT
+
+- Current work: Reproduced the reported root installer failure from the
+  unmerged `main` checkout and added an end-to-end regression test for the
+  packaged root `install.sh` entry.
+- Expected result: Running `./install.sh install` must prompt for
+  `Cardputer IP:`, normalize `192.168.1.195` to its HTTPS LAN URL internally,
+  and never expose the old HTTPS URL prompt.
+- Result: Achieved on the review branch. The new test failed on `main` with
+  `Cardputer HTTPS URL:` and passed on
+  `fix/setup-agent-guidance-1.2.2`; the focused root and macOS installer suite
+  passed 20/20.
+- Next step: Integrate the review branch into `main`, rerun the full release
+  gate from the actual project root, rebuild the firmware artifacts, and push
+  the integrated result.
