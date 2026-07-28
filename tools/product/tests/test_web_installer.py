@@ -12,10 +12,10 @@ PACKAGER = ROOT / "tools/product/package_web_installer.py"
 STAGER = ROOT / "tools/product/stage_web_installer.py"
 INSTALLER = ROOT / "web-installer"
 RELEASE_MANIFEST = ROOT / "release/product-release.json"
-VERSION = "1.3.0"
-FACTORY_ASSET = "Cardputer-Codex-Companion-1.3.0-factory.bin"
+VERSION = "1.3.1"
+FACTORY_ASSET = "Cardputer-Codex-Companion-1.3.1-factory.bin"
 FACTORY_SHA256 = (
-    "173d8331576739210c724407ecd5b8e957866efd9e7779e02ba6106dc304bb22"
+    "d160bd57953650f516eb727bf087895ded595570288a569844078471f90b0a7c"
 )
 
 
@@ -44,13 +44,13 @@ def test_installer_page_pins_web_serial_component_and_warns_about_reset() -> Non
         in page
     )
     assert '<esp-web-install-button manifest="manifest.json">' in page
-    assert "Install Factory Firmware 1.3.0" in page
+    assert "Install Factory Firmware 1.3.1" in page
     assert "desktop Chrome or Edge" in page
     assert "Web Serial" in page
     assert "HTTPS" in page
     for reset_item in ("Wi-Fi", "PIN", "profiles", "pets", "BLE pairing"):
         assert reset_item in page
-    assert "Cardputer-Codex-Companion-1.3.0l-launcher.bin" in page
+    assert "Cardputer-Codex-Companion-1.3.1l-launcher.bin" in page
 
 
 def test_release_manifest_pins_factory_digest_used_for_page_stage() -> None:

@@ -191,7 +191,7 @@ add_executable(test_product_types_launcher test_product_types_launcher.cpp)
 target_include_directories(test_product_types_launcher PRIVATE ../../main)
 target_compile_definitions(
   test_product_types_launcher
-  PRIVATE CARDPUTER_PRODUCT_VERSION="1.3.0l"
+  PRIVATE CARDPUTER_PRODUCT_VERSION="1.3.1l"
 )
 add_test(NAME product_types_launcher COMMAND test_product_types_launcher)
 

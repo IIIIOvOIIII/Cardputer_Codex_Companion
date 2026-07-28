@@ -48,7 +48,7 @@ def main() -> int:
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--idf-python", type=Path, required=True)
-    parser.add_argument("--expected-version", default="1.3.0l")
+    parser.add_argument("--expected-version", default="1.3.1l")
     arguments = parser.parse_args()
     build = arguments.build_dir
     merged = arguments.output.with_suffix(
