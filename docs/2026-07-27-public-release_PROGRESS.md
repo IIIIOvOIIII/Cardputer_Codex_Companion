@@ -241,3 +241,23 @@
 - Next step: Commit the main-worktree checksums and evidence, then run the
   authorized Mac Agent/HAL/AudioBridge purge and verify the machine is clean
   for new-device onboarding.
+
+## 2026-07-28 09:07 HKT
+
+- Current work: Completed the authorized local Mac Agent and audio-component
+  purge, verified the clean host state, and removed the integrated feature
+  worktree and branch.
+- Expected result: The Mac contains no installed Companion runtime, pairing
+  configuration, logs, HAL driver or AudioBridge, while the versioned public
+  installers and generic firmware remain available for the clean-device
+  end-to-end run.
+- Result: Achieved. Installer status reports App/config missing, Agent
+  unloaded, HAL/bridge/audio missing and LAN unconfigured. Direct path,
+  `launchctl` and process checks confirm the user App, LaunchAgent,
+  configuration, logs, HAL bundle, privileged bridge, LaunchDaemon and
+  related processes are absent. The public release remains in `dist/`, matches
+  `1.2.0-SHA256SUMS`, and the integrated feature worktree and branch were
+  removed after the green main-worktree release gate.
+- Next step: Flash a new Cardputer with the generic full image and perform the
+  on-device Wi-Fi, BLE pairing and platform Agent installation wizard. A real
+  Windows install/login-task/uninstall validation also remains pending.
