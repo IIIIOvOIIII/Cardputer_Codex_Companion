@@ -106,6 +106,20 @@ def default_source_app() -> Path:
     return candidates[0]
 
 
+def device_url_from_ipv4(value: object) -> str:
+    if not isinstance(value, str):
+        raise InstallerError("device IP must be a string")
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError as error:
+        raise InstallerError("device IP must be an IPv4 address") from error
+    if not isinstance(address, ipaddress.IPv4Address):
+        raise InstallerError("device IP must be an IPv4 address")
+    if not any(address in network for network in PRIVATE_NETWORKS):
+        raise InstallerError("device IP must be an RFC1918 LAN address")
+    return f"https://{address}"
+
+
 def validate_device_url(value: object) -> str:
     if not isinstance(value, str):
         raise InstallerError("device URL must be a string")
@@ -172,7 +186,7 @@ def read_config(path: Path, *, require_private: bool) -> Dict[str, object]:
 
 
 def interactive_config() -> Dict[str, object]:
-    device = input("Cardputer HTTPS URL: ").strip()
+    device = device_url_from_ipv4(input("Cardputer IP: "))
     pairing = getpass.getpass("Cardputer device PIN: ")
     return validate_config(
         {
