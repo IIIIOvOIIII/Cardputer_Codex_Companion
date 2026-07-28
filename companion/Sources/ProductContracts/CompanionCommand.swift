@@ -6,6 +6,7 @@ public enum CompanionCommand: Equatable, Sendable {
     case version
     case doctor
     case doctorAudio
+    case audioDeviceStatus
     case installAudioDriver
     case uninstallAudioDriver
     case run
@@ -19,6 +20,8 @@ public enum CompanionCommand: Equatable, Sendable {
             return .doctor
         case ["doctor", "audio"]:
             return .doctorAudio
+        case ["audio-device-status"]:
+            return .audioDeviceStatus
         case ["install-audio-driver"]:
             return .installAudioDriver
         case ["uninstall-audio-driver"]:
@@ -34,4 +37,3 @@ public enum CompanionCommand: Equatable, Sendable {
         }
     }
 }
-

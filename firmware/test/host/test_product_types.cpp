@@ -5,7 +5,7 @@
 
 int main() {
   static_assert(kPhysicalKeyCount == 56);
-  static_assert(kProductVersion == std::string_view{"1.2.2"});
+  static_assert(kProductVersion == std::string_view{"1.2.3"});
   static_assert(
       kProductBootTitle ==
       std::string_view{"CARDPUTER CODEX COMPANION"});

@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 ALLOWED = {
     f"{VERSION}-SHA256SUMS",
     "CardputerAudioBridge",

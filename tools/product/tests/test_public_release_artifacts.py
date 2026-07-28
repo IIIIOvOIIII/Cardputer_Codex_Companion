@@ -88,8 +88,8 @@ def test_public_readme_is_english_first_and_bilingual():
         assert section in readme
     chinese = (ROOT / "README.zh-CN.md").read_text()
     assert chinese.splitlines()[0] == "[English](README.md)"
-    assert "1.2.2" in readme
-    assert "1.2.2" in chinese
+    assert "1.2.3" in readme
+    assert "1.2.3" in chinese
     assert (
         "Created and maintained by **Lynx** "
         "([hi@iam.lc](mailto:hi@iam.lc))."

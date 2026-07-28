@@ -85,9 +85,9 @@ test -x \
   dist/CardputerCompanion.app/Contents/Resources/CardputerAudioBridge
 test -f \
   dist/CardputerCompanion.app/Contents/Resources/com.lynx.cardputer-audio-bridge.plist
-test -f dist/CardputerCompanion-1.2.2-windows-amd64.zip
-test -f dist/CardputerCompanion-1.2.2-windows-arm64.zip
-test -f dist/CardputerCompanion-1.2.2-windows-x64-setup.exe
+test -f dist/CardputerCompanion-1.2.3-windows-amd64.zip
+test -f dist/CardputerCompanion-1.2.3-windows-arm64.zip
+test -f dist/CardputerCompanion-1.2.3-windows-x64-setup.exe
 python3 tools/product/verify_public_firmware.py \
   --image dist/cardputer_codex_companion-full.bin \
   --layout firmware/partitions_product.csv
@@ -134,11 +134,11 @@ shasum -a 256 \
   dist/CardputerCompanion.app/Contents/Resources/CardputerCodexMicrophone.driver/Contents/MacOS/CardputerCodexMicrophone \
   dist/CardputerCompanion-mac-installer/install.sh \
   dist/CardputerCompanion-mac-installer/installer/mac_installer.py \
-  dist/CardputerCompanion-1.2.2-windows-amd64.zip \
-  dist/CardputerCompanion-1.2.2-windows-arm64.zip \
-  dist/CardputerCompanion-1.2.2-windows-x64-setup.exe \
-  > dist/1.2.2-SHA256SUMS
-shasum -a 256 -c dist/1.2.2-SHA256SUMS
+  dist/CardputerCompanion-1.2.3-windows-amd64.zip \
+  dist/CardputerCompanion-1.2.3-windows-arm64.zip \
+  dist/CardputerCompanion-1.2.3-windows-x64-setup.exe \
+  > dist/1.2.3-SHA256SUMS
+shasum -a 256 -c dist/1.2.3-SHA256SUMS
 python3 tools/product/verify_public_artifacts.py \
   --dist dist \
   --require-complete

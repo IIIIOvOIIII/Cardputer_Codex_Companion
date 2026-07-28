@@ -24,6 +24,7 @@ struct Configuration {
         case version
         case doctor
         case doctorAudio
+        case audioDeviceStatus
         case installAudioDriver
         case uninstallAudioDriver
         case run
@@ -64,6 +65,15 @@ struct Configuration {
         if productCommand == .doctorAudio {
             return Configuration(
                 command: .doctorAudio,
+                deviceURL: nil,
+                pairingCode: nil,
+                configURL: nil,
+                pinRevision: 0
+            )
+        }
+        if productCommand == .audioDeviceStatus {
+            return Configuration(
+                command: .audioDeviceStatus,
                 deviceURL: nil,
                 pairingCode: nil,
                 configURL: nil,

@@ -32,7 +32,7 @@ def make_app(
     executable.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "--version" ]; then\n'
-        '  echo "cardputer-companion 1.2.2"\n'
+        '  echo "cardputer-companion 1.2.3"\n'
         "fi\n"
     )
     executable.chmod(0o755)
@@ -40,8 +40,8 @@ def make_app(
         plistlib.dumps(
             {
                 "CFBundleIdentifier": "com.lynx.cardputer-companion",
-                "CFBundleVersion": "1.2.2",
-                "CFBundleShortVersionString": "1.2.2",
+                "CFBundleVersion": "1.2.3",
+                "CFBundleShortVersionString": "1.2.3",
                 "CFBundleExecutable": "cardputer-companion",
             }
         )
@@ -60,8 +60,8 @@ def make_app(
                 "CFBundleIdentifier": (
                     "com.lynx.cardputer-codex-microphone.driver"
                 ),
-                "CFBundleVersion": "1.2.2",
-                "CFBundleShortVersionString": "1.2.2",
+                "CFBundleVersion": "1.2.3",
+                "CFBundleShortVersionString": "1.2.3",
                 "CFBundleExecutable": "CardputerCodexMicrophone",
             }
         )
@@ -229,6 +229,313 @@ def test_interactive_config_prompts_for_ip(monkeypatch):
         == "https://192.168.1.195"
     )
     assert prompts == ["Cardputer IP: "]
+
+
+def test_audio_helper_uses_operation_specific_administrator_prompt(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    app = make_app(tmp_path)
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=Path("/"),
+        test_root=None,
+        app=tmp_path / "installed.app",
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=Path(
+            "/Library/Audio/Plug-Ins/HAL/"
+            "CardputerCodexMicrophone.driver"
+        ),
+        bridge=Path(
+            "/Library/PrivilegedHelperTools/"
+            "com.lynx.cardputer-audio-bridge"
+        ),
+        bridge_daemon=Path(
+            "/Library/LaunchDaemons/"
+            "com.lynx.cardputer-audio-bridge.plist"
+        ),
+    )
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda arguments, **kwargs: calls.append(arguments) or Result(),
+    )
+
+    module.run_audio_helper(app, "install", paths)
+    module.run_audio_helper(app, "uninstall", paths)
+
+    assert calls[0][:3] == [
+        "/usr/bin/sudo",
+        "-p",
+        (
+            "macOS administrator password "
+            "(required to install the microphone driver): "
+        ),
+    ]
+    assert calls[1][:3] == [
+        "/usr/bin/sudo",
+        "-p",
+        (
+            "macOS administrator password "
+            "(required to remove the microphone driver): "
+        ),
+    ]
+
+
+def test_core_audio_probe_uses_companion_not_system_profiler(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    app = make_app(tmp_path)
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "PRESENT\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda arguments, **kwargs: calls.append(arguments) or Result(),
+    )
+
+    assert module.core_audio_state(app) is True
+    assert calls == [
+        [
+            str(app / "Contents/MacOS/cardputer-companion"),
+            "audio-device-status",
+        ]
+    ]
+
+
+def test_core_audio_probe_does_not_treat_failures_as_absent(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    app = make_app(tmp_path)
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "probe failed"
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    assert module.core_audio_state(app) is None
+
+
+def test_restart_core_audio_requires_successful_pid_turnover(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    app = make_app(tmp_path)
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=Path("/"),
+        test_root=None,
+        app=app,
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=Path(
+            "/Library/Audio/Plug-Ins/HAL/"
+            "CardputerCodexMicrophone.driver"
+        ),
+        bridge=Path(
+            "/Library/PrivilegedHelperTools/"
+            "com.lynx.cardputer-audio-bridge"
+        ),
+        bridge_daemon=Path(
+            "/Library/LaunchDaemons/"
+            "com.lynx.cardputer-audio-bridge.plist"
+        ),
+    )
+    pids = iter([101, 101, 202])
+    probes = []
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(
+        module,
+        "core_audio_pid",
+        lambda: next(pids),
+    )
+    monkeypatch.setattr(
+        module,
+        "core_audio_state",
+        lambda value: probes.append(value) or True,
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda arguments, **kwargs: calls.append(arguments) or Result(),
+    )
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module.restart_core_audio(
+        paths,
+        probe_app=app,
+        expect_present=True,
+    )
+
+    assert calls[0][:3] == [
+        "/usr/bin/sudo",
+        "-p",
+        (
+            "macOS administrator password "
+            "(required to restart Core Audio): "
+        ),
+    ]
+    assert probes == [app]
+
+
+def test_restart_core_audio_reports_failed_kill(monkeypatch, tmp_path):
+    module = load_installer()
+    app = make_app(tmp_path)
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=Path("/"),
+        test_root=None,
+        app=app,
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=Path(
+            "/Library/Audio/Plug-Ins/HAL/"
+            "CardputerCodexMicrophone.driver"
+        ),
+        bridge=Path(
+            "/Library/PrivilegedHelperTools/"
+            "com.lynx.cardputer-audio-bridge"
+        ),
+        bridge_daemon=Path(
+            "/Library/LaunchDaemons/"
+            "com.lynx.cardputer-audio-bridge.plist"
+        ),
+    )
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "permission denied"
+
+    monkeypatch.setattr(module, "core_audio_pid", lambda: 101)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    with pytest.raises(
+        module.InstallerError,
+        match="failed to restart Core Audio",
+    ):
+        module.restart_core_audio(
+            paths,
+            probe_app=app,
+            expect_present=True,
+        )
+
+
+def test_uninstall_restarts_stale_loaded_microphone_without_files(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    app = make_app(tmp_path)
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=tmp_path / "system",
+        test_root=None,
+        app=tmp_path / "missing-installed.app",
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=tmp_path / "missing-driver",
+        bridge=tmp_path / "missing-bridge",
+        bridge_daemon=tmp_path / "missing-daemon",
+    )
+    restarts = []
+
+    monkeypatch.setattr(
+        module,
+        "locate_uninstall_app",
+        lambda _paths: app,
+    )
+    monkeypatch.setattr(
+        module,
+        "locate_audio_probe_app",
+        lambda _paths, _fallback: app,
+    )
+    monkeypatch.setattr(
+        module,
+        "core_audio_state",
+        lambda _app: True,
+    )
+    monkeypatch.setattr(
+        module,
+        "restart_core_audio",
+        lambda _paths, **kwargs: restarts.append(kwargs),
+    )
+    monkeypatch.setattr(
+        module,
+        "uninstall_launch_agent",
+        lambda *args, **kwargs: None,
+    )
+
+    module.uninstall(paths, purge=False)
+
+    assert restarts == [
+        {
+            "probe_app": app,
+            "expect_present": False,
+        }
+    ]
+
+
+def test_uninstall_uses_current_source_app_to_probe_old_install(
+    monkeypatch, tmp_path
+):
+    module = load_installer()
+    old_app = make_app(tmp_path, name="old")
+    old_info = old_app / "Contents/Info.plist"
+    old_payload = plistlib.loads(old_info.read_bytes())
+    old_payload["CFBundleVersion"] = "1.2.2"
+    old_payload["CFBundleShortVersionString"] = "1.2.2"
+    old_info.write_bytes(plistlib.dumps(old_payload))
+    current_app = make_app(tmp_path, name="current")
+    paths = module.InstallerPaths(
+        home=tmp_path / "home",
+        system_root=tmp_path / "system",
+        test_root=None,
+        app=old_app,
+        config=tmp_path / "config",
+        logs=tmp_path / "logs",
+        launch_agent=tmp_path / "agent.plist",
+        driver=tmp_path / "driver",
+        bridge=tmp_path / "bridge",
+        bridge_daemon=tmp_path / "daemon",
+    )
+    monkeypatch.setattr(module, "default_source_app", lambda: current_app)
+
+    assert module.locate_audio_probe_app(paths, old_app) == current_app
 
 
 def test_install_uninstall_and_purge_are_exact_and_idempotent(tmp_path):

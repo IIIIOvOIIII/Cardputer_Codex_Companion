@@ -4,7 +4,7 @@
 
 Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN/core/Cardputer) 变成仅限局域网使用的 Codex 遥控副屏、可编程蓝牙键盘，以及 macOS 可选无线麦克风。
 
-当前版本：**1.2.2**
+当前版本：**1.2.3**
 
 ## 项目介绍
 
@@ -39,7 +39,7 @@ Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN
 | Machine Agent | macOS 14 或更高 | 完整功能 |
 | Machine Agent | Windows 10 22H2 / Windows 11 | Codex 状态/动作及宠物同步 |
 | 蓝牙麦克风 | 仅 macOS | 安装 HAL 与 AudioBridge |
-| Unicode GATT 注入 | 仅 macOS | Windows 1.2.2 暂不提供 |
+| Unicode GATT 注入 | 仅 macOS | Windows 1.2.3 暂不提供 |
 
 ## Cardputer 固件刷入
 
@@ -48,7 +48,7 @@ Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN
 先校验发布制品：
 
 ```bash
-shasum -a 256 -c 1.2.2-SHA256SUMS
+shasum -a 256 -c 1.2.3-SHA256SUMS
 ```
 
 新设备或恢复出厂设备使用通用完整镜像：
@@ -109,7 +109,10 @@ cd CardputerCompanion-mac-installer
 ./install.sh status
 ```
 
-安装器交互询问 `https://设备IP` 和 PIN；PIN 使用掩码，只写入权限为 `0600` 的配置，不进入命令行、LaunchAgent 或日志。
+安装器交互询问 Cardputer IPv4 地址和 PIN。IP 只需输入
+`192.168.1.195` 这类地址，安装器会自动补充 HTTPS。PIN 使用掩码，只写入权限为
+`0600` 的配置，不进入命令行、LaunchAgent 或日志。需要提权时，macOS 管理员密码
+提示会明确说明当前用于安装麦克风驱动、移除麦克风驱动或重启 Core Audio。
 
 安装内容包括用户 App、LaunchAgent、`Cardputer Codex Microphone` HAL 以及 AudioBridge。
 
@@ -129,6 +132,9 @@ sudo CardputerCompanion.app/Contents/MacOS/cardputer-companion \
 ./install.sh uninstall
 ```
 
+卸载会删除 HAL、AudioBridge、LaunchAgent 和 App，并在重启 Core Audio 后确认
+虚拟麦克风已不再枚举。
+
 干净卸载同时删除配对配置和日志：
 
 ```bash
@@ -140,12 +146,12 @@ sudo CardputerCompanion.app/Contents/MacOS/cardputer-companion \
 Windows x64 运行：
 
 ```text
-CardputerCompanion-1.2.2-windows-x64-setup.exe
+CardputerCompanion-1.2.3-windows-x64-setup.exe
 ```
 
 安装器写入 `%LOCALAPPDATA%\CardputerCodexCompanion`，创建当前用户最低权限登录任务，并添加 Pair Device、Status、Doctor 与 Uninstall 菜单。它不安装驱动或系统服务，也不要求管理员权限。
 
-Windows ARM64 解压 `CardputerCompanion-1.2.2-windows-arm64.zip` 后运行：
+Windows ARM64 解压 `CardputerCompanion-1.2.3-windows-arm64.zip` 后运行：
 
 ```text
 cardputer-agent.exe pair
@@ -153,7 +159,7 @@ cardputer-agent.exe status
 cardputer-agent.exe doctor
 ```
 
-PIN 由当前 Windows 用户的 DPAPI 保护。可从“已安装的应用”或开始菜单卸载。Windows 1.2.2 不包含 Unicode GATT 注入和蓝牙麦克风。
+PIN 由当前 Windows 用户的 DPAPI 保护。可从“已安装的应用”或开始菜单卸载。Windows 1.2.3 不包含 Unicode GATT 注入和蓝牙麦克风。
 
 ## Web 与设备操作
 
@@ -190,7 +196,7 @@ ctest --test-dir build/product-host --output-on-failure
 scripts/build_web_assets.py --check
 ```
 
-公共制品包括完整/应用固件、macOS 安装器、Windows x64 安装器、amd64/ARM64 ZIP 和 `1.2.2-SHA256SUMS`。
+公共制品包括完整/应用固件、macOS 安装器、Windows x64 安装器、amd64/ARM64 ZIP 和 `1.2.3-SHA256SUMS`。
 
 安全与制品边界见 [PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md)，Windows 细节见 [WINDOWS_AGENT.md](docs/WINDOWS_AGENT.md)。
 

@@ -4,7 +4,7 @@
 
 Cardputer Codex Companion turns an [M5Stack Cardputer](https://docs.m5stack.com/en/core/Cardputer) into a LAN-only Codex remote display, a programmable Bluetooth keyboard, and an optional wireless microphone for macOS.
 
-Current release: **1.2.2**
+Current release: **1.2.3**
 
 ## Overview
 
@@ -41,7 +41,7 @@ The public firmware contains no Wi-Fi credentials, device PIN, pairing data, pri
 | Machine Agent | macOS 14 or later | Full feature set |
 | Machine Agent | Windows 10 22H2 / Windows 11 | Codex state/actions and pet sync |
 | Bluetooth microphone | macOS only | Installs a HAL driver and AudioBridge |
-| Unicode GATT injection | macOS only | Windows support is not included in 1.2.2 |
+| Unicode GATT injection | macOS only | Windows support is not included in 1.2.3 |
 
 The firmware does not provide Internet or out-of-LAN Codex control.
 
@@ -51,12 +51,12 @@ The firmware does not provide Internet or out-of-LAN Codex control.
 
 - M5Stack Cardputer and a data-capable USB-C cable.
 - Python 3 with [esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32s3/installation.html).
-- The `1.2.2` release artifacts and `1.2.2-SHA256SUMS`.
+- The `1.2.3` release artifacts and `1.2.3-SHA256SUMS`.
 
 Verify the downloaded files before flashing:
 
 ```bash
-shasum -a 256 -c 1.2.2-SHA256SUMS
+shasum -a 256 -c 1.2.3-SHA256SUMS
 ```
 
 ### New or factory-reset device
@@ -135,7 +135,13 @@ cd CardputerCompanion-mac-installer
 ./install.sh status
 ```
 
-The installer interactively requests `https://CARDPUTER_IP` and the device PIN. The PIN is masked and stored in a mode-`0600` configuration file; it is never placed in the command line, LaunchAgent plist, or logs.
+The installer interactively requests the Cardputer IPv4 address and device
+PIN. Enter only the address, for example `192.168.1.195`; the installer adds
+HTTPS itself. The PIN is masked and stored in a mode-`0600` configuration file;
+it is never placed in the command line, LaunchAgent plist, or logs. macOS
+elevation is requested with an explicit administrator-password prompt that
+states whether the microphone driver is being installed, removed, or Core
+Audio is being restarted.
 
 The installation contains:
 
@@ -160,6 +166,10 @@ Uninstall the runtime while keeping pairing configuration and logs:
 ./install.sh uninstall
 ```
 
+Uninstall removes the HAL, AudioBridge, LaunchAgent, and App, then verifies
+that a restarted Core Audio process no longer enumerates the virtual
+microphone.
+
 Perform a clean uninstall, including pairing configuration and logs:
 
 ```bash
@@ -171,12 +181,12 @@ Perform a clean uninstall, including pairing configuration and logs:
 On Windows x64, run:
 
 ```text
-CardputerCompanion-1.2.2-windows-x64-setup.exe
+CardputerCompanion-1.2.3-windows-x64-setup.exe
 ```
 
 The per-user installer writes to `%LOCALAPPDATA%\CardputerCodexCompanion`, creates a least-privilege logon Scheduled Task, and adds Pair Device, Status, Doctor, and Uninstall shortcuts to the Start Menu. It does not install a driver or Windows service and does not require administrator rights.
 
-For Windows ARM64, extract `CardputerCompanion-1.2.2-windows-arm64.zip` and run:
+For Windows ARM64, extract `CardputerCompanion-1.2.3-windows-arm64.zip` and run:
 
 ```text
 cardputer-agent.exe pair
@@ -186,7 +196,7 @@ cardputer-agent.exe doctor
 
 The PIN is masked and protected with Windows DPAPI for the current user. Uninstall from **Installed apps** or the Start Menu. Windows uninstall removes the Agent, task, configuration, logs, shortcuts, and uninstall registration.
 
-Windows 1.2.2 does not include Unicode GATT injection or the Bluetooth microphone.
+Windows 1.2.3 does not include Unicode GATT injection or the Bluetooth microphone.
 
 ## Web Console and Device Controls
 
@@ -237,7 +247,7 @@ The complete gate builds:
 - `dist/cardputer_codex_companion.bin`;
 - `dist/CardputerCompanion-mac-installer/`;
 - Windows x64 installer and amd64/ARM64 portable archives;
-- `dist/1.2.2-SHA256SUMS`.
+- `dist/1.2.3-SHA256SUMS`.
 
 See [PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md) for the security and artifact boundary and [WINDOWS_AGENT.md](docs/WINDOWS_AGENT.md) for Windows-specific details.
 

@@ -1,15 +1,15 @@
 # Cardputer Codex Companion 公共发布
 
-## 1.2.2 制品
+## 1.2.3 制品
 
 `release/product-release.json` 是机器可读清单。公共发布包含：
 
 - `cardputer_codex_companion-full.bin`：从 `0x0` 刷写的通用完整镜像；
 - `cardputer_codex_companion.bin`：仅升级应用分区，地址 `0x20000`；
 - `CardputerCompanion-mac-installer/`：macOS App、Agent、HAL 和 AudioBridge；
-- `CardputerCompanion-1.2.2-windows-x64-setup.exe`；
+- `CardputerCompanion-1.2.3-windows-x64-setup.exe`；
 - Windows amd64/ARM64 可移植 ZIP；
-- `1.2.2-SHA256SUMS`。
+- `1.2.3-SHA256SUMS`。
 
 ## 安全边界
 
@@ -31,7 +31,7 @@
 
 ```bash
 scripts/verify_product_release.sh
-shasum -a 256 -c dist/1.2.2-SHA256SUMS
+shasum -a 256 -c dist/1.2.3-SHA256SUMS
 ```
 
 门禁覆盖 Python、正常与 sanitizer host、ESP-IDF clean build、内存门槛、Web

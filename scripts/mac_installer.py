@@ -30,7 +30,21 @@ APP_ID = "com.lynx.cardputer-companion"
 DRIVER_NAME = "CardputerCodexMicrophone.driver"
 BRIDGE_NAME = "com.lynx.cardputer-audio-bridge"
 CONFIG_DIRECTORY = "CardputerCodexCompanion"
-EXPECTED_VERSION = "1.2.2"
+EXPECTED_VERSION = "1.2.3"
+SUDO_PROMPTS = {
+    "install": (
+        "macOS administrator password "
+        "(required to install the microphone driver): "
+    ),
+    "uninstall": (
+        "macOS administrator password "
+        "(required to remove the microphone driver): "
+    ),
+    "restart": (
+        "macOS administrator password "
+        "(required to restart Core Audio): "
+    ),
+}
 PRIVATE_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -349,7 +363,11 @@ def run_audio_helper(
             ]
         )
     if paths.test_root is None:
-        arguments.insert(0, "/usr/bin/sudo")
+        arguments[0:0] = [
+            "/usr/bin/sudo",
+            "-p",
+            SUDO_PROMPTS[operation],
+        ]
     result = subprocess.run(
         arguments,
         env=audio_environment(paths),
@@ -362,35 +380,82 @@ def run_audio_helper(
         )
 
 
-def core_audio_present() -> bool:
+def core_audio_state(app: Path) -> Optional[bool]:
+    executable = app_resources(app)["executable"]
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        return None
     try:
         result = subprocess.run(
-            ["/usr/sbin/system_profiler", "SPAudioDataType"],
+            [str(executable), "audio-device-status"],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):
+        return None
+    output = result.stdout.strip()
+    if result.returncode == 0 and output == "PRESENT":
+        return True
+    if result.returncode == 1 and output == "ABSENT":
         return False
-    return (
-        result.returncode == 0
-        and "Cardputer Codex Microphone:" in result.stdout
-    )
+    return None
 
 
-def restart_core_audio(paths: InstallerPaths, *, expect_present: bool) -> None:
-    if paths.test_root is not None:
-        return
-    subprocess.run(
-        ["/usr/bin/sudo", "/usr/bin/killall", "coreaudiod"],
+def core_audio_pid() -> Optional[int]:
+    result = subprocess.run(
+        ["/usr/bin/pgrep", "-x", "coreaudiod"],
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        try:
+            return int(line.strip())
+        except ValueError:
+            continue
+    return None
+
+
+def restart_core_audio(
+    paths: InstallerPaths,
+    *,
+    probe_app: Path,
+    expect_present: bool,
+) -> None:
+    if paths.test_root is not None:
+        return
+    previous_pid = core_audio_pid()
+    if previous_pid is not None:
+        result = subprocess.run(
+            [
+                "/usr/bin/sudo",
+                "-p",
+                SUDO_PROMPTS["restart"],
+                "/usr/bin/killall",
+                "coreaudiod",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise InstallerError(
+                "failed to restart Core Audio "
+                f"(status {result.returncode})"
+            )
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        if core_audio_present() == expect_present:
+        current_pid = core_audio_pid()
+        if current_pid is None:
+            core_audio_state(probe_app)
+            time.sleep(0.25)
+            continue
+        if previous_pid is not None and current_pid == previous_pid:
+            time.sleep(0.25)
+            continue
+        if core_audio_state(probe_app) is expect_present:
             return
-        time.sleep(1)
+        time.sleep(0.5)
     expected = "enumerate" if expect_present else "unload"
     raise InstallerError(f"Core Audio did not {expected} the microphone")
 
@@ -451,7 +516,11 @@ def install(
         paths.logs.mkdir(parents=True, exist_ok=True)
         run_audio_helper(paths.app, "install", paths)
         audio_installed = True
-        restart_core_audio(paths, expect_present=True)
+        restart_core_audio(
+            paths,
+            probe_app=paths.app,
+            expect_present=True,
+        )
         executable = app_resources(paths.app)["executable"]
         install_launch_agent(
             executable,
@@ -471,10 +540,18 @@ def install(
                     and backup.is_dir()
                 ):
                     run_audio_helper(backup, "install", paths)
-                    restart_core_audio(paths, expect_present=True)
+                    restart_core_audio(
+                        paths,
+                        probe_app=paths.app,
+                        expect_present=True,
+                    )
                 else:
                     run_audio_helper(paths.app, "uninstall", paths)
-                    restart_core_audio(paths, expect_present=False)
+                    restart_core_audio(
+                        paths,
+                        probe_app=paths.app,
+                        expect_present=False,
+                    )
             except Exception:
                 print(
                     "mac installer: audio rollback failed",
@@ -502,6 +579,31 @@ def locate_uninstall_app(paths: InstallerPaths) -> Optional[Path]:
     return candidate if candidate.is_dir() else None
 
 
+def bundle_version(app: Path) -> Optional[str]:
+    info = app_resources(app)["info"]
+    try:
+        value = plistlib.loads(info.read_bytes())
+    except (OSError, plistlib.InvalidFileException):
+        return None
+    version = value.get("CFBundleShortVersionString")
+    return version if isinstance(version, str) else None
+
+
+def locate_audio_probe_app(
+    paths: InstallerPaths,
+    fallback: Optional[Path],
+) -> Optional[Path]:
+    candidates = (default_source_app(), paths.app, fallback)
+    for candidate in candidates:
+        if (
+            candidate is not None
+            and candidate.is_dir()
+            and bundle_version(candidate) == EXPECTED_VERSION
+        ):
+            return candidate
+    return fallback
+
+
 def uninstall(paths: InstallerPaths, *, purge: bool) -> None:
     uninstall_launch_agent(
         paths.launch_agent,
@@ -513,13 +615,29 @@ def uninstall(paths: InstallerPaths, *, purge: bool) -> None:
         or paths.bridge_daemon.exists()
     )
     source_app = locate_uninstall_app(paths)
+    probe_app = locate_audio_probe_app(paths, source_app)
+    stale_audio_state = (
+        core_audio_state(probe_app)
+        if paths.test_root is None and probe_app is not None
+        else False
+    )
     if audio_installed:
         if source_app is None:
             raise InstallerError(
                 "audio components remain but no exact uninstaller is available"
             )
         run_audio_helper(source_app, "uninstall", paths)
-        restart_core_audio(paths, expect_present=False)
+        restart_core_audio(
+            paths,
+            probe_app=probe_app or source_app,
+            expect_present=False,
+        )
+    elif stale_audio_state is True and probe_app is not None:
+        restart_core_audio(
+            paths,
+            probe_app=probe_app,
+            expect_present=False,
+        )
     remove_exact(paths.app)
     if purge:
         remove_exact(paths.config.parent)
@@ -640,7 +758,7 @@ def status(paths: InstallerPaths) -> int:
     elif paths.test_root is not None:
         print("AUDIO TEST-SKIPPED")
     else:
-        audio_ok = core_audio_present()
+        audio_ok = core_audio_state(paths.app) is True
         print("AUDIO OK" if audio_ok else "AUDIO MISSING")
         healthy = healthy and audio_ok
 

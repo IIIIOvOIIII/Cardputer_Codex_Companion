@@ -1,4 +1,4 @@
-# Windows Machine Agent 1.2.2
+# Windows Machine Agent 1.2.3
 
 ## 支持范围
 
@@ -18,10 +18,10 @@ Windows Agent 提供：
 x64 运行：
 
 ```text
-CardputerCompanion-1.2.2-windows-x64-setup.exe
+CardputerCompanion-1.2.3-windows-x64-setup.exe
 ```
 
-ARM64 解压 `CardputerCompanion-1.2.2-windows-arm64.zip`，在目录中运行：
+ARM64 解压 `CardputerCompanion-1.2.3-windows-arm64.zip`，在目录中运行：
 
 ```text
 cardputer-agent.exe pair

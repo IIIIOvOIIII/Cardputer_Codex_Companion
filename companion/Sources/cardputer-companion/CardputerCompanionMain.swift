@@ -16,11 +16,17 @@ struct CardputerCompanionMain {
             )
             switch configuration.command {
             case .version:
-                print("cardputer-companion 1.2.2")
+                print("cardputer-companion 1.2.3")
             case .doctor:
                 doctor()
             case .doctorAudio:
                 try await AudioDriverOperations.doctor()
+            case .audioDeviceStatus:
+                let present = CoreAudioDeviceCatalog.containsInputDevice(
+                    named: "Cardputer Codex Microphone"
+                )
+                print(present ? "PRESENT" : "ABSENT")
+                Foundation.exit(present ? 0 : 1)
             case .installAudioDriver:
                 try AudioDriverOperations.install()
             case .uninstallAudioDriver:
@@ -383,6 +389,7 @@ struct CardputerCompanionMain {
                   cardputer-companion --version
                   cardputer-companion doctor
                   cardputer-companion doctor audio
+                  cardputer-companion audio-device-status
                   sudo cardputer-companion install-audio-driver
                   sudo cardputer-companion uninstall-audio-driver
                   cardputer-companion audio-probe --duration 600 --metrics PATH
