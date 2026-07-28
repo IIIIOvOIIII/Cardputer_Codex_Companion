@@ -24,7 +24,7 @@
 
 - Create `install.sh`: public context-aware macOS dispatcher.
 - Create `tools/product/tests/test_root_installer.py`: source/package dispatch,
-  lazy-build, argument, packaging-source, and README contract tests.
+  lazy-build, argument-preservation, and invalid-layout behavior tests.
 - Modify `tools/product/tests/test_companion_packaging.py`: require the
   generated package to contain the exact root entry.
 - Modify `scripts/package_mac_installer.sh`: copy the root dispatcher into the
@@ -172,7 +172,6 @@ git commit -m "feat: add root macOS installer entry"
 
 **Files:**
 
-- Modify: `tools/product/tests/test_root_installer.py`
 - Modify: `tools/product/tests/test_companion_packaging.py`
 - Modify: `scripts/package_mac_installer.sh`
 - Modify: `README.md`
@@ -185,28 +184,10 @@ git commit -m "feat: add root macOS installer entry"
 - Produces: packaged `install.sh` byte-identical to the public root entry and
   bilingual operator instructions that use the root command.
 
-- [ ] **Step 1: Add failing packaging and documentation contracts**
+- [ ] **Step 1: Add a failing package-behavior contract**
 
-Add:
-
-```python
-def test_package_uses_root_installer_entry():
-    script = (ROOT / "scripts/package_mac_installer.sh").read_text()
-    assert '"${repo_root}/install.sh"' in script
-    assert '"${repo_root}/scripts/mac_installer.sh"' not in script
-
-
-@pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
-def test_readme_documents_root_installer(readme_name):
-    readme = (ROOT / readme_name).read_text()
-    assert "./install.sh install" in readme
-    assert "./install.sh status" in readme
-    assert "./install.sh uninstall" in readme
-    assert "./install.sh uninstall --purge" in readme
-```
-
-In
-`test_mac_installer_package_is_self_contained_and_reversible`, add:
+In `test_mac_installer_package_is_self_contained_and_reversible`, compare the
+generated public package entry with the root entry:
 
 ```python
 assert entry.read_bytes() == (ROOT / "install.sh").read_bytes()
@@ -221,7 +202,8 @@ PYTHONPATH=. uv run pytest -q tools/product/tests/test_root_installer.py
 ```
 
 Expected: packaging-source assertion fails because the package still copies
-`scripts/mac_installer.sh`.
+`scripts/mac_installer.sh`, so the generated entry differs from the new root
+entry.
 
 - [ ] **Step 3: Switch packaging to the root entry**
 
@@ -248,6 +230,9 @@ is absent. State that the extracted macOS installer exposes the same commands.
 Keep the existing uninstall, purge, PIN-security, Windows EXE, and Windows
 ARM64 instructions.
 
+Review both rendered Markdown sections directly. Human-facing prose is not
+covered by a source-text change-detector test.
+
 - [ ] **Step 5: Run targeted installer and package tests**
 
 Run:
@@ -266,7 +251,6 @@ byte-identical to the root entry.
 
 ```bash
 git add scripts/package_mac_installer.sh README.md README.zh-CN.md \
-  tools/product/tests/test_root_installer.py \
   tools/product/tests/test_companion_packaging.py
 git commit -m "docs: publish root installer workflow"
 ```
