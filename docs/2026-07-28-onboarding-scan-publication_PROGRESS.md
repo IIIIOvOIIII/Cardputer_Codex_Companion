@@ -72,3 +72,27 @@
   commit `5a95044f216e40560c8e4d2f4ed68a910cef4765`.
 - Next step: Commit and publish this closeout record, recheck the final remote
   commit and release checksums, then remove the completed feature worktree.
+
+## 2026-07-28 17:06 HKT
+
+- Current work: Integrated the approved 1.3.0 Factory and 1.3.0l Launcher
+  release, reran the complete public-release gate from merged `main`, and
+  returned the attached Cardputer to a credential-free Factory image.
+- Expected result: Publish one source state with compatible Factory and
+  M5Launcher artifacts, no retained public credentials, and deterministic
+  device-write evidence.
+- Result: Achieved, with the user-requested extended Launcher observation
+  skipped. The merged gate passed 259 Python tests, 38 focused audio tests,
+  40 normal and 40 sanitizer host tests, Node, Swift, Go/race, 34 final
+  installer tests, 14 checksums, a 15-entry artifact allowlist, and an
+  all-history audit covering 11 refs, 247 reflog commits, 20 retained
+  unreachable objects, 1,678 Git blobs, and 491 current/artifact files with
+  zero findings. Launcher HIL previously passed profile create/update/activate,
+  UTF-8 text, Alt+V HID, hard-reset persistence, and eight stress rounds.
+  The final Factory image was written after a chip erase and accepted by the
+  ESP32-S3 ROM hash check. A post-boot full-image readback differed only in the
+  expected mutable NVS/OTA range `0x9000..0xf01f`; all remaining image bytes
+  matched.
+- Next step: Publish this closeout commit, tag `v1.3.0`, attach the verified
+  artifacts to the public GitHub release, verify GitHub Pages, and remove the
+  completed feature worktree.
