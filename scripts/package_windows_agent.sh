@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${WINDOWS_AGENT_VERSION:-1.2.0}"
+version="${WINDOWS_AGENT_VERSION:-1.2.1}"
 source_epoch="${SOURCE_DATE_EPOCH:-1577836800}"
 archives_only=false
 

@@ -144,7 +144,7 @@ func (process *Process) ensureStartedLocked(ctx context.Context) error {
 				"clientInfo": map[string]any{
 					"name":    "cardputer-companion",
 					"title":   "Cardputer Codex Companion",
-					"version": "1.2.0",
+					"version": "1.2.1",
 				},
 				"capabilities": map[string]any{"experimentalApi": false},
 			})
