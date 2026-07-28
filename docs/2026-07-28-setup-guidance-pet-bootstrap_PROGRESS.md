@@ -66,3 +66,21 @@
 - Next step: Commit the validation evidence, fast-forward `main`, rerun the
   final merged-tree checks, publish tag and GitHub Release, deploy Pages, and
   verify the same-origin Web Installer manifest and Factory image.
+
+## 2026-07-28 20:50 HKT
+
+- Current work: Published the verified 1.3.1/1.3.1l source and artifacts,
+  reran the Pages deployment after the release became available, and verified
+  every public installation surface.
+- Expected result: Public `main`, annotated `v1.3.1`, the GitHub Release, and
+  the same-origin Web Serial installer all expose the approved release and
+  exact Factory digest.
+- Result: Achieved. Public `main` and the tag resolve to
+  `566f908815cf4daf44d9108dfcb004340600d24e`; the Release contains nine
+  verified assets; Pages run `30358658105` attempt 2 succeeded; and the live
+  page, manifest, and Factory image return HTTP 200. The live manifest reports
+  1.3.1 and the 1,761,568-byte Factory image hashes to
+  `d160bd57953650f516eb727bf087895ded595570288a569844078471f90b0a7c`.
+  The public release guidance was also aligned from 1.3.0 to 1.3.1.
+- Next step: Run the focused post-publication verification, commit and push
+  this closeout evidence, then hand off the release and installer URLs.

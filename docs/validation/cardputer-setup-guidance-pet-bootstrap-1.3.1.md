@@ -127,5 +127,20 @@ sample recorded:
 
 Passed for implementation, complete release gate, state-preserving hardware
 deployment, immediate Pet bootstrap, and attached-device stability. Public
-GitHub Release and Pages publication are recorded separately after remote
-verification.
+publication also passed:
+
+- public `main`: `566f908815cf4daf44d9108dfcb004340600d24e`;
+- annotated tag: `v1.3.1`;
+- GitHub Release: nine assets with GitHub-reported digests matching the
+  verified local release artifacts;
+- Pages workflow run `30358658105`, attempt 2: success;
+- live Web Installer, manifest, and same-origin Factory image: HTTP 200;
+- live manifest version: `1.3.1`;
+- live Factory SHA-256:
+  `d160bd57953650f516eb727bf087895ded595570288a569844078471f90b0a7c`;
+- live Factory response: `application/octet-stream`,
+  `Access-Control-Allow-Origin: *`, and `1,761,568` bytes.
+
+The first Pages attempt ran before the GitHub Release existed and failed as
+designed. It was rerun after the release assets were published and then passed
+the release-digest gate.
