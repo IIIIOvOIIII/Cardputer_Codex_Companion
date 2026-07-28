@@ -1,5 +1,6 @@
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,9 +20,17 @@ BUILD_STUB = """\
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-mkdir -p "${root}/dist/CardputerCompanion.app"
+app="${root}/dist/CardputerCompanion.app"
+mkdir -p "${app}/Contents/MacOS"
+/bin/cp \
+  "${root}/companion/AppBundle/Info.plist" \
+  "${app}/Contents/Info.plist"
+printf '#!/bin/sh\\nprintf "cardputer-companion 1.3.2\\\\n"\\n' \
+  > "${app}/Contents/MacOS/cardputer-companion"
+chmod 0755 "${app}/Contents/MacOS/cardputer-companion"
 printf 'build\\n' >> "${root}/build.trace"
 """
+EXPECTED_VERSION = "1.3.2"
 
 
 def copy_entry(layout: Path) -> None:
@@ -33,17 +42,42 @@ def make_source_layout(
     tmp_path: Path,
     *,
     app_present: bool,
+    app_version: str = EXPECTED_VERSION,
 ) -> tuple[Path, Path]:
     layout = tmp_path / "source"
     scripts = layout / "scripts"
     scripts.mkdir(parents=True)
+    source_info = layout / "companion/AppBundle/Info.plist"
+    source_info.parent.mkdir(parents=True)
+    source_info.write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleIdentifier": "com.lynx.cardputer-companion",
+                "CFBundleShortVersionString": EXPECTED_VERSION,
+            }
+        )
+    )
     copy_entry(layout)
     (scripts / "mac_installer.py").write_text(INSTALLER_STUB)
     builder = scripts / "build_companion.sh"
     builder.write_text(BUILD_STUB)
     builder.chmod(0o755)
     if app_present:
-        (layout / "dist/CardputerCompanion.app").mkdir(parents=True)
+        app = layout / "dist/CardputerCompanion.app"
+        executable = app / "Contents/MacOS/cardputer-companion"
+        executable.parent.mkdir(parents=True)
+        (app / "Contents/Info.plist").write_bytes(
+            plistlib.dumps(
+                {
+                    "CFBundleIdentifier": "com.lynx.cardputer-companion",
+                    "CFBundleShortVersionString": app_version,
+                }
+            )
+        )
+        executable.write_text(
+            f'#!/bin/sh\nprintf "cardputer-companion {app_version}\\n"\n'
+        )
+        executable.chmod(0o755)
     return layout, layout / "build.trace"
 
 
@@ -91,6 +125,35 @@ def test_source_install_builds_only_when_bundle_is_missing(tmp_path):
     second = run_entry(layout, "install")
     assert json.loads(second.stdout) == ["install"]
     assert trace.read_text().splitlines() == ["build"]
+
+
+def test_source_install_rebuilds_when_bundle_version_is_stale(tmp_path):
+    layout, trace = make_source_layout(
+        tmp_path,
+        app_present=True,
+        app_version="1.3.1",
+    )
+
+    result = run_entry(layout, "install")
+
+    assert json.loads(result.stdout) == ["install"]
+    assert trace.read_text().splitlines() == ["build"]
+    rebuilt_info = plistlib.loads(
+        (
+            layout
+            / "dist/CardputerCompanion.app/Contents/Info.plist"
+        ).read_bytes()
+    )
+    assert rebuilt_info["CFBundleShortVersionString"] == EXPECTED_VERSION
+
+
+def test_source_install_keeps_current_bundle_without_rebuilding(tmp_path):
+    layout, trace = make_source_layout(tmp_path, app_present=True)
+
+    result = run_entry(layout, "install")
+
+    assert json.loads(result.stdout) == ["install"]
+    assert not trace.exists()
 
 
 @pytest.mark.parametrize(
