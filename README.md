@@ -67,7 +67,7 @@ shasum -a 256 -c 1.3.0-SHA256SUMS
 ### Factory 1.3.0 (recommended)
 
 The simplest route is the
-[project Web Serial installer](https://iiiioovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)
+[project Web Serial installer](https://iiiiovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)
 in desktop Chrome or Edge over HTTPS. Connect the Cardputer by USB and select
 **Install Factory Firmware 1.3.0**.
 

@@ -113,3 +113,15 @@
 - Next step: Remove the merged feature worktree, confirm the final clean Git
   state and unloaded local Agent, and hand off the public URLs and artifact
   paths.
+
+## 2026-07-28 17:35 HKT
+
+- Current work: Corrected the Web Serial installer URL in both public READMEs.
+- Expected result: The documented installer address resolves to the deployed
+  GitHub Pages site.
+- Result: Achieved. The previous hostname contained one extra `o`; both
+  READMEs now use `iiiiovoiiii.github.io`. The corrected installer returned
+  HTTP 200 and its manifest resolved version 1.3.0 to the published Factory
+  release asset.
+- Next step: Publish the documentation correction and complete the final
+  repository/status verification.

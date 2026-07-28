@@ -61,7 +61,7 @@ shasum -a 256 -c 1.3.0-SHA256SUMS
 ### Factory 1.3.0（推荐）
 
 最简单的安装方式是在桌面版 Chrome 或 Edge 中打开
-[项目 Web Serial 安装器](https://iiiioovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)，
+[项目 Web Serial 安装器](https://iiiiovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)，
 通过 USB 连接 Cardputer，然后选择 **Install Factory Firmware 1.3.0**。
 
 命令行刷写需要 Python 3 和
