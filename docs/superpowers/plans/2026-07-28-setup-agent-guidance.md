@@ -121,73 +121,74 @@ git commit -m "fix: show setup agent connection details"
 ### Task 2: Isolate the Smaller SETUP Font
 
 **Files:**
-- Modify: `tools/product/tests/test_companion_packaging.py`
+- Modify: `firmware/test/host/test_display_policy.cpp`
+- Modify: `firmware/main/product/display_policy.hpp`
+- Modify: `firmware/main/product/display_policy.cpp`
 - Modify: `firmware/main/product/display.cpp`
 
 **Interfaces:**
 - Consumes: `UiModel::page() -> UiPage`.
-- Produces: `kSetupBodyTextSize = 1` selected only for `UiPage::onboarding`.
+- Produces: `display_body_text_size(UiPage page) -> uint8_t`, returning `1`
+  for onboarding and `2` for every normal page.
 
-- [ ] **Step 1: Strengthen the display source-contract test**
+- [ ] **Step 1: Write the failing page-size behavior test**
 
-Replace the existing broad font assertion with:
+Add literal behavior assertions to `test_display_policy.cpp`:
 
-```python
-def test_cardputer_display_keeps_large_inner_pages_and_small_setup():
-    display = (ROOT / "firmware/main/product/display.cpp").read_text()
-    assert "kDisplayBodyTextSize = 2" in display
-    assert "kSetupBodyTextSize = 1" in display
-    assert (
-        "model.page() == UiPage::onboarding"
-        in display
-    )
-    assert (
-        "? kSetupBodyTextSize"
-        in display
-    )
-    assert (
-        ": kDisplayBodyTextSize"
-        in display
-    )
+```cpp
+assert(display_body_text_size(UiPage::onboarding) == 1);
+assert(display_body_text_size(UiPage::device_status) == 2);
+assert(display_body_text_size(UiPage::codex_status) == 2);
+assert(display_body_text_size(UiPage::sync_status) == 2);
+assert(display_body_text_size(UiPage::settings) == 2);
 ```
 
-- [ ] **Step 2: Run the focused Python test and verify RED**
+- [ ] **Step 2: Run the focused host test and verify RED**
 
 Run:
 
 ```bash
-PYTHONPATH=. uv run pytest -q \
-  tools/product/tests/test_companion_packaging.py::test_cardputer_display_keeps_large_inner_pages_and_small_setup
+cmake -S firmware/test/host -B build/product-host
+cmake --build build/product-host --target test_display_policy -j
 ```
 
-Expected: failure because `kSetupBodyTextSize` is absent.
+Expected: compilation fails because `display_body_text_size()` is absent.
 
 - [ ] **Step 3: Select the body scale from the current page**
 
-Add:
+Declare in `display_policy.hpp`:
 
 ```cpp
-constexpr uint8_t kSetupBodyTextSize = 1;
+uint8_t display_body_text_size(UiPage page);
 ```
 
-Immediately before rendering `page_content()`, select and apply the scale:
+Include `product/ui_model.hpp` there and implement:
 
 ```cpp
-const uint8_t body_text_size =
-    model.page() == UiPage::onboarding
-        ? kSetupBodyTextSize
-        : kDisplayBodyTextSize;
-M5.Display.setTextSize(body_text_size);
+uint8_t display_body_text_size(UiPage page) {
+  return page == UiPage::onboarding ? 1 : 2;
+}
 ```
 
-Do not change the title scale, normal body constant, cursor, page dots, or
-non-onboarding visible-row rules.
+Include `product/display_policy.hpp` in `display.cpp` and replace the body
+`setTextSize(kDisplayBodyTextSize)` immediately before page-content rendering
+with:
 
-- [ ] **Step 4: Run the display test and packaging test file**
+```cpp
+M5.Display.setTextSize(display_body_text_size(model.page()));
+```
+
+Do not change the title scale, cursor, page dots, or non-onboarding visible-row
+rules.
+
+- [ ] **Step 4: Run the display policy and packaging tests**
 
 Run:
 
 ```bash
+cmake --build build/product-host --target test_display_policy -j
+ctest --test-dir build/product-host -R '^display_policy$' \
+  --output-on-failure
 PYTHONPATH=. uv run pytest -q \
   tools/product/tests/test_companion_packaging.py
 ```
@@ -198,7 +199,9 @@ Expected: all tests pass.
 
 ```bash
 git add firmware/main/product/display.cpp \
-  tools/product/tests/test_companion_packaging.py
+  firmware/main/product/display_policy.hpp \
+  firmware/main/product/display_policy.cpp \
+  firmware/test/host/test_display_policy.cpp
 git commit -m "fix: reduce setup page text size"
 ```
 
@@ -546,4 +549,3 @@ GIT_SSH_COMMAND='ssh -i /Users/nicholasliao/.ssh/id_co_openclaw -o IdentitiesOnl
 ```
 
 Expected: `origin/main` advances through all task commits.
-
