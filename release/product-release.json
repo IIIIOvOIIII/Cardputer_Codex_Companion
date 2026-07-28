@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
   "product": "Cardputer Codex Companion",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "protocol": "product-v1",
   "artifacts": {
     "firmware_full": "cardputer_codex_companion-full.bin",
     "firmware_app": "cardputer_codex_companion.bin",
     "macos_installer": "CardputerCompanion-mac-installer",
-    "windows_amd64": "CardputerCompanion-1.2.1-windows-amd64.zip",
-    "windows_arm64": "CardputerCompanion-1.2.1-windows-arm64.zip",
-    "windows_x64_installer": "CardputerCompanion-1.2.1-windows-x64-setup.exe",
-    "checksums": "1.2.1-SHA256SUMS"
+    "windows_amd64": "CardputerCompanion-1.2.2-windows-amd64.zip",
+    "windows_arm64": "CardputerCompanion-1.2.2-windows-arm64.zip",
+    "windows_x64_installer": "CardputerCompanion-1.2.2-windows-x64-setup.exe",
+    "checksums": "1.2.2-SHA256SUMS"
   },
   "capabilities": {
     "macos": [

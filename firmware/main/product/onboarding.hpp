@@ -140,7 +140,10 @@ class OnboardingController {
   );
   OnboardingResult wifi_connected();
   void wifi_failed(std::string_view reason);
-  [[nodiscard]] OnboardingContent content() const;
+  [[nodiscard]] OnboardingContent content(
+      std::string_view ipv4 = {},
+      std::string_view pairing_code = {}
+  ) const;
   [[nodiscard]] std::string_view ssid_value() const {
     return selected_ssid_;
   }

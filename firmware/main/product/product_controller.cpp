@@ -453,7 +453,9 @@ void update_settings_ui_locked() {
 
 void update_onboarding_ui_locked() {
   product_web_set_onboarding(g_onboarding_state.step());
-  const OnboardingContent content = g_onboarding.content();
+  const OnboardingContent content = g_onboarding.content(
+      product_wifi_ipv4(),
+      product_web_pairing_code());
   std::array<std::string_view, 12> rows{};
   for (uint8_t index = 0; index < content.count; ++index) {
     rows[index] = content.lines[index];

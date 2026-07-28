@@ -3,6 +3,12 @@
 #include "product/display_policy.hpp"
 
 int main() {
+  assert(display_body_text_size(UiPage::onboarding) == 1);
+  assert(display_body_text_size(UiPage::device_status) == 2);
+  assert(display_body_text_size(UiPage::codex_status) == 2);
+  assert(display_body_text_size(UiPage::sync_status) == 2);
+  assert(display_body_text_size(UiPage::settings) == 2);
+
   assert(pet_frame_render_mode(
              MicrophoneState::live16, true, true) ==
          PetFrameRenderMode::animated_frame);

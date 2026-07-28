@@ -1,6 +1,6 @@
 # Implementation Status
 
-当前发布目标：`1.2.1`
+当前发布目标：`1.2.2`
 
 已完成：
 
@@ -22,7 +22,7 @@
 - 仅支持局域网控制，不提供离开局域网后的远程通道。
 - 设备不调用 Codex；macOS 或 Windows Machine Agent 是唯一
   app-server 客户端。
-- Windows `1.2.1` 不提供麦克风或 Unicode GATT 输入。
+- Windows `1.2.2` 不提供麦克风或 Unicode GATT 输入。
 - 缺失或无法可靠映射的限额不显示为 `N/A`。
 - SAFE 不可修改或删除；目录最多包含四个自定义 Profile。
 - Wi‑Fi 与 PIN 不通过一般状态 API 返回，也不写日志。

@@ -32,7 +32,7 @@ def make_app(
     executable.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "--version" ]; then\n'
-        '  echo "cardputer-companion 1.2.1"\n'
+        '  echo "cardputer-companion 1.2.2"\n'
         "fi\n"
     )
     executable.chmod(0o755)
@@ -40,8 +40,8 @@ def make_app(
         plistlib.dumps(
             {
                 "CFBundleIdentifier": "com.lynx.cardputer-companion",
-                "CFBundleVersion": "1.2.1",
-                "CFBundleShortVersionString": "1.2.1",
+                "CFBundleVersion": "1.2.2",
+                "CFBundleShortVersionString": "1.2.2",
                 "CFBundleExecutable": "cardputer-companion",
             }
         )
@@ -60,8 +60,8 @@ def make_app(
                 "CFBundleIdentifier": (
                     "com.lynx.cardputer-codex-microphone.driver"
                 ),
-                "CFBundleVersion": "1.2.1",
-                "CFBundleShortVersionString": "1.2.1",
+                "CFBundleVersion": "1.2.2",
+                "CFBundleShortVersionString": "1.2.2",
                 "CFBundleExecutable": "CardputerCodexMicrophone",
             }
         )
@@ -190,6 +190,45 @@ def test_installer_rejects_unsafe_or_invalid_config(tmp_path):
     )
     assert result.returncode != 0
     assert "eight digits" in result.stderr
+
+
+def test_device_url_from_ipv4_accepts_only_private_ipv4():
+    module = load_installer()
+    assert (
+        module.device_url_from_ipv4(" 192.168.1.195 ")
+        == "https://192.168.1.195"
+    )
+    for value in (
+        "https://192.168.1.195",
+        "cardputer.local",
+        "8.8.8.8",
+        "127.0.0.1",
+        "fe80::1",
+    ):
+        with pytest.raises(module.InstallerError):
+            module.device_url_from_ipv4(value)
+
+
+def test_interactive_config_prompts_for_ip(monkeypatch):
+    module = load_installer()
+    prompts = []
+
+    def fake_input(prompt):
+        prompts.append(prompt)
+        return "192.168.1.195"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(
+        module.getpass,
+        "getpass",
+        lambda prompt: PIN,
+    )
+
+    assert (
+        module.interactive_config()["device"]
+        == "https://192.168.1.195"
+    )
+    assert prompts == ["Cardputer IP: "]
 
 
 def test_install_uninstall_and_purge_are_exact_and_idempotent(tmp_path):
