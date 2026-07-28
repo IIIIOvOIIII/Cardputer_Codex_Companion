@@ -14,7 +14,7 @@
 - Inspect no more than 48 AP records and publish no more than 12 unique SSIDs.
 - All live version and package surfaces must be exactly `1.2.1`.
 - `README.md` must be English and its first visible line must link to `README.zh-CN.md`.
-- Author is `IIIIOvOIIII`; license is Apache-2.0.
+- Author is `Lynx (hi@iam.lc)`; license is Apache-2.0.
 - No Wi-Fi credential, pairing secret, private image, token, or private key may enter Git or `dist/`.
 - Do not reinstall the locally purged macOS Agent or audio driver.
 - Push only the verified `main` branch to `git@github.com:IIIIOvOIIII/Cardputer_Codex_Companion.git`.
@@ -231,7 +231,7 @@ state-preserving upgrade: application image at 0x20000
 
 Document Agent install/status/uninstall for macOS and Windows, the first-run
 Wi-Fi/BLE/Agent gates, build/release verification, author
-`IIIIOvOIIII`, and Apache-2.0.
+`Lynx (hi@iam.lc)`, and Apache-2.0.
 
 - [ ] **Step 4: Add the canonical Apache-2.0 text**
 

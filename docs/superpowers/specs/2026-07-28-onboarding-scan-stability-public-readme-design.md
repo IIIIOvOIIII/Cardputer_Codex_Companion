@@ -18,7 +18,7 @@ documentation and an Apache-2.0 license.
 - No additional worker task is introduced.
 - All live product/package version surfaces advance from `1.2.0` to `1.2.1`.
 - `README.md` is English and begins with a link to `README.zh-CN.md`.
-- The public author is `IIIIOvOIIII`.
+- The public author is `Lynx (hi@iam.lc)`.
 - The repository is licensed under Apache License 2.0.
 - The GitHub remote is
   `git@github.com:IIIIOvOIIII/Cardputer_Codex_Companion.git`.
@@ -112,7 +112,7 @@ new-device flashing.
 `README.zh-CN.md` preserves equivalent Chinese instructions. Commands and
 artifact names must agree with `1.2.1`. `LICENSE` contains the unmodified
 Apache License 2.0 text, and the README copyright notice identifies
-`IIIIOvOIIII`.
+`Lynx (hi@iam.lc)`.
 
 ## Release and Git Boundary
 

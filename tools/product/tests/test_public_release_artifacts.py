@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -69,3 +70,48 @@ def test_public_firmware_requires_erased_wifi_partition(tmp_path):
         ],
     )
     assert result.returncode != 0
+
+
+def test_public_readme_is_english_first_and_bilingual():
+    readme = (ROOT / "README.md").read_text()
+    assert readme.splitlines()[0] == "[简体中文](README.zh-CN.md)"
+    for section in (
+        "## Overview",
+        "## Features",
+        "## Firmware Installation",
+        "## First-Run Setup",
+        "## Machine Agent",
+        "## Build and Verification",
+        "## Author",
+        "## License",
+    ):
+        assert section in readme
+    chinese = (ROOT / "README.zh-CN.md").read_text()
+    assert chinese.splitlines()[0] == "[English](README.md)"
+    assert "1.2.1" in readme
+    assert "1.2.1" in chinese
+    assert "Lynx" in readme
+    assert "hi@iam.lc" in readme
+    assert "Lynx" in chinese
+    assert "hi@iam.lc" in chinese
+
+
+def test_public_license_is_apache_2():
+    license_text = (ROOT / "LICENSE").read_text()
+    assert "Apache License" in license_text
+    assert "Version 2.0, January 2004" in license_text
+    assert "http://www.apache.org/licenses/" in license_text
+
+
+def test_root_readme_relative_links_resolve():
+    for document in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", document.read_text()):
+            if re.match(
+                r"^[a-z][a-z0-9+.-]*:", target
+            ) or target.startswith("#"):
+                continue
+            relative = target.split("#", 1)[0]
+            if relative:
+                assert (document.parent / relative).exists(), (
+                    f"{document.name}: broken link {target}"
+                )

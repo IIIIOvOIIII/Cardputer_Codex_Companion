@@ -103,15 +103,16 @@ def test_runtime_recovery_wiring_stops_remote_sink_before_reconnect():
 
 def test_readme_documents_local_driver_and_g0_privacy_boundary():
     readme = (ROOT / "README.md").read_text()
+    readme_flat = " ".join(readme.split())
     assert "install-audio-driver" in readme
     assert "uninstall-audio-driver" in readme
     assert "doctor audio" in readme
     assert "Cardputer Codex Microphone" in readme
-    assert "短按 G0" in readme
-    assert "不会自动恢复录音" in readme
-    assert "CardputerCompanion-mac-installer/install.sh install" in readme
-    assert "CardputerCompanion-mac-installer/install.sh status" in readme
-    assert "CardputerCompanion-mac-installer/install.sh uninstall" in readme
+    assert "G0 short press is the only recording control" in readme_flat
+    assert "does not automatically resume recording" in readme_flat
+    assert "./install.sh install" in readme
+    assert "./install.sh status" in readme
+    assert "./install.sh uninstall" in readme
     assert "uninstall --purge" in readme
     assert "B/W/M" in readme
-    assert "隐藏输入" in readme
+    assert "PIN is masked" in readme
