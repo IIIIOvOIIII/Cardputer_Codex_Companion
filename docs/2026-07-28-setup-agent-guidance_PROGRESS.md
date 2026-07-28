@@ -79,3 +79,16 @@
   Python suite passed 243/243.
 - Next step: Run the final integrated regression suite, commit and push
   `main`, and report the corrected install command and artifact paths.
+
+## 2026-07-28 12:07 HKT
+
+- Current work: Rebased the follow-up fix onto the GitHub-merged PR, repeated
+  the final regression checks, and published the integrated release to `main`.
+- Expected result: Local and remote `main` point to the complete installer fix,
+  with a reproducible root-entry regression and verified 1.2.2 artifacts.
+- Result: Achieved. Final Python tests passed 243/243, all 11 release checksums
+  matched, an isolated `./install.sh install` accepted a bare Cardputer IP and
+  installed version 1.2.2, and integration commit `5075502` was published to
+  GitHub `main`.
+- Next step: The user can rerun `./install.sh install` from the project root
+  and use the rebuilt 1.2.2 firmware artifacts for device testing.
