@@ -390,7 +390,7 @@ UiPageContent UiModel::page_content() const {
             content,
             std::string(
                 storage_compatibility_label(storage_compatibility_.state)));
-        add_line(content, "USE FACTORY 1.3.1");
+        add_line(content, "USE FACTORY 1.3.2");
         add_line(content, "OR LAUNCHER 2.8+");
       } else {
         add_line(content, std::string(pet_state_name(pet_state_)));

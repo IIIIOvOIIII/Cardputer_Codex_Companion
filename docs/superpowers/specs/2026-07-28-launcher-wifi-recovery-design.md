@@ -96,12 +96,18 @@ The user selected a full Companion reset. The recovery operation deletes:
 - all Companion-owned bytes in the 1,920 KiB `storage` partition for Factory
   builds or the layout-compatible `assets` partition for Launcher builds.
 
+Some devices upgraded through older M5Launcher layouts have neither dedicated
+partition and expose only Launcher's shared `spiffs` partition. On that layout,
+recovery clears the Companion NVS namespaces and treats the absent dedicated
+storage as already empty. It must not erase the shared `spiffs` partition.
+
 The recovery operation must not erase:
 
 - the complete NVS partition;
 - OTA metadata;
 - bootloader or partition table;
 - application partitions;
+- a Launcher-owned shared `spiffs` partition;
 - M5Launcher itself.
 
 Erasing namespaces rather than the complete NVS partition prevents removal of

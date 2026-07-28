@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +63,66 @@ struct WifiScanEntry {
   std::array<char, 33> ssid{};
   int8_t rssi = 0;
   bool secured = false;
+};
+
+enum class WifiPendingEventKind : uint8_t {
+  got_ip,
+  disconnected,
+  scan_done,
+};
+
+struct WifiPendingEvent {
+  WifiPendingEventKind kind = WifiPendingEventKind::disconnected;
+  uint32_t ipv4 = 0;
+};
+
+inline constexpr std::size_t kWifiEventMailboxCapacity = 8;
+
+class WifiEventMailbox {
+ public:
+  bool push(WifiPendingEvent event);
+  std::optional<WifiPendingEvent> pop();
+  [[nodiscard]] uint32_t dropped() const {
+    return dropped_.load(std::memory_order_relaxed);
+  }
+
+ private:
+  std::array<WifiPendingEvent, kWifiEventMailboxCapacity> events_{};
+  std::atomic<uint8_t> read_{0};
+  std::atomic<uint8_t> write_{0};
+  std::atomic<uint32_t> dropped_{0};
+};
+
+enum class WifiScanAction : uint8_t {
+  none,
+  start,
+  report_failure,
+};
+
+enum class WifiScanStartResult : uint8_t {
+  started,
+  transient_failure,
+  permanent_failure,
+};
+
+inline constexpr uint64_t kWifiScanRetryBackoffMs = 250;
+
+class WifiScanScheduler {
+ public:
+  void request();
+  WifiScanAction tick(uint64_t now_ms);
+  void on_start_result(WifiScanStartResult result, uint64_t now_ms);
+  void completed();
+  [[nodiscard]] bool in_flight() const {
+    return in_flight_.load(std::memory_order_acquire);
+  }
+
+ private:
+  std::atomic<bool> requested_{false};
+  std::atomic<bool> starting_{false};
+  std::atomic<bool> in_flight_{false};
+  std::atomic<bool> failure_pending_{false};
+  std::atomic<uint64_t> retry_at_ms_{0};
 };
 
 constexpr uint32_t kWifiStateTaskStackBytes = 4608;

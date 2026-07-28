@@ -53,6 +53,79 @@ std::size_t select_wifi_scan_entries(
   return selected;
 }
 
+bool WifiEventMailbox::push(WifiPendingEvent event) {
+  const uint8_t write = write_.load(std::memory_order_relaxed);
+  const uint8_t next =
+      static_cast<uint8_t>((write + 1) % kWifiEventMailboxCapacity);
+  if (next == read_.load(std::memory_order_acquire)) {
+    dropped_.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+  events_[write] = event;
+  write_.store(next, std::memory_order_release);
+  return true;
+}
+
+std::optional<WifiPendingEvent> WifiEventMailbox::pop() {
+  const uint8_t read = read_.load(std::memory_order_relaxed);
+  if (read == write_.load(std::memory_order_acquire)) {
+    return std::nullopt;
+  }
+  const WifiPendingEvent event = events_[read];
+  read_.store(
+      static_cast<uint8_t>((read + 1) % kWifiEventMailboxCapacity),
+      std::memory_order_release);
+  return event;
+}
+
+void WifiScanScheduler::request() {
+  requested_.store(true, std::memory_order_release);
+  failure_pending_.store(false, std::memory_order_release);
+}
+
+WifiScanAction WifiScanScheduler::tick(uint64_t now_ms) {
+  if (failure_pending_.exchange(false, std::memory_order_acq_rel)) {
+    return WifiScanAction::report_failure;
+  }
+  if (!requested_.load(std::memory_order_acquire) ||
+      in_flight_.load(std::memory_order_acquire) ||
+      now_ms < retry_at_ms_.load(std::memory_order_acquire)) {
+    return WifiScanAction::none;
+  }
+  bool expected = false;
+  if (!starting_.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel)) {
+    return WifiScanAction::none;
+  }
+  return WifiScanAction::start;
+}
+
+void WifiScanScheduler::on_start_result(
+    WifiScanStartResult result,
+    uint64_t now_ms
+) {
+  switch (result) {
+    case WifiScanStartResult::started:
+      requested_.store(false, std::memory_order_release);
+      in_flight_.store(true, std::memory_order_release);
+      retry_at_ms_.store(0, std::memory_order_release);
+      break;
+    case WifiScanStartResult::transient_failure:
+      retry_at_ms_.store(
+          now_ms + kWifiScanRetryBackoffMs, std::memory_order_release);
+      break;
+    case WifiScanStartResult::permanent_failure:
+      requested_.store(false, std::memory_order_release);
+      failure_pending_.store(true, std::memory_order_release);
+      break;
+  }
+  starting_.store(false, std::memory_order_release);
+}
+
+void WifiScanScheduler::completed() {
+  in_flight_.store(false, std::memory_order_release);
+}
+
 WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
   if (recovery_mode) {
     state_ = WifiState::provisioning;
@@ -248,7 +321,8 @@ NvsWifiCredentialSource g_credentials;
 WifiStateMachine g_machine(g_credentials);
 WifiStatusHandler g_handler = nullptr;
 WifiScanHandler g_scan_handler = nullptr;
-std::atomic<bool> g_scan_results_pending{false};
+WifiEventMailbox g_wifi_events;
+WifiScanScheduler g_scan_scheduler;
 std::array<wifi_ap_record_t, 48> g_scan_records{};
 std::array<WifiScanEntry, 48> g_scan_candidates{};
 std::array<WifiScanEntry, 12> g_scan_results{};
@@ -369,46 +443,82 @@ void start_onboarding_station() {
 void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const auto* event = static_cast<ip_event_got_ip_t*>(data);
-    std::snprintf(g_ipv4.data(), g_ipv4.size(), IPSTR,
-                  IP2STR(&event->ip_info.ip));
-    const WifiCommand command = g_machine.on_connected();
-    if (command == WifiCommand::persist_candidate) {
-      const auto& selected = g_machine.selected();
-      const esp_err_t persisted =
-          selected.has_value()
-              ? persist_runtime_credentials(*selected)
-              : ESP_ERR_INVALID_STATE;
-      if (persisted == ESP_OK) {
-        g_machine.on_persisted();
-        notify(WifiState::online, g_ipv4.data());
-      } else {
-        g_machine.on_persist_failed(
-            static_cast<uint64_t>(esp_timer_get_time()) / 1000);
-        esp_wifi_disconnect();
-        connect_selected();
-      }
-    } else {
-      notify(WifiState::online, g_ipv4.data());
-    }
+    g_wifi_events.push({
+        .kind = WifiPendingEventKind::got_ip,
+        .ipv4 = event->ip_info.ip.addr,
+    });
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
-    g_scan_results_pending.store(true, std::memory_order_release);
-  } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED &&
-             g_machine.state() == WifiState::online) {
-    const WifiCommand command = g_machine.on_disconnected(
-        static_cast<uint64_t>(esp_timer_get_time()) / 1000);
-    notify(WifiState::connecting, nullptr);
-    if (command == WifiCommand::retry_selected) connect_selected();
+    g_wifi_events.push({
+        .kind = WifiPendingEventKind::scan_done,
+    });
+  } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+    g_wifi_events.push({
+        .kind = WifiPendingEventKind::disconnected,
+    });
   }
 }
 
 void wifi_timeout_task(void*) {
   while (true) {
-    if (g_scan_results_pending.exchange(
-            false, std::memory_order_acq_rel)) {
-      publish_scan_results();
-    }
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    while (const auto event = g_wifi_events.pop()) {
+      switch (event->kind) {
+        case WifiPendingEventKind::got_ip: {
+          esp_ip4_addr_t address{};
+          address.addr = event->ipv4;
+          std::snprintf(g_ipv4.data(), g_ipv4.size(), IPSTR,
+                        IP2STR(&address));
+          const WifiCommand connected = g_machine.on_connected();
+          if (connected == WifiCommand::persist_candidate) {
+            const auto& selected = g_machine.selected();
+            const esp_err_t persisted =
+                selected.has_value()
+                    ? persist_runtime_credentials(*selected)
+                    : ESP_ERR_INVALID_STATE;
+            if (persisted == ESP_OK) {
+              g_machine.on_persisted();
+              notify(WifiState::online, g_ipv4.data());
+            } else {
+              g_machine.on_persist_failed(now_ms);
+              esp_wifi_disconnect();
+              connect_selected();
+            }
+          } else {
+            notify(WifiState::online, g_ipv4.data());
+          }
+          break;
+        }
+        case WifiPendingEventKind::disconnected:
+          if (g_machine.state() == WifiState::online) {
+            const WifiCommand disconnected =
+                g_machine.on_disconnected(now_ms);
+            notify(WifiState::connecting, nullptr);
+            if (disconnected == WifiCommand::retry_selected) {
+              connect_selected();
+            }
+          }
+          break;
+        case WifiPendingEventKind::scan_done:
+          g_scan_scheduler.completed();
+          publish_scan_results();
+          break;
+      }
+    }
+    const WifiScanAction scan_action = g_scan_scheduler.tick(now_ms);
+    if (scan_action == WifiScanAction::start) {
+      const esp_err_t result = esp_wifi_scan_start(nullptr, false);
+      g_scan_scheduler.on_start_result(
+          result == ESP_OK
+              ? WifiScanStartResult::started
+              : result == ESP_ERR_WIFI_STATE
+                    ? WifiScanStartResult::transient_failure
+                    : WifiScanStartResult::permanent_failure,
+          now_ms);
+    } else if (scan_action == WifiScanAction::report_failure &&
+               g_scan_handler != nullptr) {
+      g_scan_handler({});
+    }
     const WifiCommand command = g_machine.tick(now_ms);
     if (command == WifiCommand::reconnect_previous ||
         command == WifiCommand::retry_selected) {
@@ -500,8 +610,8 @@ esp_err_t product_wifi_save(std::string_view ssid,
 esp_err_t product_wifi_scan(WifiScanHandler handler) {
   if (handler == nullptr) return ESP_ERR_INVALID_ARG;
   g_scan_handler = handler;
-  g_scan_results_pending.store(false, std::memory_order_release);
-  return esp_wifi_scan_start(nullptr, false);
+  g_scan_scheduler.request();
+  return ESP_OK;
 }
 
 esp_err_t product_wifi_reconnect() {

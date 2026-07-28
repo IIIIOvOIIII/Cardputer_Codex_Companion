@@ -60,6 +60,7 @@ idf_component_register(
         "product/pin_rotation.cpp"
         "product/display.cpp"
         "product/display_policy.cpp"
+        "product/boot_recovery.cpp"
         "product/keyboard_matrix.cpp"
         "product/input_router.cpp"
         "product/profile.cpp"

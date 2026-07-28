@@ -54,6 +54,7 @@ void ProductController::start() {
 #include "product/companion_protocol.hpp"
 #include "product/audio_capture.hpp"
 #include "product/ble_audio_transport.hpp"
+#include "product/boot_recovery.hpp"
 #include "product/display.hpp"
 #include "product/display_policy.hpp"
 #include "product/device_settings.hpp"
@@ -1182,9 +1183,7 @@ void wifi_status_changed(WifiState state, const char* detail) {
   {
     SemaphoreLock lock(g_input_mutex);
     if (lock.locked() && g_onboarding.active()) {
-      if (state == WifiState::online &&
-          g_onboarding_state.step() ==
-              OnboardingStep::wifi_connect_verify) {
+      if (state == WifiState::online) {
         g_onboarding.wifi_connected();
       } else if (state == WifiState::offline &&
                  g_onboarding_state.step() ==
@@ -1520,6 +1519,9 @@ class EspProductStartup final : public ProductStartupBackend {
         result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       result = nvs_flash_erase();
       if (result == ESP_OK) result = nvs_flash_init();
+    }
+    if (result == ESP_OK) {
+      result = product_boot_recovery();
     }
     if (result == ESP_OK) {
       const OnboardingLoadResult onboarding_result =

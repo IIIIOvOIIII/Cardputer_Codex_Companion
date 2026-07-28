@@ -46,5 +46,6 @@ class KeyboardDebouncer {
 
 using MatrixEventHandler = void (*)(const MatrixKeyEvent&);
 esp_err_t keyboard_matrix_start(MatrixEventHandler handler);
+bool keyboard_matrix_key_pressed(uint8_t physical_key);
 [[nodiscard]] TaskHandle_t keyboard_matrix_task();
 #endif

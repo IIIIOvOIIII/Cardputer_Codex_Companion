@@ -30,7 +30,7 @@ APP_ID = "com.lynx.cardputer-companion"
 DRIVER_NAME = "CardputerCodexMicrophone.driver"
 BRIDGE_NAME = "com.lynx.cardputer-audio-bridge"
 CONFIG_DIRECTORY = "CardputerCodexCompanion"
-EXPECTED_VERSION = "1.3.1"
+EXPECTED_VERSION = "1.3.2"
 SUDO_PROMPTS = {
     "install": (
         "macOS administrator password "

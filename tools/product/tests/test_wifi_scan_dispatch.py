@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 
@@ -28,11 +27,11 @@ def test_wifi_scan_completion_is_deferred_out_of_system_event_task():
     )[0]
     worker_body = _function_body(source, "void wifi_timeout_task(")
 
-    assert "g_scan_results_pending.store(true" in scan_branch
+    assert "g_wifi_events.push" in scan_branch
+    assert "WifiPendingEventKind::scan_done" in scan_branch
     assert "publish_scan_results();" not in scan_branch
-    assert re.search(
-        r"g_scan_results_pending\.exchange\(\s*false", worker_body
-    )
+    assert "g_wifi_events.pop" in worker_body
+    assert "WifiPendingEventKind::scan_done" in worker_body
     assert "publish_scan_results();" in worker_body
 
 

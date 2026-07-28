@@ -129,6 +129,28 @@ void display_render_boot(const UiModel& model) {
   M5.Display.endWrite();
 }
 
+void display_render_boot_recovery_prompt() {
+  begin_page("RECOVERY");
+  M5.Display.println("DELETE ALL");
+  M5.Display.println("COMPANION DATA?");
+  M5.Display.println("Y = DELETE");
+  M5.Display.println("N = CANCEL");
+  M5.Display.endWrite();
+}
+
+void display_render_boot_recovery_result(
+    bool success,
+    std::string_view stage
+) {
+  begin_page("RECOVERY");
+  M5.Display.println(success ? "DELETE COMPLETE" : "DELETE FAILED");
+  M5.Display.print("STAGE: ");
+  M5.Display.printf("%.*s\n", static_cast<int>(stage.size()), stage.data());
+  M5.Display.println(
+      success ? "RESTARTING..." : "POWER CYCLE TO RETRY");
+  M5.Display.endWrite();
+}
+
 void display_render_page(const UiModel& model) {
   if (model.page() == UiPage::pet) {
     M5.Display.startWrite();

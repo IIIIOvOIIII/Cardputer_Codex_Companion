@@ -8,10 +8,10 @@ idf_python="$(
     -path '*/bin/python' -print | sort | tail -n 1
 )"
 factory_output="${repo_root}/dist/cardputer_codex_companion-full.bin"
-factory_versioned="${repo_root}/dist/Cardputer-Codex-Companion-1.3.1-factory.bin"
+factory_versioned="${repo_root}/dist/Cardputer-Codex-Companion-1.3.2-factory.bin"
 factory_app="${repo_root}/dist/cardputer_codex_companion.bin"
-factory_app_versioned="${repo_root}/dist/Cardputer-Codex-Companion-1.3.1-app.bin"
-launcher_output="${repo_root}/dist/Cardputer-Codex-Companion-1.3.1l-launcher.bin"
+factory_app_versioned="${repo_root}/dist/Cardputer-Codex-Companion-1.3.2-app.bin"
+launcher_output="${repo_root}/dist/Cardputer-Codex-Companion-1.3.2l-launcher.bin"
 
 test -x "${idf_python}"
 (
@@ -21,7 +21,7 @@ test -x "${idf_python}"
     -D CARDPUTER_LAUNCHER_BUILD=ON \
     -D SDKCONFIG="${repo_root}/firmware/build-launcher/sdkconfig" \
     -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.launcher.defaults" \
-    -D PROJECT_VER=1.3.1l \
+    -D PROJECT_VER=1.3.2l \
     build
 )
 python3 "${repo_root}/tools/product/merge_product_image.py" \
@@ -37,7 +37,7 @@ python3 "${repo_root}/tools/product/package_launcher_image.py" \
   --build-dir "${repo_root}/firmware/build-launcher" \
   --output "${launcher_output}" \
   --idf-python "${idf_python}" \
-  --expected-version "1.3.1l"
+  --expected-version "1.3.2l"
 /bin/chmod 0600 \
   "${factory_app}" \
   "${factory_versioned}" \

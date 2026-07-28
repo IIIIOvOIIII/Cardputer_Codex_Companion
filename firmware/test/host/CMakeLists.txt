@@ -191,7 +191,7 @@ add_executable(test_product_types_launcher test_product_types_launcher.cpp)
 target_include_directories(test_product_types_launcher PRIVATE ../../main)
 target_compile_definitions(
   test_product_types_launcher
-  PRIVATE CARDPUTER_PRODUCT_VERSION="1.3.1l"
+  PRIVATE CARDPUTER_PRODUCT_VERSION="1.3.2l"
 )
 add_test(NAME product_types_launcher COMMAND test_product_types_launcher)
 
@@ -229,6 +229,13 @@ add_executable(test_keyboard_matrix
 )
 target_include_directories(test_keyboard_matrix PRIVATE ../../main)
 add_test(NAME keyboard_matrix COMMAND test_keyboard_matrix)
+
+add_executable(test_boot_recovery
+  test_boot_recovery.cpp
+  ../../main/product/boot_recovery.cpp
+)
+target_include_directories(test_boot_recovery PRIVATE ../../main)
+add_test(NAME boot_recovery COMMAND test_boot_recovery)
 
 add_executable(test_input_router
   test_input_router.cpp

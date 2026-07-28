@@ -139,5 +139,60 @@ int main() {
   assert(std::string_view(tied_selected[0].ssid.data()) == "alpha");
   assert(std::string_view(tied_selected[1].ssid.data()) == "bravo");
   assert(std::string_view(tied_selected[2].ssid.data()) == "charlie");
+
+  WifiEventMailbox mailbox;
+  assert(mailbox.push({
+      .kind = WifiPendingEventKind::got_ip,
+      .ipv4 = 0x12345678,
+  }));
+  assert(mailbox.push({
+      .kind = WifiPendingEventKind::scan_done,
+  }));
+  assert(mailbox.push({
+      .kind = WifiPendingEventKind::disconnected,
+  }));
+  const auto got_ip = mailbox.pop();
+  assert(got_ip.has_value());
+  assert(got_ip->kind == WifiPendingEventKind::got_ip);
+  assert(got_ip->ipv4 == 0x12345678);
+  const auto scan_done = mailbox.pop();
+  assert(scan_done.has_value());
+  assert(scan_done->kind == WifiPendingEventKind::scan_done);
+  const auto disconnected = mailbox.pop();
+  assert(disconnected.has_value());
+  assert(disconnected->kind == WifiPendingEventKind::disconnected);
+  assert(!mailbox.pop().has_value());
+  for (std::size_t index = 0;
+       index < kWifiEventMailboxCapacity - 1; ++index) {
+    assert(mailbox.push({
+        .kind = WifiPendingEventKind::scan_done,
+    }));
+  }
+  assert(!mailbox.push({
+      .kind = WifiPendingEventKind::scan_done,
+  }));
+  assert(mailbox.dropped() == 1);
+
+  WifiScanScheduler scan;
+  assert(scan.tick(0) == WifiScanAction::none);
+  scan.request();
+  assert(scan.tick(100) == WifiScanAction::start);
+  assert(scan.tick(100) == WifiScanAction::none);
+  scan.on_start_result(WifiScanStartResult::transient_failure, 100);
+  assert(scan.tick(100 + kWifiScanRetryBackoffMs - 1) ==
+         WifiScanAction::none);
+  assert(scan.tick(100 + kWifiScanRetryBackoffMs) ==
+         WifiScanAction::start);
+  scan.on_start_result(WifiScanStartResult::started, 350);
+  assert(scan.in_flight());
+  assert(scan.tick(351) == WifiScanAction::none);
+  scan.completed();
+  assert(!scan.in_flight());
+
+  scan.request();
+  assert(scan.tick(400) == WifiScanAction::start);
+  scan.on_start_result(WifiScanStartResult::permanent_failure, 400);
+  assert(scan.tick(400) == WifiScanAction::report_failure);
+  assert(scan.tick(401) == WifiScanAction::none);
   return 0;
 }

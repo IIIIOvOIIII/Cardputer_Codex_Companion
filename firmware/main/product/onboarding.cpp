@@ -163,7 +163,7 @@ OnboardingResult OnboardingStateMachine::persist(
 }
 
 OnboardingResult OnboardingStateMachine::on_wifi_connected() {
-  if (step_ != OnboardingStep::wifi_connect_verify) {
+  if (checkpoint_ != OnboardingCheckpoint::needs_wifi) {
     return OnboardingResult::ignored;
   }
   return persist(
@@ -574,7 +574,7 @@ OnboardingContent OnboardingController::content(
       add(std::string("IP:") + std::string(ipv4) + " PIN:" +
           std::string(pairing_code));
       add("MAC: ./install.sh install");
-      add("WIN: RUN 1.3.1 SETUP.EXE");
+      add("WIN: RUN 1.3.2 SETUP.EXE");
       add("WAITING HEARTBEAT...");
       break;
     case OnboardingStep::complete_guide:

@@ -76,6 +76,25 @@ int main() {
   assert(first_boot.on_wifi_connected() == OnboardingResult::ok);
   assert(first_boot.step() == OnboardingStep::ble_pair_guide);
   assert(blank.commits == 1);
+
+  MemoryOnboardingBackend interrupted_wifi_setup;
+  OnboardingStateMachine recovered_after_wifi_save(
+      interrupted_wifi_setup);
+  assert(
+      recovered_after_wifi_save.load(false) ==
+      OnboardingLoadResult::first_run
+  );
+  assert(recovered_after_wifi_save.step() == OnboardingStep::wifi_scan);
+  assert(
+      recovered_after_wifi_save.on_wifi_connected() ==
+      OnboardingResult::ok
+  );
+  assert(
+      recovered_after_wifi_save.step() ==
+      OnboardingStep::ble_pair_guide
+  );
+  assert(interrupted_wifi_setup.commits == 1);
+
   OnboardingController ble_guide(first_boot);
   const OnboardingContent ble_content = ble_guide.content();
   assert(ble_content.count == 5);
@@ -107,7 +126,7 @@ int main() {
   assert(content_contains(
       agent_content, "IP:192.168.1.195 PIN:12345678"));
   assert(content_contains(agent_content, "MAC: ./install.sh install"));
-  assert(content_contains(agent_content, "WIN: RUN 1.3.1 SETUP.EXE"));
+  assert(content_contains(agent_content, "WIN: RUN 1.3.2 SETUP.EXE"));
   assert(content_contains(agent_content, "WAITING HEARTBEAT..."));
 
   OnboardingStateMachine after_ble_reboot(blank);

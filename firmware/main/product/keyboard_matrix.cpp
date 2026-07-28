@@ -55,6 +55,19 @@ std::array<StackType_t, kKeyboardScannerTaskStackBytes> g_scanner_stack{};
 TaskHandle_t g_scanner_task = nullptr;
 MatrixEventHandler g_handler = nullptr;
 
+void initialize_matrix_pins() {
+  for (gpio_num_t pin : kSelectorPins) {
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(pin, 0);
+  }
+  for (gpio_num_t pin : kInputPins) {
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
+  }
+}
+
 void select_row(uint8_t selector) {
   for (uint8_t bit = 0; bit < kSelectorPins.size(); ++bit) {
     gpio_set_level(kSelectorPins[bit], (selector >> bit) & 1u);
@@ -93,20 +106,26 @@ esp_err_t keyboard_matrix_start(MatrixEventHandler handler) {
     return ESP_ERR_INVALID_STATE;
   }
   g_handler = handler;
-  for (gpio_num_t pin : kSelectorPins) {
-    gpio_reset_pin(pin);
-    gpio_set_direction(pin, GPIO_MODE_OUTPUT);
-    gpio_set_level(pin, 0);
-  }
-  for (gpio_num_t pin : kInputPins) {
-    gpio_reset_pin(pin);
-    gpio_set_direction(pin, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
-  }
+  initialize_matrix_pins();
   g_scanner_task = xTaskCreateStatic(
       scanner_task, "scanner", kKeyboardScannerTaskStackBytes, nullptr,
       tskIDLE_PRIORITY + 3, g_scanner_stack.data(), &g_scanner_task_storage);
   return g_scanner_task == nullptr ? ESP_ERR_NO_MEM : ESP_OK;
+}
+
+bool keyboard_matrix_key_pressed(uint8_t physical_key) {
+  if (physical_key >= kPhysicalKeyCount) return false;
+  initialize_matrix_pins();
+  for (uint8_t selector = 0; selector < 8; ++selector) {
+    select_row(selector);
+    esp_rom_delay_us(5);
+    for (uint8_t input = 0; input < kInputPins.size(); ++input) {
+      if (matrix_key_id(selector, input) == physical_key) {
+        return gpio_get_level(kInputPins[input]) == 0;
+      }
+    }
+  }
+  return false;
 }
 
 TaskHandle_t keyboard_matrix_task() {
