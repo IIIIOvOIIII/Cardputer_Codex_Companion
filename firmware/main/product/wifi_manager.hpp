@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -57,6 +58,17 @@ inline bool wifi_credentials_valid(
           (password.size() >= 8 && password.size() <= 63));
 }
 
+struct WifiScanEntry {
+  std::array<char, 33> ssid{};
+  int8_t rssi = 0;
+  bool secured = false;
+};
+
+std::size_t select_wifi_scan_entries(
+    std::span<const WifiScanEntry> candidates,
+    std::span<WifiScanEntry> output
+);
+
 class WifiStateMachine {
  public:
   explicit WifiStateMachine(WifiCredentialSource& credentials)
@@ -86,12 +98,6 @@ class WifiStateMachine {
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
-
-struct WifiScanEntry {
-  std::array<char, 33> ssid{};
-  int8_t rssi = 0;
-  bool secured = false;
-};
 
 using WifiStatusHandler = void (*)(WifiState state, const char* detail);
 using WifiScanHandler = void (*)(std::span<const WifiScanEntry> entries);

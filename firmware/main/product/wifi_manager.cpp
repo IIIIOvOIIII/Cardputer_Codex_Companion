@@ -1,5 +1,58 @@
 #include "product/wifi_manager.hpp"
 
+#include <algorithm>
+
+namespace {
+bool scan_entry_better(
+    const WifiScanEntry& lhs,
+    const WifiScanEntry& rhs
+) {
+  if (lhs.rssi != rhs.rssi) return lhs.rssi > rhs.rssi;
+  return std::string_view(lhs.ssid.data()) <
+         std::string_view(rhs.ssid.data());
+}
+}  // namespace
+
+std::size_t select_wifi_scan_entries(
+    std::span<const WifiScanEntry> candidates,
+    std::span<WifiScanEntry> output
+) {
+  std::fill(output.begin(), output.end(), WifiScanEntry{});
+  std::size_t selected = 0;
+  for (const WifiScanEntry& candidate : candidates) {
+    const std::string_view ssid(candidate.ssid.data());
+    if (ssid.empty()) continue;
+
+    auto existing = std::find_if(
+        output.begin(), output.begin() + selected,
+        [&](const WifiScanEntry& entry) {
+          return ssid == std::string_view(entry.ssid.data());
+        });
+    if (existing != output.begin() + selected) {
+      if (scan_entry_better(candidate, *existing)) *existing = candidate;
+      continue;
+    }
+
+    if (selected < output.size()) {
+      output[selected++] = candidate;
+      continue;
+    }
+    if (selected == 0) continue;
+
+    std::size_t weakest = 0;
+    for (std::size_t index = 1; index < selected; ++index) {
+      if (scan_entry_better(output[weakest], output[index])) {
+        weakest = index;
+      }
+    }
+    if (scan_entry_better(candidate, output[weakest])) {
+      output[weakest] = candidate;
+    }
+  }
+  std::sort(output.begin(), output.begin() + selected, scan_entry_better);
+  return selected;
+}
+
 WifiCommand WifiStateMachine::begin(uint64_t now_ms, bool recovery_mode) {
   if (recovery_mode) {
     state_ = WifiState::provisioning;
@@ -127,11 +180,9 @@ WifiCommand WifiStateMachine::on_disconnected(uint64_t now_ms) {
 }
 
 #ifdef ESP_PLATFORM
-#include <array>
-#include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
-#include <vector>
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -197,6 +248,9 @@ NvsWifiCredentialSource g_credentials;
 WifiStateMachine g_machine(g_credentials);
 WifiStatusHandler g_handler = nullptr;
 WifiScanHandler g_scan_handler = nullptr;
+std::atomic<bool> g_scan_results_pending{false};
+std::array<wifi_ap_record_t, 48> g_scan_records{};
+std::array<WifiScanEntry, 48> g_scan_candidates{};
 std::array<WifiScanEntry, 12> g_scan_results{};
 esp_netif_t* g_sta_netif = nullptr;
 esp_netif_t* g_ap_netif = nullptr;
@@ -252,43 +306,31 @@ void publish_scan_results() {
     if (g_scan_handler != nullptr) g_scan_handler({});
     return;
   }
-  count = std::min<uint16_t>(count, 48);
-  std::vector<wifi_ap_record_t> records(count);
-  if (esp_wifi_scan_get_ap_records(&count, records.data()) != ESP_OK) {
+  count = std::min<uint16_t>(count, g_scan_records.size());
+  if (esp_wifi_scan_get_ap_records(&count, g_scan_records.data()) != ESP_OK) {
     if (g_scan_handler != nullptr) g_scan_handler({});
     return;
   }
-  std::vector<WifiScanEntry> unique;
-  unique.reserve(count);
+  std::size_t candidate_count = 0;
   for (uint16_t index = 0; index < count; ++index) {
-    const auto& record = records[index];
+    const auto& record = g_scan_records[index];
     const std::string_view ssid(
         reinterpret_cast<const char*>(record.ssid),
         strnlen(reinterpret_cast<const char*>(record.ssid),
                 sizeof(record.ssid)));
     if (ssid.empty()) continue;
-    auto existing = std::find_if(
-        unique.begin(), unique.end(), [&](const WifiScanEntry& entry) {
-          return ssid == entry.ssid.data();
-        });
-    if (existing != unique.end()) {
-      if (record.rssi > existing->rssi) existing->rssi = record.rssi;
-      continue;
-    }
     WifiScanEntry entry;
     std::copy_n(ssid.begin(), std::min(ssid.size(), entry.ssid.size() - 1),
                 entry.ssid.begin());
     entry.rssi = record.rssi;
     entry.secured = record.authmode != WIFI_AUTH_OPEN;
-    unique.push_back(entry);
+    g_scan_candidates[candidate_count++] = entry;
   }
-  std::sort(unique.begin(), unique.end(),
-            [](const WifiScanEntry& lhs, const WifiScanEntry& rhs) {
-              return lhs.rssi > rhs.rssi;
-            });
-  const std::size_t published =
-      std::min(unique.size(), g_scan_results.size());
-  std::copy_n(unique.begin(), published, g_scan_results.begin());
+  const std::size_t published = select_wifi_scan_entries(
+      std::span(g_scan_candidates).first(candidate_count), g_scan_results);
+  ESP_LOGI(
+      kTag, "Wi-Fi scan complete: raw=%u published=%u",
+      static_cast<unsigned>(count), static_cast<unsigned>(published));
   if (g_scan_handler != nullptr) {
     g_scan_handler(std::span(g_scan_results).first(published));
   }
@@ -349,7 +391,7 @@ void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
       notify(WifiState::online, g_ipv4.data());
     }
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
-    publish_scan_results();
+    g_scan_results_pending.store(true, std::memory_order_release);
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED &&
              g_machine.state() == WifiState::online) {
     const WifiCommand command = g_machine.on_disconnected(
@@ -361,6 +403,10 @@ void event_handler(void*, esp_event_base_t base, int32_t id, void* data) {
 
 void wifi_timeout_task(void*) {
   while (true) {
+    if (g_scan_results_pending.exchange(
+            false, std::memory_order_acq_rel)) {
+      publish_scan_results();
+    }
     const uint64_t now_ms =
         static_cast<uint64_t>(esp_timer_get_time()) / 1000;
     const WifiCommand command = g_machine.tick(now_ms);
@@ -454,6 +500,7 @@ esp_err_t product_wifi_save(std::string_view ssid,
 esp_err_t product_wifi_scan(WifiScanHandler handler) {
   if (handler == nullptr) return ESP_ERR_INVALID_ARG;
   g_scan_handler = handler;
+  g_scan_results_pending.store(false, std::memory_order_release);
   return esp_wifi_scan_start(nullptr, false);
 }
 
