@@ -31,3 +31,16 @@
 - Next step: Run the final verification suite, integrate the isolated branch
   into `main`, push it, and copy the verified firmware images to the stable
   project `dist/` paths.
+
+## 2026-07-28 11:35 HKT
+
+- Current work: Completed final verification and published the review branch.
+- Expected result: Preserve a reviewable branch and PR while making the
+  verified firmware available outside the temporary worktree.
+- Result: Achieved. Final gates passed with 242 Python tests, 38 C++ host tests,
+  and all Windows Agent Go packages. Branch
+  `fix/setup-agent-guidance-1.2.2` was pushed and GitHub PR #1 was opened
+  against `main`. Versioned app-only and full images were copied to the main
+  project `dist/` directory and their SHA-256 values matched the build outputs.
+- Next step: Review and merge PR #1, then flash the full image for first-run
+  hardware validation.
