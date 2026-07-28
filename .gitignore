@@ -21,6 +21,7 @@ web-probe/node_modules/
 *.sqlite
 *.app/
 firmware/managed_components/
+firmware/build-launcher/
 firmware/sdkconfig
 firmware/sdkconfig.old
 tools/diagnostics/**/managed_components/

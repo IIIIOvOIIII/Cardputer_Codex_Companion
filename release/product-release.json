@@ -11,6 +11,9 @@
     "storage_minimum_bytes": 1966080
   },
   "artifacts": {
+    "firmware_factory": "Cardputer-Codex-Companion-1.3.0-factory.bin",
+    "firmware_launcher": "Cardputer-Codex-Companion-1.3.0l-launcher.bin",
+    "firmware_app_versioned": "Cardputer-Codex-Companion-1.3.0-app.bin",
     "firmware_full": "cardputer_codex_companion-full.bin",
     "firmware_app": "cardputer_codex_companion.bin",
     "macos_installer": "CardputerCompanion-mac-installer",

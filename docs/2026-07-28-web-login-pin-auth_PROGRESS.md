@@ -87,3 +87,18 @@
   regressions passed 32/32.
 - Next step: Add failing tests for exact-boundary Launcher image packaging and
   the expanded public artifact set.
+
+## 2026-07-28 15:10 HKT
+
+- Current work: Implement and verify the factory and Launcher firmware
+  packaging channels from separate builds of the same source tree.
+- Expected result: Produce a Wi-Fi-clean factory `1.3.0` image and an exact
+  `0x620000`-byte Launcher `1.3.0l` image with the required storage contract.
+- Result: Achieved. Focused packaging tests passed 13/13. Real ESP32-S3 builds
+  reported application versions `1.3.0` and `1.3.0l`; the factory artifact
+  passed its erased Wi-Fi-range check, and the 6,422,528-byte Launcher artifact
+  passed application, embedded partition, storage label/size, and erased
+  Wi-Fi-range verification.
+- Next step: Add a pure runtime storage-compatibility model and expose
+  incompatible Launcher layouts on the Cardputer UI without blocking BLE,
+  Wi-Fi, or Web startup.

@@ -11,6 +11,14 @@ FIRMWARE_TOOL = ROOT / "tools/product/verify_public_firmware.py"
 LAYOUT = ROOT / "firmware/partitions_product.csv"
 
 
+def test_dual_firmware_artifacts_are_public() -> None:
+    assert {
+        "Cardputer-Codex-Companion-1.3.0-factory.bin",
+        "Cardputer-Codex-Companion-1.3.0-app.bin",
+        "Cardputer-Codex-Companion-1.3.0l-launcher.bin",
+    } <= ALLOWED
+
+
 def test_artifact_allowlist_rejects_stale_without_reading_contents(tmp_path):
     (tmp_path / "1.1.8-SHA256SUMS").write_text("sensitive candidate")
     result = subprocess.run(

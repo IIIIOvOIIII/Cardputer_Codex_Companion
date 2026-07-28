@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 ALLOWED = {
     f"{VERSION}-SHA256SUMS",
     "CardputerAudioBridge",
@@ -16,6 +16,9 @@ ALLOWED = {
     f"CardputerCompanion-{VERSION}-windows-amd64.zip",
     f"CardputerCompanion-{VERSION}-windows-arm64.zip",
     f"CardputerCompanion-{VERSION}-windows-x64-setup.exe",
+    f"Cardputer-Codex-Companion-{VERSION}-app.bin",
+    f"Cardputer-Codex-Companion-{VERSION}-factory.bin",
+    f"Cardputer-Codex-Companion-{VERSION}l-launcher.bin",
     "cardputer_codex_companion-full.bin",
     "cardputer_codex_companion.bin",
     "com.lynx.cardputer-audio-bridge.plist",
