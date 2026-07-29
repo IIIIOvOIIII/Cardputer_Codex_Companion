@@ -4,7 +4,7 @@
 
 Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN/core/Cardputer) 变成仅限局域网使用的 Codex 遥控副屏、可编程蓝牙键盘，以及 macOS 可选无线麦克风。
 
-当前版本：**1.3.3**（Factory）/ **1.3.3l**（M5Launcher）
+当前版本：**1.3.4**（Factory）/ **1.3.4l**（M5Launcher）
 
 **使用 M5Launcher 时必须安装 Beta Release。**
 
@@ -43,30 +43,30 @@ Cardputer Codex Companion 将 [M5Stack Cardputer](https://docs.m5stack.com/zh_CN
 | Machine Agent | macOS 14 或更高 | 完整功能 |
 | Machine Agent | Windows 10 22H2 / Windows 11 | Codex 状态/动作及宠物同步 |
 | 蓝牙麦克风 | 仅 macOS | 安装 HAL 与 AudioBridge |
-| Unicode GATT 注入 | 仅 macOS | Windows 1.3.3 暂不提供 |
+| Unicode GATT 注入 | 仅 macOS | Windows 1.3.4 暂不提供 |
 
 ## Cardputer 固件刷入
 
 需要 Cardputer 和可传输数据的 USB-C 线。请先选择一个安装通道：
 
-- **Factory 1.3.3（推荐）**：从 `0x0` 写入官方产品分区表。会移除
+- **Factory 1.3.4（推荐）**：从 `0x0` 写入官方产品分区表。会移除
   M5Launcher，并重置 Wi-Fi、PIN、键盘 Profile、宠物、初始化状态和 BLE 配对。
-- **Launcher 1.3.3l**：保留 M5Launcher 及其 Flash 布局。先把
+- **Launcher 1.3.4l**：保留 M5Launcher 及其 Flash 布局。先把
   M5Launcher 更新到 **2.8.0 或更高版本**，再通过 M5Launcher 安装
-  `Cardputer-Codex-Companion-1.3.3l-launcher.bin`。后续更新仍通过
+  `Cardputer-Codex-Companion-1.3.4l-launcher.bin`。后续更新仍通过
   M5Launcher 完成。
 
 先校验发布制品：
 
 ```bash
-shasum -a 256 -c 1.3.3-SHA256SUMS
+shasum -a 256 -c 1.3.4-SHA256SUMS
 ```
 
-### Factory 1.3.3（推荐）
+### Factory 1.3.4（推荐）
 
 最简单的安装方式是在桌面版 Chrome 或 Edge 中打开
 [项目 Web Serial 安装器](https://iiiiovoiiii.github.io/Cardputer_Codex_Companion/web-installer/)，
-通过 USB 连接 Cardputer，然后选择 **Install Factory Firmware 1.3.3**。
+通过 USB 连接 Cardputer，然后选择 **Install Factory Firmware 1.3.4**。
 
 命令行刷写需要 Python 3 和
 [esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32s3/installation.html)：
@@ -75,24 +75,24 @@ shasum -a 256 -c 1.3.3-SHA256SUMS
 python3 -m esptool --chip esp32s3 \
   --port /dev/cu.usbmodemXXXX -b 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 Cardputer-Codex-Companion-1.3.3-factory.bin
+  write_flash 0x0 Cardputer-Codex-Companion-1.3.4-factory.bin
 ```
 
 Windows 将串口改为 `COM5` 等实际端口，并使用 `py -m esptool`。Factory
 镜像会替换之前的全部 Flash 布局（包括 M5Launcher），并有意保持 Wi-Fi
 配置区域为空。
 
-### Launcher 1.3.3l
+### Launcher 1.3.4l
 
 把 M5Launcher 更新到 **2.8.0 或更高版本**，复制或下载
-`Cardputer-Codex-Companion-1.3.3l-launcher.bin`，再从 M5Launcher
+`Cardputer-Codex-Companion-1.3.4l-launcher.bin`，再从 M5Launcher
 安装。镜像在所声明的 `assets` SPIFFS 分区起点附带一个已擦除的 4 KiB
 payload 扇区，使 M5Launcher 能够创建 1,920 KiB 存储分区；其中不包含 Wi-Fi
 配置或用户存储数据。
 
 如果 Cardputer 显示 `PARTITION ERROR`，说明当前 Launcher 布局没有兼容的
 `assets` 存储分区。请通过 M5Launcher 2.8.0+ 更新/重新分区并重装 Launcher
-镜像，或改用 Factory 1.3.3。Web 会把分区不兼容明确显示为存储错误，不会把
+镜像，或改用 Factory 1.3.4。Web 会把分区不兼容明确显示为存储错误，不会把
 有效 PIN 错报为“PIN 错误”。
 
 ### 保留状态的 Factory 更新
@@ -104,7 +104,7 @@ payload 扇区，使 M5Launcher 能够创建 1,920 KiB 存储分区；其中不�
 python3 -m esptool --chip esp32s3 \
   --port /dev/cu.usbmodemXXXX -b 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x20000 Cardputer-Codex-Companion-1.3.3-app.bin
+  write_flash 0x20000 Cardputer-Codex-Companion-1.3.4-app.bin
 ```
 
 不要把应用分区镜像写到 `0x0`，也不要对 M5Launcher 或未知分区布局使用
@@ -181,12 +181,12 @@ sudo CardputerCompanion.app/Contents/MacOS/cardputer-companion \
 Windows x64 运行：
 
 ```text
-CardputerCompanion-1.3.3-windows-x64-setup.exe
+CardputerCompanion-1.3.4-windows-x64-setup.exe
 ```
 
 安装器写入 `%LOCALAPPDATA%\CardputerCodexCompanion`，创建当前用户最低权限登录任务，并添加 Pair Device、Status、Doctor 与 Uninstall 菜单。它不安装驱动或系统服务，也不要求管理员权限。
 
-Windows ARM64 解压 `CardputerCompanion-1.3.3-windows-arm64.zip` 后运行：
+Windows ARM64 解压 `CardputerCompanion-1.3.4-windows-arm64.zip` 后运行：
 
 ```text
 cardputer-agent.exe pair
@@ -194,7 +194,7 @@ cardputer-agent.exe status
 cardputer-agent.exe doctor
 ```
 
-PIN 由当前 Windows 用户的 DPAPI 保护。可从“已安装的应用”或开始菜单卸载。Windows 1.3.3 不包含 Unicode GATT 注入和蓝牙麦克风。
+PIN 由当前 Windows 用户的 DPAPI 保护。可从“已安装的应用”或开始菜单卸载。Windows 1.3.4 不包含 Unicode GATT 注入和蓝牙麦克风。
 
 ## Web 与设备操作
 
@@ -231,9 +231,9 @@ ctest --test-dir build/product-host --output-on-failure
 scripts/build_web_assets.py --check
 ```
 
-公共制品包括 Factory 1.3.3 固件、应用升级固件、Launcher 1.3.3l 固件、
+公共制品包括 Factory 1.3.4 固件、应用升级固件、Launcher 1.3.4l 固件、
 macOS 安装器、Windows x64 安装器、amd64/ARM64 ZIP、Web Serial 安装器和
-`1.3.3-SHA256SUMS`。
+`1.3.4-SHA256SUMS`。
 
 安全与制品边界见 [PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md)，Windows 细节见 [WINDOWS_AGENT.md](docs/WINDOWS_AGENT.md)。
 

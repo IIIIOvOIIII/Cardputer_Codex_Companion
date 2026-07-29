@@ -48,3 +48,10 @@
 - Expected result: `HIL G0 CLICK` enters the exact physical short-press dispatcher; the runner configures a test chord without exposing the PIN, proves queue/completion and a Mic transition, detects resets/queue failures, restores prior settings, and records no HID or audio content.
 - Result: Achieved for the implementation gate. LF/CRLF/split/rejection parser cases pass; the HIL runner uses a mode-0600 transient curl config and emits only bounded metrics. Normal and ASan/UBSan host suites pass 42/42, focused Python tests pass 8/8, and the ESP-IDF target build succeeds at `0x190670` bytes.
 - Next step: Unify all active product, Agent, installer, manifest, and documentation version surfaces as 1.3.4/1.3.4l.
+
+## 2026-07-29 23:28 HKT
+
+- Current work: Unify every active firmware, Agent, installer, manifest, Web Installer, documentation, and release-test version surface.
+- Expected result: Factory and both Agents identify as 1.3.4; Launcher identifies as 1.3.4l; active release paths contain no 1.3.3 reference.
+- Result: Achieved. The version tests were first observed failing against stale 1.3.3 surfaces. All active references now use 1.3.4/1.3.4l; source-level release/Web tests pass 10/10 and Windows packaging source tests pass 3/3. The old Factory digest remains intentionally temporary until the clean Task 7 build replaces it.
+- Next step: Run the complete release build/gates, replace the manifest digest, flash only the attached device's application slot, and execute the G0 HIL gate.

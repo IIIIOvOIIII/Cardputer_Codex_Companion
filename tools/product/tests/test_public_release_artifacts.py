@@ -13,10 +13,10 @@ LAYOUT = ROOT / "firmware/partitions_product.csv"
 
 def test_dual_firmware_artifacts_are_public() -> None:
     assert {
-        "Cardputer-Codex-Companion-1.3.3-factory.bin",
-        "Cardputer-Codex-Companion-1.3.3-app.bin",
-        "Cardputer-Codex-Companion-1.3.3l-launcher.bin",
-        "CardputerCompanion-1.3.3-web-installer.zip",
+        "Cardputer-Codex-Companion-1.3.4-factory.bin",
+        "Cardputer-Codex-Companion-1.3.4-app.bin",
+        "Cardputer-Codex-Companion-1.3.4l-launcher.bin",
+        "CardputerCompanion-1.3.4-web-installer.zip",
     } <= ALLOWED
 
 
@@ -99,11 +99,11 @@ def test_public_readme_is_english_first_and_bilingual():
     assert chinese.splitlines()[0] == "[English](README.md)"
     for document in (readme, chinese):
         assert "1.2.3" not in document
-        assert "1.3.3" in document
-        assert "1.3.3l" in document
+        assert "1.3.4" in document
+        assert "1.3.4l" in document
         assert "2.8.0" in document
-        assert "Cardputer-Codex-Companion-1.3.3-factory.bin" in document
-        assert "Cardputer-Codex-Companion-1.3.3l-launcher.bin" in document
+        assert "Cardputer-Codex-Companion-1.3.4-factory.bin" in document
+        assert "Cardputer-Codex-Companion-1.3.4l-launcher.bin" in document
     assert (
         "Created and maintained by **Lynx** "
         "([hi@iam.lc](mailto:hi@iam.lc))."

@@ -25,12 +25,12 @@ mkdir -p "${app}/Contents/MacOS"
 /bin/cp \
   "${root}/companion/AppBundle/Info.plist" \
   "${app}/Contents/Info.plist"
-printf '#!/bin/sh\\nprintf "cardputer-companion 1.3.3\\\\n"\\n' \
+printf '#!/bin/sh\\nprintf "cardputer-companion 1.3.4\\\\n"\\n' \
   > "${app}/Contents/MacOS/cardputer-companion"
 chmod 0755 "${app}/Contents/MacOS/cardputer-companion"
 printf 'build\\n' >> "${root}/build.trace"
 """
-EXPECTED_VERSION = "1.3.3"
+EXPECTED_VERSION = "1.3.4"
 
 
 def copy_entry(layout: Path) -> None:
