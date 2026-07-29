@@ -13,3 +13,10 @@
 - Expected result: G0 no longer consumes the shared macro task stack, while direct HID ordering, Profile-macro serialization, and Mic fallback remain exact.
 - Result: Achieved for design. The proposed `product-g0` task uses a 3,072-byte static stack and eight-entry queue. A shared execution mutex serializes complete MacroEngine operations across Profile and G0 workers. Queue or mutex failure sends no partial chord and still enqueues Mic. Repeated HIL expands to 20 sequential enabled clicks with a 768-byte minimum G0 stack-headroom gate. All active release surfaces advance to 1.3.5/1.3.5l.
 - Next step: Commit the design, complete the written-spec review gate, then produce the test-driven implementation plan.
+
+## 2026-07-30 01:09 HKT
+
+- Current work: Convert the approved dedicated-task design into a file-specific TDD, build, HIL, integration, and publication plan.
+- Expected result: Every design requirement maps to a bounded task with exact interfaces, RED/GREEN commands, commits, hardware gates, and release verification.
+- Result: Achieved. The plan separates target task wiring, repeated HIL, 1.3.5 version unification, clean build/app-only flash, and public publication. It explicitly gates macro/G0 HID serialization, Mic fallback, 20/20 transitions, zero reset/queue failure, at least 768 bytes G0 stack headroom, Launcher `0x190000` fit, credential exclusion, and digest-pinned Pages deployment.
+- Next step: Commit the plan, create an isolated execution worktree, and execute it inline with review checkpoints.
