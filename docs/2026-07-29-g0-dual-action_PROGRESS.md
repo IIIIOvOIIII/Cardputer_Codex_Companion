@@ -69,3 +69,10 @@
 - Expected result: Every firmware, Agent, installer, signing, checksum, memory, and security gate passes before any public tag or Release is created.
 - Result: Achieved. The gate passed 292 product Python tests, the audio/installer suite, 42 normal and 42 sanitizer firmware host tests, Web/Node, Swift, C, Go and Go race checks, Factory/Launcher verification, Mac signing, Windows/macOS/Web packaging, all 15 published checksums, and the complete public-artifact allowlist. Factory SHA-256 is `e42fbdaa9e6eb626be6c2814ddb3b52d0f3b0c87bc639142ed77cefa46176ca2`; Launcher SHA-256 is `21b3fcc4c9aaeb20529e38cc39d22b4695902ac59e117d2d26eea3340fc9ccb3`. The credential/history audit scanned 20 refs, 284 reflog commits, 21 retained unreachable objects, 1,957 Git blobs, and 525 current/artifact files with zero findings.
 - Next step: Fast-forward `main`, push it, create annotated `v1.3.4`, publish all release assets, and deploy the fail-closed Pages Web Installer.
+
+## 2026-07-30 00:29 HKT
+
+- Current work: Publish and independently verify GitHub Release `v1.3.4` and the fail-closed GitHub Pages Web Installer.
+- Expected result: The annotated remote tag resolves to the hardware-verified commit; all nine public assets match their local SHA-256 digests; Pages deploys from that commit and serves the pinned Factory image.
+- Result: Achieved. Remote `v1.3.4` resolves to `ee1053d04bbb04a9b0ddf7c4f7085e0d60af0e15`. The non-draft, non-prerelease GitHub Release exposes nine assets and every GitHub asset digest matches its local file. Pages run `30470692017` completed successfully from the same commit. The live manifest reports `1.3.4`, and the downloaded 1,771,120-byte Factory image has SHA-256 `e42fbdaa9e6eb626be6c2814ddb3b52d0f3b0c87bc639142ed77cefa46176ca2`.
+- Next step: Commit and push the publication closeout documentation, record the operational result, and run the final source/release/live-state verification.
