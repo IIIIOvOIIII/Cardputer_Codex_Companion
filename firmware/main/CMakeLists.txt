@@ -117,6 +117,7 @@ if(CARDPUTER_LAUNCHER_BUILD)
     target_compile_definitions(
         ${COMPONENT_LIB}
         PRIVATE CARDPUTER_STORAGE_PARTITION_LABEL="assets")
+    target_compile_options(${COMPONENT_LIB} PRIVATE "-Os")
 endif()
 
 set(HID_EXAMPLE_DIR

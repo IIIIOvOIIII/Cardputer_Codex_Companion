@@ -162,3 +162,27 @@ def test_report_gate_requires_mic_transition_and_completion():
         report[key] = value
         with pytest.raises(ValueError):
             module.validate_report(report)
+
+
+def test_disabled_report_requires_mic_only_and_no_hid_activity():
+    module = load_script()
+    report = {
+        "microphone_before": "READY",
+        "microphone_after": "STARTING",
+        "microphone_transitioned": True,
+        "command_result": "mic_only",
+        "completed": False,
+        "elapsed_ms": 30,
+        "boot_count": 0,
+        "reset_reason": "none",
+        "hid_queue_failure_delta": 0,
+    }
+    module.validate_report(report, enabled=False)
+    for key, value in (
+        ("command_result", "queued"),
+        ("completed", True),
+    ):
+        invalid = dict(report)
+        invalid[key] = value
+        with pytest.raises(ValueError):
+            module.validate_report(invalid, enabled=False)

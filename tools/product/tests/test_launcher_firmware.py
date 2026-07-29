@@ -11,6 +11,10 @@ from tools.product.verify_launcher_firmware import (
     STORAGE_PAYLOAD_BYTES,
     validate_launcher_image,
 )
+from tools.product.verify_launcher_app_size import (
+    M5LAUNCHER_CARDPU_PARTITION_SIZE,
+    validate_launcher_app_size,
+)
 
 
 def partition_entry(
@@ -108,6 +112,21 @@ def test_launcher_contract_rejects_small_storage_declaration() -> None:
         validate_launcher_image(bytes(image))
 
 
+def test_launcher_app_fits_existing_m5launcher_cardpu_partition(
+    tmp_path: Path,
+) -> None:
+    fitting = tmp_path / "fitting.bin"
+    fitting.write_bytes(b"\xff" * M5LAUNCHER_CARDPU_PARTITION_SIZE)
+    validate_launcher_app_size(fitting)
+
+    oversized = tmp_path / "oversized.bin"
+    oversized.write_bytes(
+        b"\xff" * (M5LAUNCHER_CARDPU_PARTITION_SIZE + 1)
+    )
+    with pytest.raises(ValueError, match="M5Launcher cardpu partition"):
+        validate_launcher_app_size(oversized)
+
+
 def test_launcher_build_uses_launcher_assets_partition_contract() -> None:
     root = Path(__file__).resolve().parents[3]
     partition_csv = (root / "firmware/partitions_launcher.csv").read_text()
@@ -127,6 +146,10 @@ def test_launcher_build_uses_launcher_assets_partition_contract() -> None:
     assert "0x1e0000" in partition_csv
     assert "CARDPUTER_LAUNCHER_BUILD=ON" in package_script
     assert "sdkconfig.launcher.defaults" in package_script
+    assert "verify_launcher_app_size.py" in package_script
+    assert 'target_compile_options(${COMPONENT_LIB} PRIVATE "-Os")' in (
+        component_cmake
+    )
     assert "CARDPUTER_STORAGE_PARTITION_LABEL" in component_cmake
     assert '"assets"' in component_cmake
     assert '"storage"' in label_header

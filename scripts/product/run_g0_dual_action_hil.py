@@ -138,13 +138,13 @@ def _json_from_line(line: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _hid_queue_values(lines: list[str]) -> list[int]:
+def _hid_values(lines: list[str], key: str) -> list[int]:
     values = []
     for line in lines:
         value = _json_from_line(line)
         hid = value.get("hid") if value is not None else None
         if isinstance(hid, dict):
-            values.append(int(hid.get("queue_failures", 0)))
+            values.append(int(hid.get(key, 0)))
     return values
 
 
@@ -165,7 +165,7 @@ def build_report(
     command_result: str,
     elapsed_ms: int,
 ) -> dict[str, Any]:
-    queue_values = _hid_queue_values(lines)
+    queue_values = _hid_values(lines, "queue_failures")
     queue_delta = (
         max(0, queue_values[-1] - queue_values[0])
         if len(queue_values) >= 2
@@ -187,17 +187,23 @@ def build_report(
     }
 
 
-def validate_report(report: dict[str, Any]) -> None:
+def validate_report(report: dict[str, Any], *, enabled: bool = True) -> None:
     if int(report["boot_count"]) != 0:
         raise ValueError("device reset during G0 HIL")
-    if report["command_result"] != "queued":
-        raise ValueError("G0 dual action was not queued")
-    if not report["completed"]:
-        raise ValueError("G0 dual action did not complete")
     if not report["microphone_transitioned"]:
         raise ValueError("microphone state did not transition")
     if int(report["hid_queue_failure_delta"]) != 0:
         raise ValueError("HID queue failure observed")
+    if enabled:
+        if report["command_result"] != "queued":
+            raise ValueError("G0 dual action was not queued")
+        if not report["completed"]:
+            raise ValueError("G0 dual action did not complete")
+    else:
+        if report["command_result"] != "mic_only":
+            raise ValueError("disabled G0 did not use Mic-only path")
+        if report["completed"]:
+            raise ValueError("disabled G0 unexpectedly ran dual action")
 
 
 class SerialMonitor:
@@ -249,7 +255,7 @@ class SerialMonitor:
         deadline = time.monotonic() + timeout
         with self._condition:
             while True:
-                if len(_hid_queue_values(self._lines)) >= count:
+                if len(_hid_values(self._lines, "queue_failures")) >= count:
                     return True
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -326,6 +332,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pin-file", type=Path)
     parser.add_argument("--modifiers", type=int, default=4)
     parser.add_argument("--usage", type=int, default=25)
+    parser.add_argument("--disabled", action="store_true")
     parser.add_argument(
         "--output",
         type=Path,
@@ -340,7 +347,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"serial port not found: {args.port}")
     try:
         pairing = _read_pin(args.pin_file)
-        desired = g0_config(True, args.modifiers, args.usage)
+        desired = g0_config(
+            not args.disabled, args.modifiers, args.usage
+        )
     except ValueError as error:
         raise SystemExit(str(error)) from error
 
@@ -400,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
             command_result=command_result,
             elapsed_ms=elapsed_ms,
         )
-        validate_report(report)
+        validate_report(report, enabled=not args.disabled)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n"

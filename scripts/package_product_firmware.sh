@@ -24,6 +24,9 @@ test -x "${idf_python}"
     -D PROJECT_VER=1.3.4l \
     build
 )
+python3 "${repo_root}/tools/product/verify_launcher_app_size.py" \
+  --image \
+  "${repo_root}/firmware/build-launcher/cardputer_codex_companion.bin"
 python3 "${repo_root}/tools/product/merge_product_image.py" \
   --build-dir "${repo_root}/firmware/build" \
   --output "${factory_output}" \
