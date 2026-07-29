@@ -69,7 +69,7 @@ firmware handler used by the physical button:
 - HID queue-failure delta: 0;
 - minimum `product-g0` free stack: 868 bytes;
 - required minimum free stack: 768 bytes;
-- elapsed time: 51,106 ms.
+- elapsed time: 50,885 ms.
 
 The disabled control also passed:
 
@@ -85,13 +85,13 @@ or audio content.
 ## Artifacts
 
 - Factory full image:
-  `c979f64541b94e4962d60111a5da514bc21ea2c11a334f4c2f2a79d66e394ebb`
+  `0fac720220457afe831ff1135e783b75688f9532ebf14c0f3a7a6b2a02c996b5`
   (`1,771,648` bytes)
 - application image:
-  `9caeb41636f7a0dc716bf44e50abaf23b0e69d0c9fe24af12f1cea3d792db2e9`
+  `98cbe7c696f6468c056a2facdfae8eeb3fe5b54d0b16adb268f0eea1b7621fcb`
   (`1,640,576` bytes)
 - M5Launcher-compatible image:
-  `de9c428205f5fc258b6c41cefe993c37a5ad0283c715675988b65a70587525e8`
+  `ecb5920a6d0d692bdf5aafd80ba70026860ed066403663770ab5dbf78e220908`
   (`6,426,624` bytes)
 
 ## Result
