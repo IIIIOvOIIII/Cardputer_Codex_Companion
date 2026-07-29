@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   DeviceApiError,
+  g0ChordPayload,
   loginErrorMessage,
   requestDevice,
 } = require("../src/device_api.js");
@@ -99,5 +100,33 @@ test("preserves status, error code, body, and pairing header", async () => {
       error.status === 503 &&
       error.code === "partition_incompatible" &&
       error.responseText.includes("too_small"),
+  );
+});
+
+test("builds a bounded enabled G0 chord payload", () => {
+  assert.deepEqual(
+    g0ChordPayload(true, {
+      modifiers: 4,
+      usages: [25, 26],
+    }),
+    {
+      enabled: true,
+      modifiers: 4,
+      usages: [25],
+    },
+  );
+});
+
+test("disabling G0 chord preserves its configured chord", () => {
+  assert.deepEqual(
+    g0ChordPayload(false, {
+      modifiers: 9,
+      usages: [40],
+    }),
+    {
+      enabled: false,
+      modifiers: 9,
+      usages: [40],
+    },
   );
 });

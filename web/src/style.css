@@ -41,6 +41,8 @@ button:hover:not(:disabled),input:focus,select:focus,textarea:focus{border-color
 .readonly-status p{margin:0;display:flex;flex-direction:column;gap:4px;color:#718b9d;font-size:11px}
 .readonly-status strong{color:#e7edf5;font-size:13px}
 .settings-grid form{display:flex;flex-direction:column;gap:12px}
+.checkbox-row{flex-direction:row;align-items:center;gap:9px}
+.checkbox-row input{width:18px;height:18px;margin:0;padding:0}
 #keyboard{display:grid;grid-template-columns:repeat(14,minmax(38px,1fr));gap:6px}
 .key{min-height:48px;border-radius:7px;padding:4px;font-size:10px;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;text-align:left}
 .key strong{font-size:12px;color:#f4fbff}

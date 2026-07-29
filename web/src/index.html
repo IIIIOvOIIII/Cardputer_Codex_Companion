@@ -88,6 +88,21 @@
           <p><span>最后错误</span><strong id="mic-error">NONE</strong></p>
         </section>
         <section>
+          <h2>G0 双动作</h2>
+          <p class="hint">按下 G0 时先发送组合键，再打开或关闭 Mic。</p>
+          <form id="g0-chord-form">
+            <label class="checkbox-row">
+              <input id="g0-chord-enabled" type="checkbox">
+              启用 G0 组合键
+            </label>
+            <label>采集组合键
+              <input id="g0-chord-capture" readonly placeholder="点击后按下组合键，例如 Alt+V">
+            </label>
+            <p class="hint">关闭后仍保留已采集的组合键；再次开启即可恢复。</p>
+            <button id="save-g0-chord" class="primary" type="submit">保存 G0 配置</button>
+          </form>
+        </section>
+        <section>
           <h2>修改 PIN</h2>
           <p class="hint">PIN 必须是 8 位数字。保存后，后续 Web 请求立即使用新 PIN。</p>
           <form id="change-pin">

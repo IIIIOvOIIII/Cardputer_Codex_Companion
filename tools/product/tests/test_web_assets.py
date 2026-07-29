@@ -86,6 +86,31 @@ def test_web_ui_has_settings_and_pin_api() -> None:
     assert "microphone/stop" not in script
 
 
+def test_web_ui_configures_optional_g0_dual_action() -> None:
+    html = Path("web/src/index.html").read_text()
+    script = Path("web/src/app.js").read_text()
+    device_api = Path("web/src/device_api.js").read_text()
+
+    assert 'id="g0-chord-form"' in html
+    assert 'id="g0-chord-enabled"' in html
+    assert 'id="g0-chord-capture"' in html
+    assert 'id="save-g0-chord"' in html
+    assert "G0 双动作" in html
+    assert "启用 G0 组合键" in html
+    assert "按下 G0 时先发送组合键，再打开或关闭 Mic。" in html
+    assert "保存 G0 配置" in html
+    assert "function g0ChordPayload" in device_api
+    assert "let g0ChordDraft=" in script
+    assert "/api/v1/settings/g0-chord" in script
+    assert "captureG0Chord" in script
+    assert "loadG0Chord" in script
+    assert "saveG0Chord" in script
+    assert 'showResult("success","G0 双动作配置已保存")' in script
+    assert 'showResult("error",`G0 配置保存失败：${error.message}`)' in script
+    assert '$("g0-chord-form").onsubmit=saveG0Chord' in script
+    assert '$("g0-chord-capture").onkeydown=captureG0Chord' in script
+
+
 def test_web_ui_uses_chinese_action_labels_and_key_modal() -> None:
     html = Path("web/src/index.html").read_text()
     script = Path("web/src/app.js").read_text()

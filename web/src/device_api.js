@@ -59,9 +59,18 @@ function loginErrorMessage(error) {
   return "设备服务暂不可用，请稍后重试";
 }
 
+function g0ChordPayload(enabled, draft) {
+  return {
+    enabled: Boolean(enabled),
+    modifiers: draft.modifiers,
+    usages: draft.usages.slice(0, 1),
+  };
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DeviceApiError,
+    g0ChordPayload,
     loginErrorMessage,
     requestDevice,
   };

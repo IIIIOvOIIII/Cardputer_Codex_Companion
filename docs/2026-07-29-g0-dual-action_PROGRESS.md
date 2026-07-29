@@ -34,3 +34,10 @@
 - Expected result: Both routes require the device PIN, validate the single-key chord schema, distinguish invalid input from NVS failure, and apply only through controller callbacks.
 - Result: Achieved. RED host/API-contract tests failed on missing types and handlers, then passed after adding the 20-route contract, bounded cJSON validation, controller getter/apply callbacks, and the dedicated settings mutex. Normal and ASan/UBSan host suites pass 42/42, API contracts pass 4/4, and a real ESP-IDF 5.5.4 target build completed with app version 1.3.4.
 - Next step: Add the G0 dual-action card to Web Settings and regenerate embedded assets.
+
+## 2026-07-29 23:19 HKT
+
+- Current work: Add the optional G0 chord controls to the authenticated Web Settings page and regenerate the embedded firmware assets.
+- Expected result: Users can capture one HID chord, explicitly enable or disable it, preserve the captured chord while disabled, and receive an in-page save result.
+- Result: Achieved. The Web UI now loads and saves `/api/v1/settings/g0-chord`, keeps G0 state separate from Profile key editing, and uses the existing result dialog. The focused Python suite passes 12/12, Node passes 7/7, generated assets are current, and the ESP-IDF target build succeeds at `0x1905b0` bytes.
+- Next step: Add a deterministic serial HIL path for G0 and prove ordering/fallback behavior on the attached Cardputer.
