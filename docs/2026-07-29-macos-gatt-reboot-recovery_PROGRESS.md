@@ -154,3 +154,27 @@
 - Next step: Commit and push the verified source, publish GitHub Release
   `v1.3.3`, deploy GitHub Pages, and verify the public installer and Factory
   digest.
+
+## 2026-07-29 11:25 HKT
+
+- Current work: Published the verified 1.3.3 source and artifacts, deployed the
+  Web Installer, and performed the final public same-origin verification.
+- Expected result: Public `main` and annotated `v1.3.3` resolve to the verified
+  release source; the Release contains the complete approved asset set; Pages
+  serves manifest 1.3.3 and the exact checksum-pinned Factory firmware.
+- Result: Achieved. Public `main` and peeled tag `v1.3.3` resolve to
+  `9ca06c0b59e59359eba7b5788cd51cc525d24f22`. The GitHub Release contains nine
+  verified assets; its Factory digest is
+  `sha256:66f6b092cec25de07df71855c5ba6315908a710d16e13333bed902a8d4ec34de`.
+  The push-triggered Pages run `30419075407` failed closed because it started
+  before the Release existed. After publication, manual workflow run
+  `30419438720` completed successfully. The public installer, manifest, and
+  same-origin Factory image all returned HTTP 200; the manifest reports 1.3.3
+  and the 1,764,704-byte Factory download hashes to the exact manifest value.
+  The release source retains the five fixed-PID recovery times of 9.814,
+  10.682, 16.329, 16.981, and 18.555 seconds on the authenticated Web path,
+  unchanged Agent PID 15317, the successful 16 kHz serial microphone gate,
+  and a zero-finding credential audit.
+- Next step: Preserve the published artifacts in the main checkout, commit and
+  push this release evidence, update workspace memory, and remove the merged
+  feature worktree.
