@@ -76,3 +76,10 @@
 - Expected result: The annotated remote tag resolves to the hardware-verified commit; all nine public assets match their local SHA-256 digests; Pages deploys from that commit and serves the pinned Factory image.
 - Result: Achieved. Remote `v1.3.4` resolves to `ee1053d04bbb04a9b0ddf7c4f7085e0d60af0e15`. The non-draft, non-prerelease GitHub Release exposes nine assets and every GitHub asset digest matches its local file. Pages run `30470692017` completed successfully from the same commit. The live manifest reports `1.3.4`, and the downloaded 1,771,120-byte Factory image has SHA-256 `e42fbdaa9e6eb626be6c2814ddb3b52d0f3b0c87bc639142ed77cefa46176ca2`.
 - Next step: Commit and push the publication closeout documentation, record the operational result, and run the final source/release/live-state verification.
+
+## 2026-07-30 00:38 HKT
+
+- Current work: Complete the post-publication source, artifact, public endpoint, and deployed-device verification.
+- Expected result: `main` is clean and synchronized, source-level release/Web tests pass, the public assets and Pages firmware remain exact, and the attached device is left with G0 disabled rather than the HIL chord.
+- Result: Achieved. The focused release/Web suite passed 16/16, all nine GitHub asset digests matched the local `dist/` copies, and the live 1.3.4 Factory image still matched the pinned SHA-256. The attached device reported `1.3.4l`, BLE/Wi-Fi/Companion `OK`, Mic `READY`, and a valid G0 Settings API. The temporary HIL chord was cleared; a subsequent GET returned disabled, modifier zero, and no usage.
+- Next step: Deliver the release, Web Installer, and local artifact paths. A local macOS Agent/HAL upgrade remains a separate administrator-password operation and is not required by this direct-HID firmware feature.
