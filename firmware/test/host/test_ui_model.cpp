@@ -13,7 +13,7 @@ int main() {
   assert(partition_error.count == 4);
   assert(partition_error.lines[0] == "PARTITION ERROR");
   assert(partition_error.lines[1] == "MISSING");
-  assert(partition_error.lines[2] == "USE FACTORY 1.3.3");
+  assert(partition_error.lines[2] == "USE FACTORY 1.3.4");
   assert(partition_error.lines[3] == "OR LAUNCHER 2.8+");
   incompatible.navigate(UiNavAction::next_page);
   UiPageContent incompatible_device = incompatible.page_content();
@@ -157,7 +157,7 @@ int main() {
   model.navigate(UiNavAction::next_page);
   const UiPageContent device = model.page_content();
   assert(device.count == 7);
-  assert(device.lines[0] == "VERSION:1.3.3");
+  assert(device.lines[0] == "VERSION:1.3.4");
   assert(device.lines[1] == "PIN:12345678");
   assert(device.lines[2] == "STORAGE:READY");
   assert(device.lines[3] == "BLE:OK");
@@ -168,7 +168,7 @@ int main() {
   for (uint8_t index = 0; index < device.count; ++index) {
     joined.append(device.lines[index]).push_back('\n');
   }
-  assert(joined.find("VERSION:1.3.3") != std::string::npos);
+  assert(joined.find("VERSION:1.3.4") != std::string::npos);
   assert(joined.find("PIN:12345678") != std::string::npos);
   assert(joined.find("STORAGE:READY") != std::string::npos);
   assert(joined.find("********") == std::string::npos);

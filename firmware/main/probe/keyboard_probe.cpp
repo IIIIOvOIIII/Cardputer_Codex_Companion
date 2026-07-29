@@ -60,6 +60,7 @@ void EspHidReportSink::send_report(const HidReport& report) {
 KeyboardProbe::KeyboardProbe(KeyboardReportSink& report_sink)
     : engine_(), active_usages_{}, report_sink_(&report_sink) {
 #ifdef ESP_PLATFORM
+  initialize_report_sink_mutex();
   begin_sender_queue_and_task();
 #endif
 }
@@ -70,6 +71,7 @@ KeyboardProbe::KeyboardProbe(esp_hidd_dev_t* hid_device)
       active_usages_(),
       esp_report_sink_(hid_device),
       report_sink_(&esp_report_sink_) {
+  initialize_report_sink_mutex();
   begin_sender_queue_and_task();
 }
 #endif
@@ -78,7 +80,19 @@ void KeyboardProbe::send_report(const HidReport& report) {
   if (report_sink_ == nullptr) {
     return;
   }
+#ifdef ESP_PLATFORM
+  if (report_sink_mutex_ == nullptr) {
+    initialize_report_sink_mutex();
+  }
+  if (report_sink_mutex_ == nullptr ||
+      xSemaphoreTake(report_sink_mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    return;
+  }
   report_sink_->send_report(report);
+  xSemaphoreGive(report_sink_mutex_);
+#else
+  report_sink_->send_report(report);
+#endif
 }
 
 void KeyboardProbe::emit_stable_key_event(const StableKeyEvent& event) {
@@ -124,16 +138,12 @@ void KeyboardProbe::send_report_for_usages(std::span<const uint8_t> usages) {
 
 void KeyboardProbe::enqueue_stable_key_event(const StableKeyEvent& event) {
 #ifdef ESP_PLATFORM
-  if (hid_queue_ == nullptr) {
-    portENTER_CRITICAL(&hid_metrics_lock_);
-    hid_latency_metrics_.observe(event.stable_at_us, event.stable_at_us, false);
-    ++hid_queue_overflow_count_;
-    portEXIT_CRITICAL(&hid_metrics_lock_);
-    return;
-  }
-
   const int64_t queued_at_us = static_cast<int64_t>(esp_timer_get_time());
-  const bool queued_ok = xQueueSend(hid_queue_, &event, 0) == pdTRUE;
+  const HidSenderEvent sender_event{
+      .kind = HidSenderEventKind::stable_key,
+      .stable_key = event,
+  };
+  const bool queued_ok = enqueue_hid_sender_event(sender_event);
   portENTER_CRITICAL(&hid_metrics_lock_);
   hid_latency_metrics_.observe(event.stable_at_us, queued_at_us, queued_ok);
   if (!queued_ok) {
@@ -147,7 +157,19 @@ void KeyboardProbe::enqueue_stable_key_event(const StableKeyEvent& event) {
 }
 
 void KeyboardProbe::send_complete_report(const HidReport& report) {
+#ifdef ESP_PLATFORM
+  const HidSenderEvent event{
+      .kind = HidSenderEventKind::complete_report,
+      .report = report,
+  };
+  if (!enqueue_hid_sender_event(event)) {
+    portENTER_CRITICAL(&hid_metrics_lock_);
+    ++hid_queue_overflow_count_;
+    portEXIT_CRITICAL(&hid_metrics_lock_);
+  }
+#else
   send_report(report);
+#endif
 }
 
 void KeyboardProbe::release_all() {
@@ -277,9 +299,17 @@ TaskHandle_t KeyboardProbe::hid_sender_task() const {
   return hid_sender_task_;
 }
 
+void KeyboardProbe::initialize_report_sink_mutex() {
+  if (report_sink_mutex_ != nullptr) {
+    return;
+  }
+  report_sink_mutex_ = xSemaphoreCreateMutexStatic(
+      &report_sink_mutex_storage_);
+}
+
 void KeyboardProbe::begin_sender_queue_and_task() {
   hid_queue_ = xQueueCreateStatic(
-      kHidQueueDepth, sizeof(StableKeyEvent), hid_queue_buffer_.data(),
+      kHidQueueDepth, sizeof(HidSenderEvent), hid_queue_buffer_.data(),
       &hid_queue_storage_);
   if (hid_queue_ == nullptr) {
     return;
@@ -291,15 +321,25 @@ void KeyboardProbe::begin_sender_queue_and_task() {
       &hid_sender_task_storage_);
 }
 
+bool KeyboardProbe::enqueue_hid_sender_event(
+    const HidSenderEvent& event) {
+  return hid_queue_ != nullptr &&
+         xQueueSend(hid_queue_, &event, 0) == pdTRUE;
+}
+
 void KeyboardProbe::hid_sender_entry(void* argument) {
   static_cast<KeyboardProbe*>(argument)->hid_sender_loop();
 }
 
 void KeyboardProbe::hid_sender_loop() {
-  StableKeyEvent event;
+  HidSenderEvent event;
   while (true) {
     if (xQueueReceive(hid_queue_, &event, portMAX_DELAY) == pdTRUE) {
-      emit_stable_key_event(event);
+      if (event.kind == HidSenderEventKind::complete_report) {
+        send_report(event.report);
+      } else {
+        emit_stable_key_event(event.stable_key);
+      }
     }
   }
 }

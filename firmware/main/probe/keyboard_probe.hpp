@@ -13,6 +13,7 @@
 #include "esp_hidd.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #endif
 
@@ -28,6 +29,17 @@ struct StableKeyEvent {
   uint8_t physical_key = 0;
   bool pressed = false;
   uint64_t stable_at_us = 0;
+};
+
+enum class HidSenderEventKind : uint8_t {
+  stable_key,
+  complete_report,
+};
+
+struct HidSenderEvent {
+  HidSenderEventKind kind = HidSenderEventKind::stable_key;
+  StableKeyEvent stable_key{};
+  HidReport report{};
 };
 
 struct HidRuntimeSummary {
@@ -85,6 +97,8 @@ class KeyboardProbe {
   static void hid_sender_entry(void* argument);
   void hid_sender_loop();
   void begin_sender_queue_and_task();
+  void initialize_report_sink_mutex();
+  bool enqueue_hid_sender_event(const HidSenderEvent& event);
 #endif
   void send_report_for_usages(std::span<const uint8_t> usages);
   void release_state();
@@ -105,10 +119,13 @@ class KeyboardProbe {
   mutable portMUX_TYPE hid_metrics_lock_ = portMUX_INITIALIZER_UNLOCKED;
   QueueHandle_t hid_queue_ = nullptr;
   StaticQueue_t hid_queue_storage_{};
-  std::array<uint8_t, sizeof(StableKeyEvent) * kHidQueueDepth> hid_queue_buffer_{};
+  std::array<uint8_t, sizeof(HidSenderEvent) * kHidQueueDepth>
+      hid_queue_buffer_{};
   StaticTask_t hid_sender_task_storage_{};
   std::array<StackType_t, kHidSenderTaskStackBytes> hid_sender_stack_{};
   TaskHandle_t hid_sender_task_ = nullptr;
+  StaticSemaphore_t report_sink_mutex_storage_{};
+  SemaphoreHandle_t report_sink_mutex_ = nullptr;
   uint32_t hid_queue_overflow_count_ = 0;
 #endif
 };

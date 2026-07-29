@@ -574,7 +574,7 @@ OnboardingContent OnboardingController::content(
       add(std::string("IP:") + std::string(ipv4) + " PIN:" +
           std::string(pairing_code));
       add("MAC: ./install.sh install");
-      add("WIN: RUN 1.3.3 SETUP.EXE");
+      add("WIN: RUN 1.3.4 SETUP.EXE");
       add("WAITING HEARTBEAT...");
       break;
     case OnboardingStep::complete_guide:

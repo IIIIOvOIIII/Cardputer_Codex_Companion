@@ -3,7 +3,7 @@
 #include "product/product_types.hpp"
 
 int main() {
-  static_assert(kProductVersion == "1.3.3l");
-  assert(kProductVersion == "1.3.3l");
+  static_assert(kProductVersion == "1.3.4l");
+  assert(kProductVersion == "1.3.4l");
   return 0;
 }
