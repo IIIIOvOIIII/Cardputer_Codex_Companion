@@ -56,12 +56,13 @@ def test_complete_reports_are_dispatched_by_the_hid_sender_task_on_esp():
     assert "send_report(event.report)" in sender_loop_body
 
 
-def test_g0_dual_action_uses_macro_task_and_preserves_microphone_fallback():
+def test_g0_dual_action_uses_serialized_dedicated_task_and_mic_fallback():
     source = PRODUCT_CONTROLLER_CPP.read_text(encoding="utf-8")
     compact = "".join(source.split())
 
-    assert "enumclassMacroInvocationKind:uint8_t" in compact
-    assert "g0_dual_action" in source
+    assert "voidg0_task(void*)" in compact
+    assert 'g0_task,"product-g0"' in compact
+    assert "SemaphoreLockexecution_lock(g_macro_execution_mutex);" in compact
     assert "G0DispatchResultenqueue_g0_short_press()" in compact
     assert "execute_g0_dual_action(settings,sink)" in compact
     assert "g_device_settings_mutex" in source
@@ -72,7 +73,7 @@ def test_g0_dual_action_uses_macro_task_and_preserves_microphone_fallback():
     )
     enqueue_end = source.index("\n}", enqueue_start)
     enqueue_body = source[enqueue_start:enqueue_end]
-    assert "xQueueSend(g_macro_queue" in enqueue_body
+    assert "xQueueSend(g_g0_queue" in enqueue_body
     assert "enqueue_microphone_event(" in enqueue_body
     assert "MicrophoneRuntimeEvent::g0_click" in enqueue_body
     assert "true" in enqueue_body
