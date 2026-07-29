@@ -36,7 +36,8 @@ bool valid(const DeviceSettings& settings) {
   return settings.schema_version == 1 &&
          settings.brightness <= Brightness::percent_100 &&
          settings.return_to_pet <= ReturnToPet::seconds_60 &&
-         settings.pet_frame_rate <= PetFrameRate::fps_3;
+         settings.pet_frame_rate <= PetFrameRate::fps_3 &&
+         device_g0_chord_is_valid(settings);
 }
 }  // namespace
 
@@ -55,6 +56,16 @@ uint32_t device_pet_frame_interval_ms(const DeviceSettings& settings) {
   return values[static_cast<std::size_t>(settings.pet_frame_rate)];
 }
 
+bool device_g0_chord_is_valid(const DeviceSettings& settings) {
+  const bool usage_valid =
+      settings.g0_chord_usage == 0 ||
+      (settings.g0_chord_usage >= kG0ChordUsageMinimum &&
+       settings.g0_chord_usage <= kG0ChordUsageMaximum);
+  return settings.g0_chord_modifiers <= kG0ChordModifierMask &&
+         usage_valid &&
+         (!settings.g0_chord_enabled || settings.g0_chord_usage != 0);
+}
+
 DeviceSettingsRecord encode_device_settings(
     const DeviceSettings& settings
 ) {
@@ -65,6 +76,10 @@ DeviceSettingsRecord encode_device_settings(
   record[3] = static_cast<uint8_t>(settings.brightness);
   record[4] = static_cast<uint8_t>(settings.return_to_pet);
   record[5] = static_cast<uint8_t>(settings.pet_frame_rate);
+  record[6] = settings.g0_chord_usage;
+  record[7] = static_cast<uint8_t>(
+      settings.g0_chord_modifiers |
+      (settings.g0_chord_enabled ? kG0ChordEnabledMask : 0));
   put_u32(record.data() + 8, crc32(std::span(record).first(8)));
   return record;
 }
@@ -78,11 +93,20 @@ bool decode_device_settings(
       get_u32(record.data() + 8) != crc32(record.first(8))) {
     return false;
   }
+  constexpr uint8_t kReservedMask =
+      static_cast<uint8_t>(~(kG0ChordEnabledMask |
+                             kG0ChordModifierMask));
+  if ((record[7] & kReservedMask) != 0) return false;
   DeviceSettings candidate{
       .schema_version = record[2],
       .brightness = static_cast<Brightness>(record[3]),
       .return_to_pet = static_cast<ReturnToPet>(record[4]),
       .pet_frame_rate = static_cast<PetFrameRate>(record[5]),
+      .g0_chord_enabled =
+          (record[7] & kG0ChordEnabledMask) != 0,
+      .g0_chord_modifiers =
+          static_cast<uint8_t>(record[7] & kG0ChordModifierMask),
+      .g0_chord_usage = record[6],
   };
   if (!valid(candidate)) return false;
   *output = candidate;
@@ -109,4 +133,3 @@ DeviceSettingsResult DeviceSettingsStore::apply(
   current_ = settings;
   return DeviceSettingsResult::ok;
 }
-

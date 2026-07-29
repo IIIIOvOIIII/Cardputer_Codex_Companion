@@ -31,10 +31,17 @@ struct DeviceSettings {
   Brightness brightness = Brightness::percent_75;
   ReturnToPet return_to_pet = ReturnToPet::seconds_30;
   PetFrameRate pet_frame_rate = PetFrameRate::fps_2_5;
+  bool g0_chord_enabled = false;
+  uint8_t g0_chord_modifiers = 0;
+  uint8_t g0_chord_usage = 0;
 
   bool operator==(const DeviceSettings&) const = default;
 };
 
+inline constexpr uint8_t kG0ChordEnabledMask = 0x80;
+inline constexpr uint8_t kG0ChordModifierMask = 0x0f;
+inline constexpr uint8_t kG0ChordUsageMinimum = 0x04;
+inline constexpr uint8_t kG0ChordUsageMaximum = 0x65;
 inline constexpr std::size_t kDeviceSettingsRecordBytes = 12;
 inline constexpr std::string_view kDeviceSettingsStorageKey = "display_cfg";
 static_assert(kDeviceSettingsStorageKey.size() <= 15);
@@ -44,6 +51,7 @@ using DeviceSettingsRecord =
 uint8_t device_brightness(const DeviceSettings& settings);
 uint32_t device_return_timeout_ms(const DeviceSettings& settings);
 uint32_t device_pet_frame_interval_ms(const DeviceSettings& settings);
+bool device_g0_chord_is_valid(const DeviceSettings& settings);
 DeviceSettingsRecord encode_device_settings(const DeviceSettings& settings);
 bool decode_device_settings(
     std::span<const uint8_t> record,
