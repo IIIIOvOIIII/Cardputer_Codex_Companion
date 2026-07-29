@@ -58,6 +58,7 @@ void ProductController::start() {
 #include "product/display.hpp"
 #include "product/display_policy.hpp"
 #include "product/device_settings.hpp"
+#include "product/g0_dual_action.hpp"
 #include "product/hil_serial_control.hpp"
 #include "product/input_router.hpp"
 #include "product/keyboard_matrix.hpp"
@@ -82,9 +83,17 @@ constexpr std::size_t kMicrophoneQueueDepth = 8;
 constexpr char kSettingsNvsNamespace[] = "product";
 constexpr UBaseType_t kAudioTaskPriority = tskIDLE_PRIORITY + 6;
 
+enum class MacroInvocationKind : uint8_t {
+  profile_key,
+  g0_dual_action,
+};
+
 struct MacroInvocation {
+  MacroInvocationKind kind = MacroInvocationKind::profile_key;
   uint8_t layer = 0;
   uint8_t physical_key = 0;
+  uint8_t modifiers = 0;
+  uint8_t usage = 0;
 };
 
 struct SettingsInvocation {
@@ -166,6 +175,8 @@ StaticSemaphore_t g_input_mutex_storage{};
 SemaphoreHandle_t g_input_mutex = nullptr;
 StaticSemaphore_t g_companion_mutex_storage{};
 SemaphoreHandle_t g_companion_mutex = nullptr;
+StaticSemaphore_t g_device_settings_mutex_storage{};
+SemaphoreHandle_t g_device_settings_mutex = nullptr;
 StaticQueue_t g_macro_queue_storage{};
 std::array<uint8_t, kMacroQueueDepth * sizeof(MacroInvocation)>
     g_macro_queue_buffer{};
@@ -228,6 +239,30 @@ class SemaphoreLock {
   SemaphoreHandle_t mutex_ = nullptr;
   bool locked_ = false;
 };
+
+DeviceSettings snapshot_device_settings() {
+  SemaphoreLock lock(g_device_settings_mutex);
+  return lock.locked() ? g_device_settings_store.current()
+                       : DeviceSettings{};
+}
+
+DeviceSettingsLoadResult load_device_settings() {
+  SemaphoreLock lock(g_device_settings_mutex);
+  return lock.locked() ? g_device_settings_store.load()
+                       : DeviceSettingsLoadResult::defaults;
+}
+
+DeviceSettingsResult commit_device_settings(
+    const DeviceSettings& candidate) {
+  SemaphoreLock lock(g_device_settings_mutex);
+  return lock.locked()
+             ? g_device_settings_store.apply(candidate)
+             : DeviceSettingsResult::storage_error;
+}
+
+void enqueue_microphone_event(
+    MicrophoneRuntimeEvent event,
+    bool privacy_critical = false);
 
 void allocation_failed(size_t, uint32_t, const char*) {
   uint32_t current = g_allocation_failures.load();
@@ -642,10 +677,41 @@ class ProductMacroSink final : public MacroSink {
 ProductMacroSink g_macro_sink;
 MacroEngine g_macro_engine(g_macro_sink);
 
+class ProductG0DualActionSink final : public G0DualActionSink {
+ public:
+  bool execute_chord(uint8_t modifiers, uint8_t usage) override {
+    KeyAction action{
+        .kind = ActionKind::hid_chord,
+        .modifiers = modifiers,
+        .usage_count = 1,
+    };
+    action.usages[0] = usage;
+    return g_macro_engine.execute(action) == MacroResult::ok;
+  }
+
+  void toggle_microphone() override {
+    enqueue_microphone_event(
+        MicrophoneRuntimeEvent::g0_click, true);
+  }
+};
+
 void macro_task(void*) {
   MacroInvocation invocation;
   while (true) {
     if (xQueueReceive(g_macro_queue, &invocation, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+    if (invocation.kind == MacroInvocationKind::g0_dual_action) {
+      DeviceSettings settings{
+          .g0_chord_enabled = true,
+          .g0_chord_modifiers = invocation.modifiers,
+          .g0_chord_usage = invocation.usage,
+      };
+      ProductG0DualActionSink sink;
+      const G0DualActionResult result =
+          execute_g0_dual_action(settings, sink);
+      ESP_LOGI(kTag, "g0 dual action completed result=%u",
+               static_cast<unsigned>(result));
       continue;
     }
     KeyAction action;
@@ -728,7 +794,7 @@ void process_settings_command(const SettingsInvocation& invocation) {
     }
     case SettingsCommandKind::apply_display_settings: {
       const DeviceSettingsResult apply_result =
-          g_device_settings_store.apply(invocation.device_settings);
+          commit_device_settings(invocation.device_settings);
       success = apply_result == DeviceSettingsResult::ok;
       if (success) {
         apply_runtime_settings(invocation.device_settings);
@@ -949,7 +1015,7 @@ void keyboard_event(const MatrixKeyEvent& event) {
 }
 
 void enqueue_microphone_event(MicrophoneRuntimeEvent event,
-                              bool privacy_critical = false) {
+                              bool privacy_critical) {
   if (g_microphone_queue == nullptr) return;
   if (xQueueSend(g_microphone_queue, &event, 0) == pdTRUE) return;
   if (privacy_critical) {
@@ -961,6 +1027,31 @@ void enqueue_microphone_event(MicrophoneRuntimeEvent event,
   }
   ESP_LOGW(kTag, "microphone event queue full event=%u",
            static_cast<unsigned>(event));
+}
+
+void enqueue_g0_short_press() {
+  const DeviceSettings settings = snapshot_device_settings();
+  if (!settings.g0_chord_enabled) {
+    ESP_LOGI(kTag, "g0 dual action disabled");
+    enqueue_microphone_event(
+        MicrophoneRuntimeEvent::g0_click, true);
+    return;
+  }
+
+  const MacroInvocation invocation{
+      .kind = MacroInvocationKind::g0_dual_action,
+      .modifiers = settings.g0_chord_modifiers,
+      .usage = settings.g0_chord_usage,
+  };
+  if (g_macro_queue != nullptr &&
+      xQueueSend(g_macro_queue, &invocation, 0) == pdTRUE) {
+    ESP_LOGI(kTag, "g0 dual action queued");
+    return;
+  }
+
+  ESP_LOGW(kTag, "g0 chord queue fallback");
+  enqueue_microphone_event(
+      MicrophoneRuntimeEvent::g0_click, true);
 }
 
 void poll_hil_serial_control() {
@@ -1313,11 +1404,13 @@ void ui_task(void*) {
               ? UINT32_MAX
               : static_cast<uint32_t>(std::min<uint64_t>(
                     UINT32_MAX, button_now_ms - g0_pressed_at_ms));
-      enqueue_microphone_event(
-          microphone_button_event(held_ms) ==
-                  MicrophoneButtonEvent::click
-              ? MicrophoneRuntimeEvent::g0_click
-              : MicrophoneRuntimeEvent::g0_ignored);
+      if (microphone_button_event(held_ms) ==
+          MicrophoneButtonEvent::click) {
+        enqueue_g0_short_press();
+      } else {
+        enqueue_microphone_event(
+            MicrophoneRuntimeEvent::g0_ignored);
+      }
       g0_pressed_at_ms = 0;
     }
 
@@ -1503,7 +1596,7 @@ class EspProductStartup final : public ProductStartupBackend {
   bool display() override {
     const bool ok = display_start(&g_ui) == ESP_OK;
     display_ready_ = ok;
-    if (ok) apply_runtime_settings(g_device_settings_store.current());
+    if (ok) apply_runtime_settings(snapshot_device_settings());
     return ok;
   }
 
@@ -1528,8 +1621,8 @@ class EspProductStartup final : public ProductStartupBackend {
         SemaphoreLock lock(g_input_mutex);
         if (lock.locked()) update_onboarding_ui_locked();
       }
-      g_device_settings_store.load();
-      const DeviceSettings settings = g_device_settings_store.current();
+      load_device_settings();
+      const DeviceSettings settings = snapshot_device_settings();
       g_settings.set_device_settings(settings);
       g_settings.set_input_mode(g_input_router.mode());
       g_storage_compatibility = inspect_storage_compatibility();
@@ -1783,8 +1876,11 @@ void product_runtime_start() {
   g_input_mutex = xSemaphoreCreateMutexStatic(&g_input_mutex_storage);
   g_companion_mutex =
       xSemaphoreCreateMutexStatic(&g_companion_mutex_storage);
+  g_device_settings_mutex = xSemaphoreCreateMutexStatic(
+      &g_device_settings_mutex_storage);
   if (g_ui_mutex == nullptr || g_input_mutex == nullptr ||
-      g_companion_mutex == nullptr) {
+      g_companion_mutex == nullptr ||
+      g_device_settings_mutex == nullptr) {
     ESP_LOGE(kTag, "runtime mutex initialization failed");
     return;
   }

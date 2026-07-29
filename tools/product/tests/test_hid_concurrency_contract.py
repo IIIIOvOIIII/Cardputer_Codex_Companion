@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 KEYBOARD_PROBE_HPP = ROOT / "firmware/main/probe/keyboard_probe.hpp"
 KEYBOARD_PROBE_CPP = ROOT / "firmware/main/probe/keyboard_probe.cpp"
+PRODUCT_CONTROLLER_CPP = ROOT / "firmware/main/product/product_controller.cpp"
 
 
 def test_keyboard_complete_reports_are_serialized_on_esp():
@@ -53,3 +54,27 @@ def test_complete_reports_are_dispatched_by_the_hid_sender_task_on_esp():
     assert "HidSenderEvent event" in sender_loop_body
     assert "HidSenderEventKind::complete_report" in sender_loop_body
     assert "send_report(event.report)" in sender_loop_body
+
+
+def test_g0_dual_action_uses_macro_task_and_preserves_microphone_fallback():
+    source = PRODUCT_CONTROLLER_CPP.read_text(encoding="utf-8")
+    compact = "".join(source.split())
+
+    assert "enumclassMacroInvocationKind:uint8_t" in compact
+    assert "g0_dual_action" in source
+    assert "voidenqueue_g0_short_press()" in compact
+    assert "execute_g0_dual_action(settings,sink)" in compact
+    assert "g_device_settings_mutex" in source
+    assert "DeviceSettingssnapshot_device_settings()" in compact
+
+    enqueue_start = source.index("void enqueue_g0_short_press()")
+    enqueue_end = source.index("\n}", enqueue_start)
+    enqueue_body = source[enqueue_start:enqueue_end]
+    assert "xQueueSend(g_macro_queue" in enqueue_body
+    assert "enqueue_microphone_event(" in enqueue_body
+    assert "MicrophoneRuntimeEvent::g0_click" in enqueue_body
+    assert "true" in enqueue_body
+
+    ui_start = source.index("void ui_task(")
+    ui_body = source[ui_start:]
+    assert "enqueue_g0_short_press();" in ui_body

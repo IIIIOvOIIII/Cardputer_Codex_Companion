@@ -20,3 +20,10 @@
 - Expected result: Old 12-byte settings records decode with G0 disabled; valid enabled/retained chords round-trip; invalid masks/usages and failed commits cannot alter active settings.
 - Result: Achieved. The focused test was observed failing on the missing fields, then passed in normal and ASan/UBSan builds. Bytes 6/7 now carry usage and enabled/modifier flags under the existing CRC while schema version and record length remain unchanged.
 - Next step: Add the deterministic macro-task G0 dual-action executor and queue fallback.
+
+## 2026-07-29 23:00 HKT
+
+- Current work: Route an enabled G0 short press through the macro task while preserving the privacy-critical Mic fallback.
+- Expected result: Disabled G0 toggles only Mic; enabled G0 executes the HID chord before Mic; failed chord or full macro queue still toggles Mic exactly once; long press remains ignored.
+- Result: Achieved. RED tests first failed on the missing executor and controller dispatch contract. The new typed macro invocation snapshots the stored chord, executes it through `MacroEngine` and the dedicated keyboard-HID path, then enqueues the Mic click; queue failure falls back directly. Normal and ASan/UBSan host suites pass 42/42 and the HID concurrency contract passes 3/3.
+- Next step: Add the paired GET/PUT G0 Settings API and controller callbacks.
