@@ -18,3 +18,10 @@
 - Expected result: Normal and sanitizer host suites pass, both firmware variants report the intended versions, the public Factory image contains no Wi-Fi credentials, and artifacts are reproducible from the current source tree.
 - Result: Achieved for the firmware scope. Normal and sanitizer host suites each passed 41/41; focused firmware/product tests passed 28/28; both firmware builds completed; the public-image and Launcher validators passed. SHA-256: Factory `741eb40b6cd8590c7d6cb87b78d8d8a8ce0eebeb0bc8da548803312205db8249`, app `a06be349293a5ec1dc56c57f8348d777bb063c2ad72629e60c5e82830a9d7710`, Launcher `302ed51b5cc3e571e8c03852e90108db99d5a8cdda8cdcf59bc08a04833546a4`. The broader product test collection passed 204 tests; its three release-packaging checks remain intentionally outside this firmware-only staging change because the public manifest and Windows packages still identify the published 1.3.3 release.
 - Next step: Commit and push the firmware-only 1.3.4 fix without changing the published 1.3.3 release manifest.
+
+## 2026-07-29 22:22 HKT
+
+- Current work: Close the firmware-only mapped-key reboot repair.
+- Expected result: The reviewed source and tests are committed and pushed while the published 1.3.3 release manifest remains unchanged.
+- Result: Achieved. Commit `938e093` was pushed to `origin/main` using the repository-authorized SSH identity. The attached Cardputer remains on the verified 1.3.4l Launcher build.
+- Next step: Publish a unified 1.3.4 public release only under a separate explicit release approval.
