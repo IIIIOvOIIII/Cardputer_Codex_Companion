@@ -15,7 +15,7 @@ RELEASE_MANIFEST = ROOT / "release/product-release.json"
 VERSION = "1.3.5"
 FACTORY_ASSET = "Cardputer-Codex-Companion-1.3.5-factory.bin"
 FACTORY_SHA256 = (
-    "e42fbdaa9e6eb626be6c2814ddb3b52d0f3b0c87bc639142ed77cefa46176ca2"
+    "c979f64541b94e4962d60111a5da514bc21ea2c11a334f4c2f2a79d66e394ebb"
 )
 
 
