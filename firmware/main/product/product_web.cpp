@@ -59,6 +59,8 @@ std::array<int, 3> g_tls_session_fds{-1, -1, -1};
 ProductCompanionSnapshotHandler g_snapshot_handler = nullptr;
 ProductCompanionHeartbeatHandler g_heartbeat_handler = nullptr;
 ProductOnboardingRestartHandler g_onboarding_restart_handler = nullptr;
+ProductG0ChordGetHandler g_g0_chord_get_handler = nullptr;
+ProductG0ChordApplyHandler g_g0_chord_apply_handler = nullptr;
 PetStore* g_pet_store = nullptr;
 ProfileCatalogStore* g_profile_catalog = nullptr;
 PinRotationState g_pin_rotation;
@@ -794,6 +796,90 @@ esp_err_t pin_handler(httpd_req_t* request) {
                              "400 Bad Request");
 }
 
+esp_err_t get_g0_chord_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
+  if (g_g0_chord_get_handler == nullptr) {
+    return json_response(
+        request, "{\"error\":\"settings_unavailable\"}",
+        "503 Service Unavailable");
+  }
+  const std::string json =
+      product_web_g0_chord_json(g_g0_chord_get_handler());
+  return json_response(request, json.c_str());
+}
+
+esp_err_t put_g0_chord_handler(httpd_req_t* request) {
+  if (!authorized(request)) return reject_pairing(request);
+  if (!normal_configuration_available(request)) return ESP_OK;
+  if (g_g0_chord_apply_handler == nullptr) {
+    return json_response(
+        request, "{\"error\":\"settings_unavailable\"}",
+        "503 Service Unavailable");
+  }
+
+  const std::string body = read_body(request);
+  cJSON* root =
+      body.empty() ? nullptr
+                   : cJSON_ParseWithLength(body.data(), body.size());
+  const cJSON* enabled =
+      root == nullptr ? nullptr
+                      : cJSON_GetObjectItemCaseSensitive(root, "enabled");
+  const cJSON* modifiers =
+      root == nullptr ? nullptr
+                      : cJSON_GetObjectItemCaseSensitive(root, "modifiers");
+  const cJSON* usages =
+      root == nullptr ? nullptr
+                      : cJSON_GetObjectItemCaseSensitive(root, "usages");
+  ProductWebG0ChordSettings settings;
+  bool valid =
+      cJSON_IsBool(enabled) &&
+      cJSON_IsNumber(modifiers) &&
+      modifiers->valuedouble == modifiers->valueint &&
+      cJSON_IsArray(usages) &&
+      cJSON_GetArraySize(usages) <= 1;
+  if (valid) {
+    settings.enabled = cJSON_IsTrue(enabled);
+    settings.modifiers = static_cast<uint8_t>(modifiers->valueint);
+    if (cJSON_GetArraySize(usages) == 1) {
+      const cJSON* usage = cJSON_GetArrayItem(usages, 0);
+      valid =
+          cJSON_IsNumber(usage) &&
+          usage->valuedouble == usage->valueint &&
+          usage->valueint >= 0 &&
+          usage->valueint <= UINT8_MAX;
+      if (valid) {
+        settings.usage = static_cast<uint8_t>(usage->valueint);
+      }
+    }
+  }
+  valid = valid && modifiers->valueint >= 0 &&
+          modifiers->valueint <= UINT8_MAX &&
+          product_web_g0_chord_is_valid(settings);
+  cJSON_Delete(root);
+  if (!valid) {
+    return json_response(
+        request, "{\"error\":\"invalid_request\"}",
+        "400 Bad Request");
+  }
+
+  const DeviceSettingsResult result =
+      g_g0_chord_apply_handler(settings);
+  if (result == DeviceSettingsResult::ok) {
+    return json_response(request, "{\"saved\":true}");
+  }
+  const std::string_view error = product_web_g0_chord_error(result);
+  char json[64]{};
+  std::snprintf(
+      json, sizeof(json), "{\"error\":\"%.*s\"}",
+      static_cast<int>(error.size()), error.data());
+  return json_response(
+      request, json,
+      result == DeviceSettingsResult::invalid
+          ? "400 Bad Request"
+          : "500 Internal Server Error");
+}
+
 esp_err_t restart_setup_handler(httpd_req_t* request) {
   if (!authorized(request)) return reject_pairing(request);
   const std::string body = read_body(request);
@@ -1082,7 +1168,7 @@ esp_err_t product_web_start() {
   config.prvtkey_len = identity.private_key_length;
   result = httpd_ssl_start(&g_server, &config);
   if (result != ESP_OK) return result;
-  const std::array<httpd_uri_t, 18> routes{{
+  const std::array<httpd_uri_t, 20> routes{{
       {.uri = "/", .method = HTTP_GET, .handler = root_handler},
       {.uri = "/api/v1/setup", .method = HTTP_GET,
        .handler = setup_handler},
@@ -1101,6 +1187,10 @@ esp_err_t product_web_start() {
        .handler = activate_profile_handler},
       {.uri = "/api/v1/wifi", .method = HTTP_POST, .handler = wifi_handler},
       {.uri = "/api/v1/pin", .method = HTTP_POST, .handler = pin_handler},
+      {.uri = "/api/v1/settings/g0-chord", .method = HTTP_GET,
+       .handler = get_g0_chord_handler},
+      {.uri = "/api/v1/settings/g0-chord", .method = HTTP_PUT,
+       .handler = put_g0_chord_handler},
       {.uri = "/api/v1/setup/restart", .method = HTTP_POST,
        .handler = restart_setup_handler},
       {.uri = "/api/v1/companion/status", .method = HTTP_POST,
@@ -1174,6 +1264,13 @@ void product_web_set_companion_heartbeat_handler(
 void product_web_set_onboarding_restart_handler(
     ProductOnboardingRestartHandler handler) {
   g_onboarding_restart_handler = handler;
+}
+
+void product_web_set_g0_chord_handlers(
+    ProductG0ChordGetHandler getter,
+    ProductG0ChordApplyHandler apply) {
+  g_g0_chord_get_handler = getter;
+  g_g0_chord_apply_handler = apply;
 }
 
 void product_web_set_pet_store(PetStore* store) {

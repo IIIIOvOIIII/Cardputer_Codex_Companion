@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "product/device_settings.hpp"
 #include "product/profile.hpp"
 #include "product/profile_catalog.hpp"
 #include "product/onboarding.hpp"
@@ -222,13 +223,63 @@ inline std::string product_web_setup_json(OnboardingStep step) {
   return json;
 }
 
+struct ProductWebG0ChordSettings {
+  bool enabled = false;
+  uint8_t modifiers = 0;
+  uint8_t usage = 0;
+
+  bool operator==(const ProductWebG0ChordSettings&) const = default;
+};
+
+constexpr bool product_web_g0_chord_is_valid(
+    const ProductWebG0ChordSettings& settings) {
+  const bool usage_valid =
+      settings.usage == 0 ||
+      (settings.usage >= kG0ChordUsageMinimum &&
+       settings.usage <= kG0ChordUsageMaximum);
+  return settings.modifiers <= kG0ChordModifierMask &&
+         usage_valid &&
+         (!settings.enabled || settings.usage != 0);
+}
+
+inline std::string product_web_g0_chord_json(
+    const ProductWebG0ChordSettings& settings) {
+  char json[96]{};
+  if (settings.usage == 0) {
+    std::snprintf(
+        json, sizeof(json),
+        "{\"enabled\":%s,\"modifiers\":%u,\"usages\":[]}",
+        settings.enabled ? "true" : "false",
+        static_cast<unsigned>(settings.modifiers));
+  } else {
+    std::snprintf(
+        json, sizeof(json),
+        "{\"enabled\":%s,\"modifiers\":%u,\"usages\":[%u]}",
+        settings.enabled ? "true" : "false",
+        static_cast<unsigned>(settings.modifiers),
+        static_cast<unsigned>(settings.usage));
+  }
+  return json;
+}
+
+constexpr std::string_view product_web_g0_chord_error(
+    DeviceSettingsResult result) {
+  switch (result) {
+    case DeviceSettingsResult::ok: return "";
+    case DeviceSettingsResult::invalid: return "invalid_request";
+    case DeviceSettingsResult::storage_error:
+      return "settings_save_failed";
+  }
+  return "settings_save_failed";
+}
+
 struct ProductWebRoute {
   ProductHttpMethod method;
   std::string_view path;
   bool requires_pairing;
 };
 
-inline constexpr std::array<ProductWebRoute, 18> kProductWebRoutes{{
+inline constexpr std::array<ProductWebRoute, 20> kProductWebRoutes{{
     {ProductHttpMethod::get, "/", false},
     {ProductHttpMethod::get, "/api/v1/setup", false},
     {ProductHttpMethod::get, "/api/v1/status", true},
@@ -240,6 +291,8 @@ inline constexpr std::array<ProductWebRoute, 18> kProductWebRoutes{{
     {ProductHttpMethod::post, "/api/v1/profile/activate", true},
     {ProductHttpMethod::post, "/api/v1/wifi", true},
     {ProductHttpMethod::post, "/api/v1/pin", true},
+    {ProductHttpMethod::get, "/api/v1/settings/g0-chord", true},
+    {ProductHttpMethod::put, "/api/v1/settings/g0-chord", true},
     {ProductHttpMethod::post, "/api/v1/setup/restart", true},
     {ProductHttpMethod::post, "/api/v1/companion/status", true},
     {ProductHttpMethod::get, "/api/v1/companion/action", true},
@@ -255,6 +308,9 @@ inline constexpr std::array<ProductWebRoute, 18> kProductWebRoutes{{
 using ProductCompanionSnapshotHandler = void (*)(std::string_view json);
 using ProductCompanionHeartbeatHandler = void (*)();
 using ProductOnboardingRestartHandler = bool (*)();
+using ProductG0ChordGetHandler = ProductWebG0ChordSettings (*)();
+using ProductG0ChordApplyHandler =
+    DeviceSettingsResult (*)(ProductWebG0ChordSettings);
 
 esp_err_t product_web_start();
 bool product_web_tls_resource_window_active();
@@ -271,6 +327,9 @@ void product_web_set_companion_heartbeat_handler(
     ProductCompanionHeartbeatHandler handler);
 void product_web_set_onboarding_restart_handler(
     ProductOnboardingRestartHandler handler);
+void product_web_set_g0_chord_handlers(
+    ProductG0ChordGetHandler getter,
+    ProductG0ChordApplyHandler apply);
 void product_web_set_pet_store(PetStore* store);
 void product_web_set_profile_catalog(ProfileCatalogStore* catalog);
 esp_err_t product_web_prepare_profile_catalog(ProfileCatalogStore* catalog);

@@ -27,3 +27,10 @@
 - Expected result: Disabled G0 toggles only Mic; enabled G0 executes the HID chord before Mic; failed chord or full macro queue still toggles Mic exactly once; long press remains ignored.
 - Result: Achieved. RED tests first failed on the missing executor and controller dispatch contract. The new typed macro invocation snapshots the stored chord, executes it through `MacroEngine` and the dedicated keyboard-HID path, then enqueues the Mic click; queue failure falls back directly. Normal and ASan/UBSan host suites pass 42/42 and the HID concurrency contract passes 3/3.
 - Next step: Add the paired GET/PUT G0 Settings API and controller callbacks.
+
+## 2026-07-29 23:02 HKT
+
+- Current work: Add authenticated G0 chord GET/PUT endpoints without creating a second persistence owner.
+- Expected result: Both routes require the device PIN, validate the single-key chord schema, distinguish invalid input from NVS failure, and apply only through controller callbacks.
+- Result: Achieved. RED host/API-contract tests failed on missing types and handlers, then passed after adding the 20-route contract, bounded cJSON validation, controller getter/apply callbacks, and the dedicated settings mutex. Normal and ASan/UBSan host suites pass 42/42, API contracts pass 4/4, and a real ESP-IDF 5.5.4 target build completed with app version 1.3.4.
+- Next step: Add the G0 dual-action card to Web Settings and regenerate embedded assets.

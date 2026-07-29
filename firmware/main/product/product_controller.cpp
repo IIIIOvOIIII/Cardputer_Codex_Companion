@@ -260,6 +260,27 @@ DeviceSettingsResult commit_device_settings(
              : DeviceSettingsResult::storage_error;
 }
 
+ProductWebG0ChordSettings web_g0_chord_settings() {
+  const DeviceSettings settings = snapshot_device_settings();
+  return {
+      .enabled = settings.g0_chord_enabled,
+      .modifiers = settings.g0_chord_modifiers,
+      .usage = settings.g0_chord_usage,
+  };
+}
+
+DeviceSettingsResult apply_web_g0_chord_settings(
+    ProductWebG0ChordSettings settings) {
+  if (!product_web_g0_chord_is_valid(settings)) {
+    return DeviceSettingsResult::invalid;
+  }
+  DeviceSettings candidate = snapshot_device_settings();
+  candidate.g0_chord_enabled = settings.enabled;
+  candidate.g0_chord_modifiers = settings.modifiers;
+  candidate.g0_chord_usage = settings.usage;
+  return commit_device_settings(candidate);
+}
+
 void enqueue_microphone_event(
     MicrophoneRuntimeEvent event,
     bool privacy_critical = false);
@@ -680,11 +701,10 @@ MacroEngine g_macro_engine(g_macro_sink);
 class ProductG0DualActionSink final : public G0DualActionSink {
  public:
   bool execute_chord(uint8_t modifiers, uint8_t usage) override {
-    KeyAction action{
-        .kind = ActionKind::hid_chord,
-        .modifiers = modifiers,
-        .usage_count = 1,
-    };
+    KeyAction action;
+    action.kind = ActionKind::hid_chord;
+    action.modifiers = modifiers;
+    action.usage_count = 1;
     action.usages[0] = usage;
     return g_macro_engine.execute(action) == MacroResult::ok;
   }
@@ -1811,6 +1831,8 @@ class EspProductStartup final : public ProductStartupBackend {
     product_web_set_companion_snapshot_handler(companion_snapshot);
     product_web_set_companion_heartbeat_handler(companion_heartbeat);
     product_web_set_onboarding_restart_handler(restart_onboarding_from_web);
+    product_web_set_g0_chord_handlers(
+        web_g0_chord_settings, apply_web_g0_chord_settings);
     ESP_LOGI(kTag, "heap before HTTPS: free=%u largest=%u",
              static_cast<unsigned>(
                  heap_caps_get_free_size(MALLOC_CAP_8BIT)),

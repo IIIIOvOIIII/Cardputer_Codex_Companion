@@ -110,7 +110,41 @@ int main() {
   assert(product_web_configuration_available(OnboardingStep::complete));
   assert(product_web_restart_confirmation_valid("RUN_SETUP_AGAIN"));
   assert(!product_web_restart_confirmation_valid("yes"));
-  assert(kProductWebRoutes.size() == 18);
+  const ProductWebG0ChordSettings default_g0;
+  assert(product_web_g0_chord_is_valid(default_g0));
+  assert(product_web_g0_chord_json(default_g0) ==
+         "{\"enabled\":false,\"modifiers\":0,\"usages\":[]}");
+  const ProductWebG0ChordSettings alt_v{
+      .enabled = true,
+      .modifiers = 4,
+      .usage = 25,
+  };
+  assert(product_web_g0_chord_is_valid(alt_v));
+  assert(product_web_g0_chord_json(alt_v) ==
+         "{\"enabled\":true,\"modifiers\":4,\"usages\":[25]}");
+  ProductWebG0ChordSettings invalid_g0 = alt_v;
+  invalid_g0.modifiers = 16;
+  assert(!product_web_g0_chord_is_valid(invalid_g0));
+  invalid_g0 = alt_v;
+  invalid_g0.usage = 3;
+  assert(!product_web_g0_chord_is_valid(invalid_g0));
+  invalid_g0.usage = 102;
+  assert(!product_web_g0_chord_is_valid(invalid_g0));
+  invalid_g0 = default_g0;
+  invalid_g0.enabled = true;
+  assert(!product_web_g0_chord_is_valid(invalid_g0));
+  const ProductWebG0ChordSettings retained{
+      .enabled = false,
+      .modifiers = 4,
+      .usage = 25,
+  };
+  assert(product_web_g0_chord_is_valid(retained));
+  assert(product_web_g0_chord_error(DeviceSettingsResult::ok).empty());
+  assert(product_web_g0_chord_error(DeviceSettingsResult::invalid) ==
+         "invalid_request");
+  assert(product_web_g0_chord_error(DeviceSettingsResult::storage_error) ==
+         "settings_save_failed");
+  assert(kProductWebRoutes.size() == 20);
   assert(kProductWebRoutes[0].path == "/");
   assert(kProductWebRoutes[1].path == "/api/v1/setup");
   assert(kProductWebRoutes[2].path == "/api/v1/status");
@@ -120,13 +154,17 @@ int main() {
   assert(kProductWebRoutes[8].path == "/api/v1/profile/activate");
   assert(kProductWebRoutes[9].path == "/api/v1/wifi");
   assert(kProductWebRoutes[10].path == "/api/v1/pin");
-  assert(kProductWebRoutes[11].path == "/api/v1/setup/restart");
-  assert(kProductWebRoutes[12].path == "/api/v1/companion/status");
-  assert(kProductWebRoutes[13].path == "/api/v1/companion/action");
-  assert(kProductWebRoutes[14].path == "/api/v1/companion/pet/begin");
-  assert(kProductWebRoutes[15].path == "/api/v1/companion/pet/chunk");
-  assert(kProductWebRoutes[16].path == "/api/v1/companion/pet/commit");
-  assert(kProductWebRoutes[17].path == "/api/v1/companion/pet");
+  assert(kProductWebRoutes[11].path == "/api/v1/settings/g0-chord");
+  assert(kProductWebRoutes[11].method == ProductHttpMethod::get);
+  assert(kProductWebRoutes[12].path == "/api/v1/settings/g0-chord");
+  assert(kProductWebRoutes[12].method == ProductHttpMethod::put);
+  assert(kProductWebRoutes[13].path == "/api/v1/setup/restart");
+  assert(kProductWebRoutes[14].path == "/api/v1/companion/status");
+  assert(kProductWebRoutes[15].path == "/api/v1/companion/action");
+  assert(kProductWebRoutes[16].path == "/api/v1/companion/pet/begin");
+  assert(kProductWebRoutes[17].path == "/api/v1/companion/pet/chunk");
+  assert(kProductWebRoutes[18].path == "/api/v1/companion/pet/commit");
+  assert(kProductWebRoutes[19].path == "/api/v1/companion/pet");
   assert(!kProductWebRoutes[0].requires_pairing);
   assert(!kProductWebRoutes[1].requires_pairing);
   assert(kProductWebRoutes[2].requires_pairing);
