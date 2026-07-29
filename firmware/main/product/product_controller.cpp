@@ -77,16 +77,13 @@ void ProductController::start() {
 namespace {
 constexpr char kTag[] = "cardputer-product";
 constexpr std::size_t kMacroQueueDepth = 16;
+constexpr std::size_t kG0QueueDepth = 8;
+constexpr std::size_t kG0TaskStackBytes = 3072;
 constexpr std::size_t kSettingsQueueDepth = 4;
 constexpr std::size_t kOnboardingQueueDepth = 2;
 constexpr std::size_t kMicrophoneQueueDepth = 8;
 constexpr char kSettingsNvsNamespace[] = "product";
 constexpr UBaseType_t kAudioTaskPriority = tskIDLE_PRIORITY + 6;
-
-enum class MacroInvocationKind : uint8_t {
-  profile_key,
-  g0_dual_action,
-};
 
 enum class G0DispatchResult : uint8_t {
   microphone_only,
@@ -95,9 +92,11 @@ enum class G0DispatchResult : uint8_t {
 };
 
 struct MacroInvocation {
-  MacroInvocationKind kind = MacroInvocationKind::profile_key;
   uint8_t layer = 0;
   uint8_t physical_key = 0;
+};
+
+struct G0Invocation {
   uint8_t modifiers = 0;
   uint8_t usage = 0;
 };
@@ -187,6 +186,12 @@ StaticQueue_t g_macro_queue_storage{};
 std::array<uint8_t, kMacroQueueDepth * sizeof(MacroInvocation)>
     g_macro_queue_buffer{};
 QueueHandle_t g_macro_queue = nullptr;
+StaticQueue_t g_g0_queue_storage{};
+std::array<uint8_t, kG0QueueDepth * sizeof(G0Invocation)>
+    g_g0_queue_buffer{};
+QueueHandle_t g_g0_queue = nullptr;
+StaticSemaphore_t g_macro_execution_mutex_storage{};
+SemaphoreHandle_t g_macro_execution_mutex = nullptr;
 StaticQueue_t g_settings_queue_storage{};
 std::array<uint8_t, kSettingsQueueDepth * sizeof(SettingsInvocation)>
     g_settings_queue_buffer{};
@@ -202,12 +207,15 @@ std::array<uint8_t,
 QueueHandle_t g_microphone_queue = nullptr;
 StaticTask_t g_macro_task_storage{};
 std::array<StackType_t, 1920> g_macro_task_stack{};
+StaticTask_t g_g0_task_storage{};
+std::array<StackType_t, kG0TaskStackBytes> g_g0_task_stack{};
 StaticTask_t g_ui_task_storage{};
 std::array<StackType_t, 4096> g_ui_task_stack{};
 StaticTask_t g_audio_task_storage{};
 std::array<StackType_t, 3584> g_audio_task_stack{};
 TaskHandle_t g_audio_task_handle = nullptr;
 TaskHandle_t g_macro_task_handle = nullptr;
+TaskHandle_t g_g0_task_handle = nullptr;
 TaskHandle_t g_ui_task_handle = nullptr;
 void* g_runtime_heap_reserve = nullptr;
 TaskHandle_t g_profile_catalog_task_handle = nullptr;
@@ -340,6 +348,8 @@ void emit_runtime_metrics(uint64_t now_us) {
       "\"high_water_free_bytes\":%u},"
       "{\"name\":\"macro\",\"configured\":%zu,"
       "\"high_water_free_bytes\":%u},"
+      "{\"name\":\"g0-dual\",\"configured\":%zu,"
+      "\"high_water_free_bytes\":%u},"
       "{\"name\":\"audio\",\"configured\":%zu,"
       "\"high_water_free_bytes\":%u},"
       "{\"name\":\"ui\",\"configured\":%zu,"
@@ -380,6 +390,9 @@ void emit_runtime_metrics(uint64_t now_us) {
       sizeof(g_macro_task_stack),
       static_cast<unsigned>(
           task_stack_free_bytes(g_macro_task_handle)),
+      sizeof(g_g0_task_stack),
+      static_cast<unsigned>(
+          task_stack_free_bytes(g_g0_task_handle)),
       sizeof(g_audio_task_stack),
       static_cast<unsigned>(
           task_stack_free_bytes(g_audio_task_handle)),
@@ -727,24 +740,42 @@ void macro_task(void*) {
     if (xQueueReceive(g_macro_queue, &invocation, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    if (invocation.kind == MacroInvocationKind::g0_dual_action) {
-      DeviceSettings settings{
-          .g0_chord_enabled = true,
-          .g0_chord_modifiers = invocation.modifiers,
-          .g0_chord_usage = invocation.usage,
-      };
-      ProductG0DualActionSink sink;
-      const G0DualActionResult result =
-          execute_g0_dual_action(settings, sink);
-      ESP_LOGI(kTag, "g0 dual action completed result=%u",
-               static_cast<unsigned>(result));
-      continue;
-    }
     KeyAction action;
     if (product_web_action(invocation.layer, invocation.physical_key,
                            &action)) {
+      SemaphoreLock execution_lock(g_macro_execution_mutex);
+      if (!execution_lock.locked()) {
+        ESP_LOGW(kTag, "profile macro lock timeout");
+        continue;
+      }
       g_macro_engine.execute(action);
     }
+  }
+}
+
+void g0_task(void*) {
+  G0Invocation invocation;
+  while (true) {
+    if (xQueueReceive(g_g0_queue, &invocation, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+    SemaphoreLock execution_lock(g_macro_execution_mutex);
+    if (!execution_lock.locked()) {
+      ESP_LOGW(kTag, "g0 macro lock fallback");
+      enqueue_microphone_event(
+          MicrophoneRuntimeEvent::g0_click, true);
+      continue;
+    }
+    DeviceSettings settings{
+        .g0_chord_enabled = true,
+        .g0_chord_modifiers = invocation.modifiers,
+        .g0_chord_usage = invocation.usage,
+    };
+    ProductG0DualActionSink sink;
+    const G0DualActionResult result =
+        execute_g0_dual_action(settings, sink);
+    ESP_LOGI(kTag, "g0 dual action completed result=%u",
+             static_cast<unsigned>(result));
   }
 }
 
@@ -1064,13 +1095,12 @@ G0DispatchResult enqueue_g0_short_press() {
     return G0DispatchResult::microphone_only;
   }
 
-  const MacroInvocation invocation{
-      .kind = MacroInvocationKind::g0_dual_action,
+  const G0Invocation invocation{
       .modifiers = settings.g0_chord_modifiers,
       .usage = settings.g0_chord_usage,
   };
-  if (g_macro_queue != nullptr &&
-      xQueueSend(g_macro_queue, &invocation, 0) == pdTRUE) {
+  if (g_g0_queue != nullptr &&
+      xQueueSend(g_g0_queue, &invocation, 0) == pdTRUE) {
     ESP_LOGI(kTag, "g0 dual action queued");
     return G0DispatchResult::queued;
   }
@@ -1731,10 +1761,16 @@ class EspProductStartup final : public ProductStartupBackend {
   }
 
   bool keyboard() override {
+    g_macro_execution_mutex = xSemaphoreCreateMutexStatic(
+        &g_macro_execution_mutex_storage);
     g_macro_queue = xQueueCreateStatic(
         kMacroQueueDepth, sizeof(MacroInvocation), g_macro_queue_buffer.data(),
         &g_macro_queue_storage);
-    if (g_macro_queue == nullptr) {
+    g_g0_queue = xQueueCreateStatic(
+        kG0QueueDepth, sizeof(G0Invocation), g_g0_queue_buffer.data(),
+        &g_g0_queue_storage);
+    if (g_macro_execution_mutex == nullptr || g_macro_queue == nullptr ||
+        g_g0_queue == nullptr) {
       set_stage(BootStage::keyboard, ESP_ERR_NO_MEM);
       return false;
     }
@@ -1755,8 +1791,11 @@ class EspProductStartup final : public ProductStartupBackend {
     g_macro_task_handle = xTaskCreateStatic(
         macro_task, "product-macro", g_macro_task_stack.size(), nullptr,
         tskIDLE_PRIORITY + 2, g_macro_task_stack.data(), &g_macro_task_storage);
+    g_g0_task_handle = xTaskCreateStatic(
+        g0_task, "product-g0", g_g0_task_stack.size(), nullptr,
+        tskIDLE_PRIORITY + 2, g_g0_task_stack.data(), &g_g0_task_storage);
     esp_err_t result =
-        g_macro_task_handle == nullptr
+        g_macro_task_handle == nullptr || g_g0_task_handle == nullptr
             ? ESP_ERR_NO_MEM
             : keyboard_matrix_start(keyboard_event);
     set_stage(BootStage::keyboard, result);
