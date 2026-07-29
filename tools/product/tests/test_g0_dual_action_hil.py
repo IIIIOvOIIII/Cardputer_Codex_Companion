@@ -186,3 +186,111 @@ def test_disabled_report_requires_mic_only_and_no_hid_activity():
         invalid[key] = value
         with pytest.raises(ValueError):
             module.validate_report(invalid, enabled=False)
+
+
+def stress_lines(iterations=20, stack_values=(1024, 912)):
+    lines = ['{"hid":{"queue_failures":4}}']
+    for _ in range(iterations):
+        lines.extend(
+            [
+                "HIL G0 CLICK QUEUED",
+                "I product: g0 dual action completed result=1",
+            ]
+        )
+    for value in stack_values:
+        lines.append(
+            json.dumps(
+                {
+                    "hid": {"queue_failures": 4},
+                    "tasks": [
+                        {
+                            "name": "g0-dual",
+                            "configured": 3072,
+                            "high_water_free_bytes": value,
+                        }
+                    ],
+                }
+            )
+        )
+    return lines
+
+
+def test_stress_report_counts_repeated_actions_and_g0_stack_headroom():
+    module = load_script()
+    report = module.build_stress_report(
+        stress_lines(),
+        expected_iterations=20,
+        microphone_transition_count=20,
+        elapsed_ms=12345,
+    )
+
+    assert report == {
+        "expected_iterations": 20,
+        "acknowledgement_count": 20,
+        "completion_count": 20,
+        "microphone_transition_count": 20,
+        "boot_count": 0,
+        "reset_reason": "none",
+        "hid_queue_failure_delta": 0,
+        "g0_stack_min_free_bytes": 912,
+        "elapsed_ms": 12345,
+    }
+    module.validate_stress_report(
+        report,
+        expected_iterations=20,
+        minimum_stack_free_bytes=768,
+    )
+    serialized = json.dumps(report).lower()
+    for forbidden in ("pin", "device_url", "modifiers", "usage", "audio"):
+        assert forbidden not in serialized
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("acknowledgement_count", 19, "acknowledgement"),
+        ("completion_count", 19, "completion"),
+        ("microphone_transition_count", 19, "microphone"),
+        ("boot_count", 1, "reset"),
+        ("hid_queue_failure_delta", 1, "queue"),
+        ("g0_stack_min_free_bytes", 767, "stack"),
+    ],
+)
+def test_stress_gate_rejects_any_incomplete_or_unsafe_iteration(
+    field, value, message
+):
+    module = load_script()
+    report = module.build_stress_report(
+        stress_lines(),
+        expected_iterations=20,
+        microphone_transition_count=20,
+        elapsed_ms=12345,
+    )
+    report[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        module.validate_stress_report(
+            report,
+            expected_iterations=20,
+            minimum_stack_free_bytes=768,
+        )
+
+
+def test_iterations_are_bounded_and_disabled_mode_is_single_click(tmp_path):
+    module = load_script()
+    common = [
+        "--port",
+        "/dev/null",
+        "--device-url",
+        "https://192.168.1.195",
+        "--output",
+        str(tmp_path / "report.json"),
+    ]
+    assert module.parse_args([*common, "--iterations", "20"]).iterations == 20
+    for invalid in ("0", "101"):
+        with pytest.raises(SystemExit):
+            module.parse_args([*common, "--iterations", invalid])
+    with pytest.raises(SystemExit):
+        module.parse_args(
+            [*common, "--disabled", "--iterations", "2"]
+        )

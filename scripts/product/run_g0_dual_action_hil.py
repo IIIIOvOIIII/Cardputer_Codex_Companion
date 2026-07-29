@@ -148,6 +148,23 @@ def _hid_values(lines: list[str], key: str) -> list[int]:
     return values
 
 
+def _task_stack_free_values(lines: list[str], name: str) -> list[int]:
+    values = []
+    for line in lines:
+        value = _json_from_line(line)
+        tasks = value.get("tasks") if value is not None else None
+        if not isinstance(tasks, list):
+            continue
+        for task in tasks:
+            if (
+                isinstance(task, dict)
+                and task.get("name") == name
+                and "high_water_free_bytes" in task
+            ):
+                values.append(int(task["high_water_free_bytes"]))
+    return values
+
+
 def _reset_reason(lines: list[str]) -> tuple[int, str]:
     reasons = []
     for line in lines:
@@ -206,6 +223,62 @@ def validate_report(report: dict[str, Any], *, enabled: bool = True) -> None:
             raise ValueError("disabled G0 unexpectedly ran dual action")
 
 
+def build_stress_report(
+    lines: list[str],
+    *,
+    expected_iterations: int,
+    microphone_transition_count: int,
+    elapsed_ms: int,
+) -> dict[str, Any]:
+    queue_values = _hid_values(lines, "queue_failures")
+    queue_delta = (
+        max(0, queue_values[-1] - queue_values[0])
+        if len(queue_values) >= 2
+        else 0
+    )
+    stack_values = _task_stack_free_values(lines, "g0-dual")
+    boot_count, reset_reason = _reset_reason(lines)
+    return {
+        "expected_iterations": int(expected_iterations),
+        "acknowledgement_count": sum(
+            "HIL G0 CLICK " in line for line in lines
+        ),
+        "completion_count": sum(
+            "g0 dual action completed result=" in line for line in lines
+        ),
+        "microphone_transition_count": int(
+            microphone_transition_count
+        ),
+        "boot_count": boot_count,
+        "reset_reason": reset_reason,
+        "hid_queue_failure_delta": queue_delta,
+        "g0_stack_min_free_bytes": (
+            min(stack_values) if stack_values else 0
+        ),
+        "elapsed_ms": int(elapsed_ms),
+    }
+
+
+def validate_stress_report(
+    report: dict[str, Any],
+    *,
+    expected_iterations: int,
+    minimum_stack_free_bytes: int = 768,
+) -> None:
+    if int(report["boot_count"]) != 0:
+        raise ValueError("device reset during repeated G0 HIL")
+    if int(report["acknowledgement_count"]) != expected_iterations:
+        raise ValueError("G0 acknowledgement count mismatch")
+    if int(report["completion_count"]) != expected_iterations:
+        raise ValueError("G0 completion count mismatch")
+    if int(report["microphone_transition_count"]) != expected_iterations:
+        raise ValueError("microphone transition count mismatch")
+    if int(report["hid_queue_failure_delta"]) != 0:
+        raise ValueError("HID queue failure observed")
+    if int(report["g0_stack_min_free_bytes"]) < minimum_stack_free_bytes:
+        raise ValueError("G0 task stack headroom below minimum")
+
+
 class SerialMonitor:
     def __init__(self, descriptor: int) -> None:
         self._descriptor = descriptor
@@ -251,11 +324,37 @@ class SerialMonitor:
                     return None
                 self._condition.wait(remaining)
 
+    def wait_for_line_count(
+        self, pattern: str, count: int, timeout: float
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                if sum(pattern in line for line in self._lines) >= count:
+                    return True
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+
     def wait_for_metric_count(self, count: int, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
         with self._condition:
             while True:
                 if len(_hid_values(self._lines, "queue_failures")) >= count:
+                    return True
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+
+    def wait_for_task_metric_count(
+        self, name: str, count: int, timeout: float
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                if len(_task_stack_free_values(self._lines, name)) >= count:
                     return True
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -306,21 +405,43 @@ def _read_pin(path: Path | None) -> str:
     return value
 
 
-def _wait_for_state_transition(
+def _is_stable_microphone_state(state: str) -> bool:
+    return state == "READY" or state in {"LIVE16", "LIVE24"}
+
+
+def _microphone_is_live(state: str) -> bool:
+    return state in {"LIVE16", "LIVE24"}
+
+
+def _wait_for_stable_microphone_state(
     base_url: str,
     pairing: str,
-    before: str,
     timeout: float = 10,
+    *,
+    opposite_of: str | None = None,
 ) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        after = microphone_state(
+        state = microphone_state(
             curl_json(base_url, pairing, "/api/v1/status")
         )
-        if after and after != before:
-            return after
+        if _is_stable_microphone_state(state) and (
+            opposite_of is None
+            or _microphone_is_live(state)
+            != _microphone_is_live(opposite_of)
+        ):
+            return state
         time.sleep(0.1)
-    return before
+    if opposite_of is None:
+        raise TimeoutError("microphone did not reach a stable state")
+    raise TimeoutError("microphone did not reach the opposite stable state")
+
+
+def _bounded_iterations(value: str) -> int:
+    parsed = int(value)
+    if not 1 <= parsed <= 100:
+        raise argparse.ArgumentTypeError("iterations must be within 1..100")
+    return parsed
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -334,11 +455,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--usage", type=int, default=25)
     parser.add_argument("--disabled", action="store_true")
     parser.add_argument(
+        "--iterations", type=_bounded_iterations, default=1
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("build/hil/g0-dual-action.json"),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.disabled and args.iterations != 1:
+        parser.error("--disabled requires --iterations 1")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -374,42 +501,110 @@ def main(argv: list[str] | None = None) -> int:
             args.device_url, pairing, "/api/v1/settings/g0-chord"
         ) != desired:
             raise RuntimeError("G0 settings readback mismatch")
-        before_state = microphone_state(
-            curl_json(args.device_url, pairing, "/api/v1/status")
+        if not monitor.wait_for_metric_count(1, timeout=3):
+            raise TimeoutError("runtime metrics unavailable")
+        if not monitor.wait_for_task_metric_count(
+            "g0-dual", 1, timeout=3
+        ):
+            raise TimeoutError("G0 task metrics unavailable")
+        metric_count = len(
+            _hid_values(monitor.lines, "queue_failures")
         )
-        if not before_state:
-            raise RuntimeError("microphone state unavailable")
-        monitor.wait_for_metric_count(1, timeout=3)
+        g0_metric_count = len(
+            _task_stack_free_values(monitor.lines, "g0-dual")
+        )
         started_at = time.monotonic()
-        monitor.send(b"HIL G0 CLICK\n")
-        response = monitor.wait_for_any(
-            (
-                "HIL G0 CLICK QUEUED",
-                "HIL G0 CLICK FALLBACK",
-                "HIL G0 CLICK MIC_ONLY",
-            ),
-            timeout=2,
-        )
-        if response is None:
-            raise TimeoutError("G0 HIL command acknowledgement timed out")
-        command_result = response.rsplit(" ", 1)[-1].lower()
-        if command_result == "queued" and monitor.wait_for_any(
-            ("g0 dual action completed result=",), timeout=2
-        ) is None:
-            raise TimeoutError("G0 dual action completion timed out")
-        after_state = _wait_for_state_transition(
-            args.device_url, pairing, before_state
-        )
-        monitor.wait_for_metric_count(2, timeout=3)
-        elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        report = build_report(
-            monitor.lines,
-            before_state=before_state,
-            after_state=after_state,
-            command_result=command_result,
-            elapsed_ms=elapsed_ms,
-        )
-        validate_report(report, enabled=not args.disabled)
+        if args.disabled:
+            before_state = _wait_for_stable_microphone_state(
+                args.device_url, pairing
+            )
+            monitor.send(b"HIL G0 CLICK\n")
+            if not monitor.wait_for_line_count(
+                "HIL G0 CLICK ", 1, timeout=2
+            ):
+                raise TimeoutError(
+                    "G0 HIL command acknowledgement timed out"
+                )
+            response = next(
+                line
+                for line in reversed(monitor.lines)
+                if "HIL G0 CLICK " in line
+            )
+            command_result = response.rsplit(" ", 1)[-1].lower()
+            after_state = _wait_for_stable_microphone_state(
+                args.device_url, pairing, opposite_of=before_state
+            )
+            monitor.wait_for_metric_count(
+                metric_count + 1, timeout=3
+            )
+            elapsed_ms = int(
+                (time.monotonic() - started_at) * 1000
+            )
+            report = build_report(
+                monitor.lines,
+                before_state=before_state,
+                after_state=after_state,
+                command_result=command_result,
+                elapsed_ms=elapsed_ms,
+            )
+            validate_report(report, enabled=False)
+        else:
+            transition_count = 0
+            for iteration in range(1, args.iterations + 1):
+                before_state = _wait_for_stable_microphone_state(
+                    args.device_url, pairing
+                )
+                monitor.send(b"HIL G0 CLICK\n")
+                if not monitor.wait_for_line_count(
+                    "HIL G0 CLICK ", iteration, timeout=2
+                ):
+                    raise TimeoutError(
+                        "G0 HIL command acknowledgement timed out"
+                    )
+                acknowledgement = next(
+                    line
+                    for line in reversed(monitor.lines)
+                    if "HIL G0 CLICK " in line
+                )
+                if not acknowledgement.endswith("QUEUED"):
+                    raise RuntimeError(
+                        "G0 dual action was not queued"
+                    )
+                if not monitor.wait_for_line_count(
+                    "g0 dual action completed result=",
+                    iteration,
+                    timeout=2,
+                ):
+                    raise TimeoutError(
+                        "G0 dual action completion timed out"
+                    )
+                after_state = _wait_for_stable_microphone_state(
+                    args.device_url,
+                    pairing,
+                    opposite_of=before_state,
+                )
+                transition_count += 1
+            if not monitor.wait_for_metric_count(
+                metric_count + 1, timeout=3
+            ):
+                raise TimeoutError("post-action runtime metrics unavailable")
+            if not monitor.wait_for_task_metric_count(
+                "g0-dual", g0_metric_count + 1, timeout=3
+            ):
+                raise TimeoutError("post-action G0 metrics unavailable")
+            elapsed_ms = int(
+                (time.monotonic() - started_at) * 1000
+            )
+            report = build_stress_report(
+                monitor.lines,
+                expected_iterations=args.iterations,
+                microphone_transition_count=transition_count,
+                elapsed_ms=elapsed_ms,
+            )
+            validate_stress_report(
+                report,
+                expected_iterations=args.iterations,
+            )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n"
