@@ -29,3 +29,19 @@
 - Next step: Keep the XCTest specification in source and exercise the same
   policy assertions through the repository's existing framework-free
   `product-gatt-tests` executable, beginning with a real RED compile failure.
+
+## 2026-07-29 10:02 HKT
+
+- Current work: Implemented the pure recovery policy and integrated it into the
+  CoreBluetooth connection lifecycle.
+- Expected result: Failed connects, discovery/notification/write failures,
+  unintentional disconnects, and 8-second phase timeouts all converge on one
+  bounded in-process retry path without restarting the Agent.
+- Result: Achieved at source/build level. The executable policy test first
+  failed because the policy types were absent, then passed after implementation.
+  The new packaging contract also failed before integration and now passes.
+  Release `product-gatt-tests`, `product-audio-tests`, and all 27 companion
+  packaging tests pass. The implementation logs only phase/reason/retry/
+  generation and suppresses retry after intentional stop.
+- Next step: Add the fixed-PID five-cycle hardware reboot HIL runner and its
+  privacy/contract tests.

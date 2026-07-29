@@ -31,6 +31,18 @@ def test_companion_does_not_use_clipboard_or_command_v():
     assert "command-v" not in source
 
 
+def test_product_gatt_reconnects_failed_and_timed_out_attempts():
+    source = (
+        ROOT
+        / "companion/Sources/ProductGATT/ProductGATTConnection.swift"
+    ).read_text()
+    assert "didFailToConnect peripheral" in source
+    assert "ProductGATTRecoveryPolicy" in source
+    assert "scheduleRecoveryTimer" in source
+    assert "recoverConnection(reason:" in source
+    assert "decision.generation == recovery.generation" in source
+
+
 def test_companion_run_supports_secret_config_file():
     configuration = (
         ROOT / "companion/Sources/cardputer-companion/Configuration.swift"

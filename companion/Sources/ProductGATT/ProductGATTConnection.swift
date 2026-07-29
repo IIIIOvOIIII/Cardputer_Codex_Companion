@@ -1,6 +1,7 @@
 @preconcurrency import CoreBluetooth
 import Dispatch
 import Foundation
+import OSLog
 import ProductAudio
 
 public enum ProductGATTCharacteristic: String, CaseIterable, Hashable, Sendable {
@@ -217,6 +218,11 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         case sinkNotReadyOnly
     }
 
+    private enum RecoveryTimerAction {
+        case beginConnection
+        case timeout
+    }
+
     private let queue = DispatchQueue(
         label: "com.lynx.cardputer.gatt",
         qos: DispatchQoS(
@@ -234,6 +240,12 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
     private var pendingWrite: PendingWrite?
     private var intentionalStop = false
     private var shutdownWaiter: DispatchSemaphore?
+    private var recovery = ProductGATTRecoveryPolicy()
+    private var recoveryTimer: DispatchSourceTimer?
+    private let logger = Logger(
+        subsystem: "com.lynx.cardputer-companion",
+        category: "gatt-recovery"
+    )
 
     init(delegate: ProductGATTConnectionDelegate) {
         self.delegate = delegate
@@ -245,7 +257,7 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         queue.async { [self] in
             intentionalStop = false
             session = ProductGATTSessionState(audioEnabled: audioEnabled)
-            beginConnection()
+            applyRecovery(.start, reason: "start")
         }
     }
 
@@ -254,6 +266,12 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         queue.async { [self] in
             intentionalStop = true
             shutdownWaiter = waiter
+            central.stopScan()
+            applyRecovery(
+                .stop,
+                reason: "intentional_stop",
+                cancelConnection: false
+            )
             let actions = session.beginIntentionalShutdown()
             publishSession()
             if actions.isEmpty {
@@ -279,19 +297,119 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
     }
 
     private func beginConnection() {
-        guard central.state == .poweredOn, peripheral == nil else { return }
+        guard recovery.phase != .stopped,
+              central.state == .poweredOn,
+              peripheral == nil else {
+            return
+        }
         if let connected = central.retrieveConnectedPeripherals(
             withServices: [ProductUUID.service]
         ).first {
-            peripheral = connected
-            connected.delegate = self
-            central.connect(connected)
+            connect(connected)
             return
         }
         central.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+    }
+
+    private func connect(_ candidate: CBPeripheral) {
+        central.stopScan()
+        peripheral = candidate
+        candidate.delegate = self
+        applyRecovery(.candidateSelected, reason: "candidate_selected")
+        central.connect(candidate)
+    }
+
+    private func cancelRecoveryTimer() {
+        recoveryTimer?.setEventHandler {}
+        recoveryTimer?.cancel()
+        recoveryTimer = nil
+    }
+
+    private func scheduleRecoveryTimer(
+        milliseconds: Int,
+        generation: UInt64,
+        action: RecoveryTimerAction
+    ) {
+        cancelRecoveryTimer()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + .milliseconds(milliseconds))
+        timer.setEventHandler { [weak self] in
+            guard let self,
+                  generation == recovery.generation else {
+                return
+            }
+            switch action {
+            case .beginConnection:
+                beginConnection()
+            case .timeout:
+                recoverConnection(reason: "deadline", event: .timedOut)
+            }
+        }
+        recoveryTimer = timer
+        timer.resume()
+    }
+
+    @discardableResult
+    private func applyRecovery(
+        _ event: ProductGATTRecoveryEvent,
+        reason: String,
+        cancelConnection: Bool = true
+    ) -> ProductGATTRecoveryDecision {
+        cancelRecoveryTimer()
+        let decision = recovery.apply(event)
+        let phase = String(describing: decision.phase)
+        let retry = decision.retryAfterMilliseconds ?? -1
+        logger.notice(
+            "phase=\(phase, privacy: .public) reason=\(reason, privacy: .public) retry_ms=\(retry, privacy: .public) generation=\(decision.generation, privacy: .public)"
+        )
+        guard decision.generation == recovery.generation else {
+            return decision
+        }
+        if decision.cancelPeripheral,
+           cancelConnection,
+           let current = peripheral {
+            central.cancelPeripheralConnection(current)
+        }
+        if let watchdog = decision.watchdogMilliseconds {
+            scheduleRecoveryTimer(
+                milliseconds: watchdog,
+                generation: decision.generation,
+                action: .timeout
+            )
+        } else if let retry = decision.retryAfterMilliseconds {
+            scheduleRecoveryTimer(
+                milliseconds: retry,
+                generation: decision.generation,
+                action: .beginConnection
+            )
+        }
+        return decision
+    }
+
+    private func clearConnectionState(intentional: Bool) {
+        characteristics.removeAll(keepingCapacity: true)
+        pendingWrite = nil
+        session.didDisconnect()
+        publishSession()
+        delegate?.productGATTDidDisconnect(self, intentional: intentional)
+    }
+
+    private func recoverConnection(
+        reason: String,
+        event: ProductGATTRecoveryEvent = .failed
+    ) {
+        guard !intentionalStop else { return }
+        let current = peripheral
+        peripheral = nil
+        central.stopScan()
+        clearConnectionState(intentional: false)
+        if let current {
+            central.cancelPeripheralConnection(current)
+        }
+        applyRecovery(event, reason: reason)
     }
 
     private func perform(
@@ -396,7 +514,25 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
 extension ProductGATTConnection: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn {
-            beginConnection()
+            applyRecovery(
+                .bluetoothPoweredOn,
+                reason: "bluetooth_powered_on"
+            )
+        } else {
+            cancelRecoveryTimer()
+            let current = peripheral
+            peripheral = nil
+            central.stopScan()
+            if current != nil {
+                clearConnectionState(intentional: false)
+            }
+            if let current {
+                central.cancelPeripheralConnection(current)
+            }
+            applyRecovery(
+                .bluetoothUnavailable,
+                reason: "bluetooth_unavailable"
+            )
         }
     }
 
@@ -408,24 +544,33 @@ extension ProductGATTConnection: CBCentralManagerDelegate {
     ) {
         let advertisedName =
             advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        guard self.peripheral == nil,
+        guard recovery.phase != .stopped,
+              self.peripheral == nil,
               ProductGATTDeviceIdentity.accepts(
                 peripheralName: peripheral.name,
                 advertisedName: advertisedName
               ) else {
             return
         }
-        central.stopScan()
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        central.connect(peripheral)
+        connect(peripheral)
     }
 
     func centralManager(
         _ central: CBCentralManager,
         didConnect peripheral: CBPeripheral
     ) {
+        guard self.peripheral === peripheral else { return }
+        applyRecovery(.connected, reason: "connected")
         peripheral.discoverServices([ProductUUID.service])
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didFailToConnect peripheral: CBPeripheral,
+        error: (any Error)?
+    ) {
+        guard self.peripheral === peripheral else { return }
+        recoverConnection(reason: "connect_failed")
     }
 
     func centralManager(
@@ -436,16 +581,21 @@ extension ProductGATTConnection: CBCentralManagerDelegate {
         error: (any Error)?
     ) {
         let wasIntentional = intentionalStop
-        self.peripheral = nil
-        characteristics.removeAll(keepingCapacity: true)
-        pendingWrite = nil
-        session.didDisconnect()
-        publishSession()
-        finishShutdownWait()
-        delegate?.productGATTDidDisconnect(self, intentional: wasIntentional)
-        if !wasIntentional {
-            beginConnection()
+        guard self.peripheral === peripheral else {
+            if wasIntentional {
+                finishShutdownWait()
+            }
+            return
         }
+        self.peripheral = nil
+        clearConnectionState(intentional: wasIntentional)
+        finishShutdownWait()
+        applyRecovery(
+            .disconnected(intentional: wasIntentional),
+            reason: wasIntentional
+                ? "intentional_disconnect"
+                : "disconnected"
+        )
     }
 }
 
@@ -454,14 +604,21 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         _ peripheral: CBPeripheral,
         didDiscoverServices error: (any Error)?
     ) {
-        guard error == nil else { return }
-        for service in peripheral.services ?? []
-        where service.uuid == ProductUUID.service {
-            peripheral.discoverCharacteristics(
-                Array(ProductUUID.values.values),
-                for: service
-            )
+        guard self.peripheral === peripheral else { return }
+        guard error == nil else {
+            recoverConnection(reason: "service_discovery_failed")
+            return
         }
+        guard let service = peripheral.services?.first(
+            where: { $0.uuid == ProductUUID.service }
+        ) else {
+            recoverConnection(reason: "service_missing")
+            return
+        }
+        peripheral.discoverCharacteristics(
+            Array(ProductUUID.values.values),
+            for: service
+        )
     }
 
     func peripheral(
@@ -469,7 +626,11 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         didDiscoverCharacteristicsFor service: CBService,
         error: (any Error)?
     ) {
-        guard error == nil else { return }
+        guard self.peripheral === peripheral else { return }
+        guard error == nil else {
+            recoverConnection(reason: "characteristic_discovery_failed")
+            return
+        }
         for characteristic in service.characteristics ?? [] {
             if let kind = ProductUUID.values.first(
                 where: { $0.value == characteristic.uuid }
@@ -483,8 +644,10 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         guard required.allSatisfy({
             characteristics[$0] != nil
         }) else {
+            recoverConnection(reason: "required_characteristic_missing")
             return
         }
+        applyRecovery(.subscribing, reason: "subscribing")
         let actions = session.didDiscoverAllCharacteristics()
         publishSession()
         perform(actions)
@@ -495,21 +658,38 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         didWriteValueFor characteristic: CBCharacteristic,
         error: (any Error)?
     ) {
+        guard self.peripheral === peripheral else { return }
         guard let completed = pendingWrite else { return }
         pendingWrite = nil
         let succeeded = error == nil
         switch completed {
         case .bind:
+            guard succeeded else {
+                recoverConnection(reason: "bind_write_failed")
+                return
+            }
             let actions = session.didWriteBind(succeeded: succeeded)
             publishSession()
             perform(actions)
+            if !session.audioEnabled {
+                applyRecovery(.ready, reason: "unicode_ready")
+            }
         case .hello:
+            guard succeeded else {
+                recoverConnection(reason: "hello_write_failed")
+                return
+            }
             let actions = session.didWriteAudioHello(succeeded: succeeded)
             publishSession()
             perform(actions)
         case .sinkReady:
+            guard succeeded else {
+                recoverConnection(reason: "sink_ready_write_failed")
+                return
+            }
             session.didWriteSinkReady(succeeded: succeeded)
             publishSession()
+            applyRecovery(.ready, reason: "audio_ready")
         case .sinkNotReadyDisconnect:
             disconnectNow()
             finishShutdownWait()
@@ -523,11 +703,20 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: (any Error)?
     ) {
-        guard error == nil,
-              let kind = kind(for: characteristic),
-              kind == .audioData || kind == .audioStatus else {
+        guard self.peripheral === peripheral,
+              let kind = kind(for: characteristic) else {
             return
         }
+        let isHandshakeNotification =
+            kind == .unicodeNotify ||
+            kind == .audioData ||
+            kind == .audioStatus
+        guard !isHandshakeNotification ||
+                (error == nil && characteristic.isNotifying) else {
+            recoverConnection(reason: "notification_setup_failed")
+            return
+        }
+        guard kind == .audioData || kind == .audioStatus else { return }
         let actions = session.didSetAudioNotification(
             kind,
             enabled: characteristic.isNotifying
@@ -541,7 +730,8 @@ extension ProductGATTConnection: CBPeripheralDelegate {
         didUpdateValueFor characteristic: CBCharacteristic,
         error: (any Error)?
     ) {
-        guard error == nil,
+        guard self.peripheral === peripheral,
+              error == nil,
               let value = characteristic.value,
               let kind = kind(for: characteristic) else {
             return
