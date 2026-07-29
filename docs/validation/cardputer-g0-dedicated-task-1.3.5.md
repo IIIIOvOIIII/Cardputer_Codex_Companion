@@ -98,5 +98,15 @@ or audio content.
 
 Passed for root-cause repair, complete release gate, state-preserving
 deployment, repeated enabled G0 stress, disabled Mic-only behavior, runtime
-stack headroom, and online device health. Public release and Pages publication
-are recorded separately after remote verification.
+stack headroom, online device health, and public publication:
+
+- annotated tag `v1.3.5` resolves to
+  `a5260154299b2948faf8ba7a4096e817605b0681`;
+- the non-draft, non-prerelease GitHub Release exposes nine assets;
+- every GitHub asset digest matches its corresponding local release file;
+- Pages workflow run `30477256512` completed successfully from the tagged
+  source commit;
+- the live Web Installer and manifest return HTTP 200;
+- the live manifest reports version `1.3.5` and Factory offset `0`;
+- the live Factory response is `application/octet-stream`, permits cross-origin
+  retrieval, contains 1,771,648 bytes, and matches the pinned Factory SHA-256.

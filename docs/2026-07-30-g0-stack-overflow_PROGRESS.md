@@ -41,3 +41,10 @@
 - Expected result: The merged tree passes the complete gate, the final Factory digest is pinned, the exact final Launcher application is independently flash-verified, and repeated HIL remains green.
 - Result: Achieved. The merged-tree release gate repeated all automated suites and clean target builds successfully. The final Factory SHA-256 is `0fac720220457afe831ff1135e783b75688f9532ebf14c0f3a7a6b2a02c996b5`, and the manifest and Web test pin that exact digest. The exact final Launcher application was written only to `0x170000` and independently verified. A second enabled HIL completed 20/20 acknowledgements, 20/20 dual actions, and 20/20 Mic transitions in 50,885 ms with zero resets, zero HID queue failures, and 868 bytes minimum free G0 stack. The disabled Mic-only control passed and the previous enabled setting was restored.
 - Next step: Commit and push the final digest evidence, create annotated tag `v1.3.5`, publish and digest-verify the nine release assets, then verify the Pages workflow and live installer.
+
+## 2026-07-30 01:53 HKT
+
+- Current work: Publish and independently verify GitHub Release `v1.3.5` and the digest-pinned Pages Web Installer.
+- Expected result: The remote annotated tag resolves to the final verified source; all nine assets match local digests; Pages succeeds from that source and serves the exact pinned Factory image.
+- Result: Achieved. Remote `v1.3.5^{}` resolves to `a5260154299b2948faf8ba7a4096e817605b0681`. The non-draft, non-prerelease GitHub Release exposes nine assets and every GitHub-reported SHA-256 matches its local file. Pages workflow run `30477256512` completed successfully from the same source. The live installer returns HTTP 200, its manifest reports version 1.3.5 and Factory offset zero, and the same-origin Factory response contains 1,771,648 bytes with SHA-256 `0fac720220457afe831ff1135e783b75688f9532ebf14c0f3a7a6b2a02c996b5`.
+- Next step: Commit and push this publication closeout, update daily operational memory, then perform final repository, release, Pages, artifact, and device checks.
