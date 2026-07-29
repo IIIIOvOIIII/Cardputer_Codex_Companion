@@ -95,8 +95,49 @@ func testReleaseLinkStatusReportsTheFirmwareDefaultRate() {
     assert(status.preferredSampleRateHertz == 16_000)
 }
 
+func testRecoveryPolicyIsBoundedAndReadyResetsBackoff() {
+    var policy = ProductGATTRecoveryPolicy()
+    assert(policy.apply(.start).retryAfterMilliseconds == 0)
+    assert(policy.apply(.candidateSelected).watchdogMilliseconds == 8_000)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 500)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 1_000)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 2_000)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 5_000)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 5_000)
+    assert(policy.apply(.ready).phase == .ready)
+    assert(policy.apply(.failed).retryAfterMilliseconds == 500)
+}
+
+func testRecoveryPolicyTimeoutStopAndBluetoothState() {
+    var policy = ProductGATTRecoveryPolicy()
+    _ = policy.apply(.start)
+    let connecting = policy.apply(.candidateSelected)
+    let timedOut = policy.apply(.timedOut)
+    assert(timedOut.cancelPeripheral)
+    assert(timedOut.retryAfterMilliseconds == 500)
+    assert(timedOut.generation > connecting.generation)
+
+    let stopped = policy.apply(.stop)
+    assert(stopped.phase == .stopped)
+    assert(stopped.retryAfterMilliseconds == nil)
+    assert(policy.apply(.failed).retryAfterMilliseconds == nil)
+    assert(policy.apply(.timedOut).retryAfterMilliseconds == nil)
+
+    assert(policy.apply(.start).retryAfterMilliseconds == 0)
+    let unavailable = policy.apply(.bluetoothUnavailable)
+    assert(unavailable.phase == .idle)
+    assert(unavailable.retryAfterMilliseconds == nil)
+    assert(policy.apply(.bluetoothPoweredOn).retryAfterMilliseconds == 0)
+    assert(policy.apply(.candidateSelected).phase == .connecting)
+    assert(policy.apply(.connected).phase == .discovering)
+    assert(policy.apply(.subscribing).phase == .subscribing)
+    assert(policy.apply(.subscribing).watchdogMilliseconds == 8_000)
+}
+
 testUnifiedDiscoveryAndBindingOrder()
 testShutdownAndDisconnectClearAudioWithoutDisablingUnicode()
 testAudioParseFailureDoesNotDisableUnicodeContract()
 testReleaseLinkStatusReportsTheFirmwareDefaultRate()
+testRecoveryPolicyIsBoundedAndReadyResetsBackoff()
+testRecoveryPolicyTimeoutStopAndBluetoothState()
 print("ProductGATT tests passed")
