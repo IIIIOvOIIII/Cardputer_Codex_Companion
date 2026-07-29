@@ -2,6 +2,16 @@ import XCTest
 @testable import ProductGATT
 
 final class ProductGATTReceiverTests: XCTestCase {
+    func testConnectedPeripheralRecoveryIncludesHIDService() {
+        XCTAssertEqual(
+            ProductGATTContract.connectedPeripheralServiceUUIDs,
+            [
+                ProductGATTContract.serviceUUID,
+                ProductGATTContract.hidServiceUUID,
+            ]
+        )
+    }
+
     func testDeviceNameFilterAcceptsCurrentAndLegacyNames() {
         XCTAssertTrue(
             ProductGATTDeviceIdentity.accepts(

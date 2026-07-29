@@ -16,7 +16,7 @@ Commands:
   cardputer-agent.exe run
   cardputer-agent.exe --version
 
-Windows 1.3.2 supports Codex status/actions, LAN onboarding, and pet sync.
+Windows 1.3.3 supports Codex status/actions, LAN onboarding, and pet sync.
 Bluetooth keyboard input is handled natively by Windows. Bluetooth microphone
 and Unicode injection over the companion GATT channel are not included in this
 release.

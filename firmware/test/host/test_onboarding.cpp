@@ -126,7 +126,7 @@ int main() {
   assert(content_contains(
       agent_content, "IP:192.168.1.195 PIN:12345678"));
   assert(content_contains(agent_content, "MAC: ./install.sh install"));
-  assert(content_contains(agent_content, "WIN: RUN 1.3.2 SETUP.EXE"));
+  assert(content_contains(agent_content, "WIN: RUN 1.3.3 SETUP.EXE"));
   assert(content_contains(agent_content, "WAITING HEARTBEAT..."));
 
   OnboardingStateMachine after_ble_reboot(blank);

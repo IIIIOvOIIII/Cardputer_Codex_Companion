@@ -128,6 +128,7 @@ func testRecoveryPolicyTimeoutStopAndBluetoothState() {
     assert(unavailable.phase == .idle)
     assert(unavailable.retryAfterMilliseconds == nil)
     assert(policy.apply(.bluetoothPoweredOn).retryAfterMilliseconds == 0)
+    assert(policy.apply(.scanStarted).watchdogMilliseconds == 8_000)
     assert(policy.apply(.candidateSelected).phase == .connecting)
     assert(policy.apply(.connected).phase == .discovering)
     assert(policy.apply(.subscribing).phase == .subscribing)

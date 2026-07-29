@@ -12,6 +12,7 @@ public enum ProductGATTRecoveryEvent: Equatable, Sendable {
     case start
     case bluetoothPoweredOn
     case bluetoothUnavailable
+    case scanStarted
     case candidateSelected
     case connected
     case subscribing
@@ -57,6 +58,12 @@ public struct ProductGATTRecoveryPolicy: Sendable {
             phase = .idle
             generation &+= 1
             return decision()
+        case .scanStarted:
+            phase = .scanning
+            generation &+= 1
+            return decision(
+                watchdogMilliseconds: Self.watchdogMilliseconds
+            )
         case .candidateSelected:
             phase = .connecting
             generation &+= 1

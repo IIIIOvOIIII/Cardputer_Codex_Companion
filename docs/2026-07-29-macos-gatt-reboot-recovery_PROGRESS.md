@@ -105,3 +105,52 @@
   RMS 226.46, zero sequence gaps, and zero reconnects.
 - Next step: Commit the verified recovery/root-cause fix, align every release
   surface to 1.3.3/1.3.3l, then build and run the complete release gate.
+
+## 2026-07-29 11:01 HKT
+
+- Current work: Built and flashed 1.3.3l, installed the 1.3.3 macOS Agent, and
+  repeated the final hardware gate against the release candidates.
+- Expected result: A fixed Agent PID survives five device resets and restores
+  `MIC READY`; serial control starts/stops live audio with nonzero input.
+- Result: Achieved after closing one additional macOS startup race. If the
+  system HID client connected before the Agent scan selected the peripheral,
+  advertising stopped and the old Agent remained in `scanning` forever. A RED
+  test now requires recovery lookup through both the product and HID service
+  UUIDs, plus an 8-second scanning watchdog. The repaired Agent reached READY
+  even when started after HID was already connected. Five further resets all
+  returned `MIC READY` with PID 15317 unchanged; authenticated Web confirmation
+  took 9.814, 10.682, 16.329, 16.981, and 18.555 seconds on the slow WLAN/TLS
+  path, while GATT logs showed earlier recovery (for example 4.381 seconds on
+  the diagnostic cycle). The serial gate reported START and STOP accepted,
+  253 captured frames, PCM peak 760, zero source overruns, zero transport
+  drops, and zero fallback use.
+- Next step: Regenerate all release assets from the final Agent source, rerun
+  the complete release/security gate, then publish 1.3.3 and deploy the Web
+  Installer.
+
+## 2026-07-29 11:10 HKT
+
+- Current work: Regenerated all 1.3.3 release artifacts, ran the clean release
+  gate, and repaired the exact attached device's damaged Launcher application
+  slot without changing product or credential partitions.
+- Expected result: Every public artifact verifies from the final source, the
+  credential audit remains clean, and both the Launcher slot and running
+  Companion remain bootable.
+- Result: Achieved. The gate passed 280 product Python tests, 38 audio/installer
+  tests, 41 normal host tests, 41 ASan/UBSan host tests, all executable Swift,
+  C audio, Node, Go, packaging, signing, checksum, and allowlist checks. The
+  full Git/ref/reflog/artifact credential audit reported zero findings. Factory
+  SHA-256 is
+  `66f6b092cec25de07df71855c5ba6315908a710d16e13333bed902a8d4ec34de`;
+  Launcher SHA-256 is
+  `4dcf11f084cd419b01221b0162edb3dd3c74774d423d49754b165d3a097e741e`.
+  The current official Launcher Beta binary no longer fits this legacy
+  `0x150000` app0 slot, so the corrupted range was backed up under the private
+  device-backups directory and the fitting official Launcher 2.7.2 app was
+  restored at `0x10000`. The write digest verified and did not touch NVS,
+  `cardpu@0x170000`, or product storage. Companion then returned as 1.3.3l with
+  BLE/Wi-Fi/Agent OK and microphone READY while Agent PID 15317 remained
+  unchanged.
+- Next step: Commit and push the verified source, publish GitHub Release
+  `v1.3.3`, deploy GitHub Pages, and verify the public installer and Factory
+  digest.

@@ -53,6 +53,11 @@ final class ProductGATTRecoveryPolicyTests: XCTestCase {
     func testConnectionPhasesArmEightSecondWatchdog() {
         var policy = ProductGATTRecoveryPolicy()
         _ = policy.apply(.start)
+        XCTAssertEqual(policy.apply(.scanStarted).phase, .scanning)
+        XCTAssertEqual(
+            policy.apply(.scanStarted).watchdogMilliseconds,
+            8_000
+        )
         XCTAssertEqual(policy.apply(.candidateSelected).phase, .connecting)
         XCTAssertEqual(policy.apply(.connected).phase, .discovering)
         XCTAssertEqual(policy.apply(.subscribing).phase, .subscribing)

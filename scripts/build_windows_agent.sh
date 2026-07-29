@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 agent_root="${repo_root}/windows-agent"
-version="${WINDOWS_AGENT_VERSION:-1.3.2}"
+version="${WINDOWS_AGENT_VERSION:-1.3.3}"
 source_epoch="${SOURCE_DATE_EPOCH:-1577836800}"
 
 if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

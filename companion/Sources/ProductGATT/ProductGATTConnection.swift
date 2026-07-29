@@ -29,6 +29,11 @@ public enum ProductGATTContract {
         .userInteractive
     public static let serviceUUID =
         "7A100001-2C4D-4F20-9F20-434F44455831"
+    public static let hidServiceUUID = "1812"
+    public static let connectedPeripheralServiceUUIDs = [
+        serviceUUID,
+        hidServiceUUID,
+    ]
     public static let characteristics: [ProductGATTCharacteristic] = [
         .unicodeNotify,
         .unicodeControl,
@@ -190,6 +195,8 @@ protocol ProductGATTConnectionDelegate: AnyObject {
 
 private enum ProductUUID {
     static let service = CBUUID(string: ProductGATTContract.serviceUUID)
+    static let connectedPeripheralServices =
+        ProductGATTContract.connectedPeripheralServiceUUIDs.map(CBUUID.init)
     static let values: [ProductGATTCharacteristic: CBUUID] = [
         .unicodeNotify: CBUUID(
             string: "7A100002-2C4D-4F20-9F20-434F44455831"
@@ -303,7 +310,7 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
             return
         }
         if let connected = central.retrieveConnectedPeripherals(
-            withServices: [ProductUUID.service]
+            withServices: ProductUUID.connectedPeripheralServices
         ).first {
             connect(connected)
             return
@@ -311,6 +318,11 @@ final class ProductGATTConnection: NSObject, @unchecked Sendable {
         central.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
+        applyRecovery(
+            .scanStarted,
+            reason: "scan_started",
+            cancelConnection: false
         )
     }
 
