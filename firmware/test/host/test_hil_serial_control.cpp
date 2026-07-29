@@ -29,10 +29,20 @@ int main() {
          HilMicrophoneCommand::hid_start);
   assert(feed(parser, "HIL HID STOP\n") ==
          HilMicrophoneCommand::hid_stop);
+  assert(feed(parser, "HIL G0 CLICK\n") ==
+         HilMicrophoneCommand::g0_click);
+  assert(feed(parser, "HIL G0 CLICK\r\n") ==
+         HilMicrophoneCommand::g0_click);
+  assert(feed(parser, "HIL G0 ") ==
+         HilMicrophoneCommand::none);
+  assert(feed(parser, "CLICK\n") ==
+         HilMicrophoneCommand::g0_click);
   assert(feed(parser, "HIL MIC START") ==
          HilMicrophoneCommand::none);
   assert(feed(parser, "\n") == HilMicrophoneCommand::start);
   assert(feed(parser, "HIL MIC START NOW\n") ==
+         HilMicrophoneCommand::none);
+  assert(feed(parser, "HIL G0 CLICK NOW\n") ==
          HilMicrophoneCommand::none);
   assert(feed(parser, std::string(80, 'A') + "\n") ==
          HilMicrophoneCommand::none);

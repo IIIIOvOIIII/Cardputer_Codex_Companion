@@ -12,6 +12,7 @@ enum class HilMicrophoneCommand : uint8_t {
   none,
   start,
   stop,
+  g0_click,
   hid_start,
   hid_stop,
 };

@@ -62,12 +62,14 @@ def test_g0_dual_action_uses_macro_task_and_preserves_microphone_fallback():
 
     assert "enumclassMacroInvocationKind:uint8_t" in compact
     assert "g0_dual_action" in source
-    assert "voidenqueue_g0_short_press()" in compact
+    assert "G0DispatchResultenqueue_g0_short_press()" in compact
     assert "execute_g0_dual_action(settings,sink)" in compact
     assert "g_device_settings_mutex" in source
     assert "DeviceSettingssnapshot_device_settings()" in compact
 
-    enqueue_start = source.index("void enqueue_g0_short_press()")
+    enqueue_start = source.index(
+        "G0DispatchResult enqueue_g0_short_press()"
+    )
     enqueue_end = source.index("\n}", enqueue_start)
     enqueue_body = source[enqueue_start:enqueue_end]
     assert "xQueueSend(g_macro_queue" in enqueue_body
@@ -78,3 +80,12 @@ def test_g0_dual_action_uses_macro_task_and_preserves_microphone_fallback():
     ui_start = source.index("void ui_task(")
     ui_body = source[ui_start:]
     assert "enqueue_g0_short_press();" in ui_body
+
+    hil_start = source.index("void poll_hil_serial_control()")
+    hil_end = source.index(
+        "void advance_hil_hid_burst()", hil_start
+    )
+    hil_body = source[hil_start:hil_end]
+    assert "HilMicrophoneCommand::g0_click" in hil_body
+    assert "enqueue_g0_short_press()" in hil_body
+    assert "HIL G0 CLICK %s" in hil_body

@@ -88,6 +88,12 @@ enum class MacroInvocationKind : uint8_t {
   g0_dual_action,
 };
 
+enum class G0DispatchResult : uint8_t {
+  microphone_only,
+  queued,
+  fallback,
+};
+
 struct MacroInvocation {
   MacroInvocationKind kind = MacroInvocationKind::profile_key;
   uint8_t layer = 0;
@@ -1049,13 +1055,13 @@ void enqueue_microphone_event(MicrophoneRuntimeEvent event,
            static_cast<unsigned>(event));
 }
 
-void enqueue_g0_short_press() {
+G0DispatchResult enqueue_g0_short_press() {
   const DeviceSettings settings = snapshot_device_settings();
   if (!settings.g0_chord_enabled) {
     ESP_LOGI(kTag, "g0 dual action disabled");
     enqueue_microphone_event(
         MicrophoneRuntimeEvent::g0_click, true);
-    return;
+    return G0DispatchResult::microphone_only;
   }
 
   const MacroInvocation invocation{
@@ -1066,12 +1072,13 @@ void enqueue_g0_short_press() {
   if (g_macro_queue != nullptr &&
       xQueueSend(g_macro_queue, &invocation, 0) == pdTRUE) {
     ESP_LOGI(kTag, "g0 dual action queued");
-    return;
+    return G0DispatchResult::queued;
   }
 
   ESP_LOGW(kTag, "g0 chord queue fallback");
   enqueue_microphone_event(
       MicrophoneRuntimeEvent::g0_click, true);
+  return G0DispatchResult::fallback;
 }
 
 void poll_hil_serial_control() {
@@ -1082,6 +1089,17 @@ void poll_hil_serial_control() {
     const HilMicrophoneCommand command =
         g_hil_serial_parser.consume(input[static_cast<std::size_t>(index)]);
     if (command == HilMicrophoneCommand::none) continue;
+    if (command == HilMicrophoneCommand::g0_click) {
+      const G0DispatchResult result = enqueue_g0_short_press();
+      const char* name =
+          result == G0DispatchResult::queued
+              ? "QUEUED"
+              : result == G0DispatchResult::fallback
+                    ? "FALLBACK"
+                    : "MIC_ONLY";
+      std::printf("HIL G0 CLICK %s\n", name);
+      continue;
+    }
     if (command == HilMicrophoneCommand::hid_start) {
       const bool accepted = g_hil_hid_burst.start(
           g_keyboard.has_value() && ble_keyboard_ready());

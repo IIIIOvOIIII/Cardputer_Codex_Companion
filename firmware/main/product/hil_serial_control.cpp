@@ -6,6 +6,7 @@ namespace {
 
 constexpr std::string_view kStartCommand = "HIL MIC START";
 constexpr std::string_view kStopCommand = "HIL MIC STOP";
+constexpr std::string_view kG0ClickCommand = "HIL G0 CLICK";
 constexpr std::string_view kHidStartCommand = "HIL HID START";
 constexpr std::string_view kHidStopCommand = "HIL HID STOP";
 
@@ -33,6 +34,7 @@ HilMicrophoneCommand HilSerialCommandParser::consume(uint8_t byte) {
       line == kStartCommand
           ? HilMicrophoneCommand::start
           : line == kStopCommand ? HilMicrophoneCommand::stop
+          : line == kG0ClickCommand ? HilMicrophoneCommand::g0_click
           : line == kHidStartCommand ? HilMicrophoneCommand::hid_start
           : line == kHidStopCommand ? HilMicrophoneCommand::hid_stop
                                  : HilMicrophoneCommand::none;
