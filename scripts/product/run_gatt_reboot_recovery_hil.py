@@ -120,8 +120,8 @@ def private_curl_config(url: str, pairing: str) -> Iterator[Path]:
                 "show-error",
                 "insecure",
                 "fail-with-body",
-                "connect-timeout = 2",
-                "max-time = 3",
+                "connect-timeout = 5",
+                "max-time = 10",
                 f"url = {_curl_quote(url)}",
                 "header = "
                 + _curl_quote(f"X-Cardputer-Pairing: {pairing}"),
@@ -265,8 +265,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     initial_pid = current_agent_pid()
     results: list[dict[str, Any]] = []
     with private_curl_config(url, pairing) as curl_config:
-        if not ready_snapshot(query_status(curl_config)):
-            raise RuntimeError("baseline is not MIC READY")
+        snapshot, ready_seconds = wait_until_ready(
+            curl_config,
+            initial_pid,
+            args.ready_timeout,
+        )
         for cycle in range(1, args.cycles + 1):
             if current_agent_pid() != initial_pid:
                 raise RuntimeError("macOS Agent PID changed before reset")

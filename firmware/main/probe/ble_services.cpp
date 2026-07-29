@@ -821,7 +821,6 @@ int hid_gap_event(struct ble_gap_event* event, void*) {
         return 0;
       }
       g_hid_conn_handle = event->connect.conn_handle;
-      reset_audio_link_state();
       {
         const ble_gap_upd_params params{
             .itvl_min =

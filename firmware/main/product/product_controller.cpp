@@ -1136,11 +1136,6 @@ void audio_task(void*) {
 
 void ble_connection_changed(bool bonded, bool connected) {
   g_ble_state = connected ? ServiceState::ok : ServiceState::starting;
-  if (!connected) {
-    g_audio_data_ready.store(false);
-    g_audio_sink_declared.store(false);
-    enqueue_microphone_event(MicrophoneRuntimeEvent::sink_lost, true);
-  }
   {
     SemaphoreLock input_lock(g_input_mutex);
     if (input_lock.locked() && g_onboarding.active()) {
