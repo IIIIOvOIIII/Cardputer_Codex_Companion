@@ -60,6 +60,15 @@ XPC/ring lease, then sends sink-ready. Firmware returns to `READY`; it does not
 resume PDM capture. The HAL maps the consumer side of the same bridge-owned ring
 and renders digital silence while there is no valid producer.
 
+## Reboot recovery gate
+
+- Five consecutive host-controlled Cardputer resets.
+- `MIC READY` within 15 seconds after each reset.
+- Agent PID unchanged for the full gate.
+- BLE, Wi-Fi, and Agent remain `OK`.
+- No panic, abort, allocation failure, or automatic Agent restart.
+- Existing `HIL MIC START` and `HIL MIC STOP` succeed after cycle five.
+
 ## Final evidence
 
 The corrected release was built, installed, and tested on 2026-07-27:

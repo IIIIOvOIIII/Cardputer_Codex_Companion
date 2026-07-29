@@ -45,3 +45,18 @@
   generation and suppresses retry after intentional stop.
 - Next step: Add the fixed-PID five-cycle hardware reboot HIL runner and its
   privacy/contract tests.
+
+## 2026-07-29 10:10 HKT
+
+- Current work: Added the automated fixed-PID Cardputer reboot recovery HIL
+  runner and documented the release acceptance gate.
+- Expected result: A repeatable five-cycle reset test that authenticates
+  without exposing the PIN, rejects Agent restarts, and stores only recovery
+  timing/state metrics.
+- Result: Achieved at tool level. The test first failed because the module did
+  not exist, then all three helper/privacy tests passed. The runner uses a
+  mode-0600 temporary curl configuration, validates the local HTTPS target,
+  requires the same LaunchAgent PID throughout, and emits only cycle, PID,
+  ready time, and microphone state.
+- Next step: Build and install the repaired macOS Agent without modifying the
+  existing pairing configuration, then run the real five-cycle device gate.
